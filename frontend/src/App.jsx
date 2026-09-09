@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar.jsx'
 import Message from './components/Message.jsx'
 import EmptyState from './components/EmptyState.jsx'
 import Composer from './components/Composer.jsx'
+import { Menu } from './components/icons.jsx'
 import { buildReply } from './mockReply.js'
 
 let nextId = 1
@@ -14,14 +15,23 @@ export default function App() {
   const [draft, setDraft] = useState('')
   const [thinking, setThinking] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem('talvrin-theme') || 'dark'
+  )
 
   const scrollRef = useRef(null)
   const active = threads.find((t) => t.id === activeId) ?? threads[0]
 
+  // Theme is applied on the root element so CSS variables can switch.
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('talvrin-theme', theme)
+  }, [theme])
+
   // Keep the newest message in view.
   useEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [active?.messages.length, thinking])
 
   const patchActive = (fn) =>
@@ -37,19 +47,18 @@ export default function App() {
     patchActive((t) => ({
       ...t,
       // First message becomes the thread title in the sidebar.
-      title: t.messages.length === 0 ? content.slice(0, 38) : t.title,
+      title: t.messages.length === 0 ? content.slice(0, 40) : t.title,
       messages: [...t.messages, { role: 'user', text: content }],
     }))
 
     // Placeholder latency so the typing indicator is visible.
     setTimeout(() => {
-      const reply = buildReply(content)
       patchActive((t) => ({
         ...t,
-        messages: [...t.messages, { role: 'assistant', ...reply }],
+        messages: [...t.messages, { role: 'assistant', ...buildReply(content) }],
       }))
       setThinking(false)
-    }, 700)
+    }, 750)
   }
 
   const startThread = () => {
@@ -67,6 +76,8 @@ export default function App() {
         activeId={activeId}
         onSelect={setActiveId}
         onNew={startThread}
+        theme={theme}
+        onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
       />
 
       <main className="main">
@@ -76,29 +87,35 @@ export default function App() {
             onClick={() => setCollapsed((c) => !c)}
             aria-label="Toggle sidebar"
           >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <Menu size={18} />
           </button>
+
           <span className="topbar-title">Research</span>
-          <span className="badge">UK gilts · US Treasuries</span>
+
+          <div className="topbar-right">
+            <span className="chip">
+              <span className="chip-dot" />
+              Data current
+            </span>
+            <span className="chip">UK gilts · US Treasuries</span>
+          </div>
         </header>
 
         <div className="scroll" ref={scrollRef}>
           {active.messages.length === 0 ? (
             <EmptyState onPick={send} />
           ) : (
-            <div className="thread-body">
+            <div className="stream">
               {active.messages.map((m, i) => (
                 <Message key={i} {...m} />
               ))}
 
               {thinking && (
-                <div className="msg">
-                  <div className="msg-avatar bot">T</div>
-                  <div className="msg-body">
-                    <div className="msg-role">Talvrin</div>
-                    <div className="typing"><span /><span /><span /></div>
+                <div className="msg bot">
+                  <div className="bot-mark">T</div>
+                  <div className="bot-body">
+                    <div className="bot-name">Talvrin</div>
+                    <div className="typing"><i /><i /><i /></div>
                   </div>
                 </div>
               )}

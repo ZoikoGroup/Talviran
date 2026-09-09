@@ -1,7 +1,12 @@
-export default function Sidebar({ collapsed, threads, activeId, onSelect, onNew }) {
+import { Plus, Chat, Sun, Moon, Settings } from './icons.jsx'
+
+export default function Sidebar({ collapsed, threads, activeId, onSelect, onNew, theme, onToggleTheme }) {
+  const started = threads.filter((t) => t.messages.length > 0)
+  const fresh = threads.filter((t) => t.messages.length === 0)
+
   return (
     <aside className={collapsed ? 'sidebar collapsed' : 'sidebar'}>
-      <div className="sidebar-head">
+      <div className="brand">
         <div className="brand-mark">T</div>
         <div>
           <div className="brand-name">Talvrin</div>
@@ -9,31 +14,60 @@ export default function Sidebar({ collapsed, threads, activeId, onSelect, onNew 
         </div>
       </div>
 
-      <button className="new-chat" onClick={onNew}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M12 5v14M5 12h14" />
-        </svg>
+      <button className="new-thread" onClick={onNew}>
+        <Plus size={15} />
         New research thread
       </button>
 
-      <div className="thread-label">Recent</div>
       <nav className="thread-list">
-        {threads.map((t) => (
-          <button
-            key={t.id}
-            className={t.id === activeId ? 'thread active' : 'thread'}
-            onClick={() => onSelect(t.id)}
-          >
-            {t.title}
-          </button>
-        ))}
+        {fresh.length > 0 && (
+          <>
+            <div className="group-label">Draft</div>
+            {fresh.map((t) => (
+              <button
+                key={t.id}
+                className={t.id === activeId ? 'thread active' : 'thread'}
+                onClick={() => onSelect(t.id)}
+              >
+                <Chat size={14} />
+                <span>{t.title}</span>
+              </button>
+            ))}
+          </>
+        )}
+
+        {started.length > 0 && (
+          <>
+            <div className="group-label">Today</div>
+            {started.map((t) => (
+              <button
+                key={t.id}
+                className={t.id === activeId ? 'thread active' : 'thread'}
+                onClick={() => onSelect(t.id)}
+              >
+                <Chat size={14} />
+                <span>{t.title}</span>
+              </button>
+            ))}
+          </>
+        )}
       </nav>
 
       <div className="sidebar-foot">
-        <div className="avatar">VK</div>
-        <div>
-          <div>Vignesh K.</div>
-          <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>Free plan</div>
+        <button className="foot-row" onClick={onToggleTheme}>
+          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+        </button>
+
+        <button className="foot-row">
+          <Settings size={16} />
+          Settings
+        </button>
+
+        <div className="foot-row" style={{ cursor: 'default' }}>
+          <span className="avatar">VK</span>
+          <span>Vignesh K.</span>
+          <span className="plan-tag">FREE</span>
         </div>
       </div>
     </aside>

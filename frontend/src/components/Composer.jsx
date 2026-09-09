@@ -1,4 +1,5 @@
 import { useRef, useEffect } from 'react'
+import { ArrowUp, Plus } from './icons.jsx'
 
 export default function Composer({ value, onChange, onSend, disabled }) {
   const ref = useRef(null)
@@ -8,7 +9,7 @@ export default function Composer({ value, onChange, onSend, disabled }) {
     const el = ref.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = Math.min(el.scrollHeight, 200) + 'px'
+    el.style.height = Math.min(el.scrollHeight, 208) + 'px'
   }, [value])
 
   const handleKeyDown = (e) => {
@@ -21,6 +22,10 @@ export default function Composer({ value, onChange, onSend, disabled }) {
   return (
     <div className="composer-wrap">
       <div className="composer">
+        <button className="composer-btn" aria-label="Attach a document" title="Attach a document">
+          <Plus size={17} />
+        </button>
+
         <textarea
           ref={ref}
           rows={1}
@@ -29,21 +34,20 @@ export default function Composer({ value, onChange, onSend, disabled }) {
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
         />
+
         <button
           className="send"
           onClick={onSend}
           disabled={disabled || !value.trim()}
           aria-label="Send message"
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 19V5M5 12l7-7 7 7" />
-          </svg>
+          <ArrowUp size={16} />
         </button>
       </div>
 
       <div className="disclaimer">
-        Talvrin provides source-linked facts and reproducible calculations.{' '}
-        <strong>It does not give investment advice.</strong> Prototype — no backend connected.
+        Source-linked facts and reproducible calculations.{' '}
+        <b>Talvrin does not give investment advice.</b> Prototype — no backend connected.
       </div>
     </div>
   )
