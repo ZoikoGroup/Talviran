@@ -11,6 +11,33 @@
  *    (EVID-001), where every material number carries a source.
  */
 
+export type Freshness = 'CURRENT' | 'DELAYED' | 'STALE' | 'SOURCE'
+export type CiteKind = 'doc' | 'book' | 'link'
+
+export interface Citation {
+  label: string
+  meta?: string
+  pill: Freshness
+  kind: CiteKind
+}
+
+export interface FactTable {
+  title: string
+  rows: [string, string][]
+}
+
+export interface Reply {
+  text: string
+  facts: FactTable | null
+  citations: Citation[]
+  note: string | null
+}
+
+export interface ChatMessage extends Partial<Reply> {
+  role: 'user' | 'assistant'
+  text: string
+}
+
 const ADVICE_PATTERNS = [
   /should i (buy|sell|invest|hold)/i,
   /\b(is|are) (it|this|these|that) a good (buy|investment|idea)\b/i,
@@ -20,13 +47,14 @@ const ADVICE_PATTERNS = [
   /worth (buying|investing)/i,
 ]
 
-const isAdvice = (t) => ADVICE_PATTERNS.some((re) => re.test(t))
-const mentionsGilt = (t) => /\bgilt|treasury gilt|2036\b/i.test(t)
-const mentionsAccrued = (t) => /accrued|day count|convention|clean|dirty/i.test(t)
+const isAdvice = (t: string) => ADVICE_PATTERNS.some((re) => re.test(t))
+const mentionsGilt = (t: string) => /\bgilt|treasury gilt|2036\b/i.test(t)
+const mentionsAccrued = (t: string) =>
+  /accrued|day count|convention|clean|dirty|act\/act/i.test(t)
 
 /* ---------- canned payloads ---------- */
 
-const ADVICE_REPLY = {
+const ADVICE_REPLY: Reply = {
   text:
     'I can’t tell you whether to buy, sell or hold. Talvrin never produces investment ' +
     'recommendations, price targets, rankings or suitability conclusions — by design.\n\n' +
@@ -43,7 +71,7 @@ const ADVICE_REPLY = {
     'exists in the platform (PRD-001 §11, POL-001).',
 }
 
-const GILT_REPLY = {
+const GILT_REPLY: Reply = {
   text:
     'Here are the canonical terms for the 4¼% Treasury Gilt 2036, as accepted by the ' +
     'platform. Each value below resolves to a source observation — open Evidence to ' +
@@ -68,7 +96,7 @@ const GILT_REPLY = {
   note: null,
 }
 
-const ACCRUED_REPLY = {
+const ACCRUED_REPLY: Reply = {
   text:
     'Accrued interest is the coupon a bond has earned but not yet paid, from the last ' +
     'coupon date up to settlement. The buyer pays it to the seller on top of the clean ' +
@@ -88,7 +116,7 @@ const ACCRUED_REPLY = {
     'tied to a specific settlement date.',
 }
 
-const DEFAULT_REPLY = (q) => ({
+const DEFAULT_REPLY = (q: string): Reply => ({
   text:
     `You asked: “${q}”\n\n` +
     'This is a front-end prototype — the backend is not connected yet, so this is a ' +
@@ -103,7 +131,7 @@ const DEFAULT_REPLY = (q) => ({
   note: null,
 })
 
-export function buildReply(userText) {
+export function buildReply(userText: string): Reply {
   if (isAdvice(userText)) return ADVICE_REPLY
   if (mentionsAccrued(userText)) return ACCRUED_REPLY
   if (mentionsGilt(userText)) return GILT_REPLY

@@ -38,3 +38,6 @@ env/
 tmp/
 temp/
 *.local
+
+# ---- TS build artifacts ----
+*.tsbuildinfo
