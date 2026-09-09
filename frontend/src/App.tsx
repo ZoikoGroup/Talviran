@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { Menu } from 'lucide-react'
+import { PanelLeft } from 'lucide-react'
 import Sidebar, { type Thread } from '@/components/Sidebar'
 import Message from '@/components/Message'
 import Composer from '@/components/Composer'
 import TalvrinMoonChat from '@/components/ui/talvrin-moon-chat'
-import { Button } from '@/components/ui/button'
 import { buildReply, type ChatMessage } from '@/data/mockReply'
+import { cn } from '@/lib/utils'
 
 interface ChatThread extends Thread {
   messages: ChatMessage[]
@@ -23,7 +23,9 @@ export default function App() {
   const [activeId, setActiveId] = useState(1)
   const [draft, setDraft] = useState('')
   const [thinking, setThinking] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem('talvrin-sidebar') === 'collapsed'
+  )
   const [theme, setTheme] = useState<'dark' | 'light'>(
     () => (localStorage.getItem('talvrin-theme') as 'dark' | 'light') || 'dark'
   )
@@ -37,6 +39,11 @@ export default function App() {
     document.documentElement.classList.toggle('light', theme === 'light')
     localStorage.setItem('talvrin-theme', theme)
   }, [theme])
+
+  // Remember whether the sidebar was left open or closed.
+  useEffect(() => {
+    localStorage.setItem('talvrin-sidebar', collapsed ? 'collapsed' : 'open')
+  }, [collapsed])
 
   // Keep the newest message in view.
   useEffect(() => {
@@ -84,41 +91,36 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full overflow-hidden bg-background">
       <Sidebar
         collapsed={collapsed}
         threads={threads}
         activeId={activeId}
         onSelect={setActiveId}
         onNew={startThread}
+        onCollapse={() => setCollapsed(true)}
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
       />
 
-      <main className="relative flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2.5 border-b border-border bg-background/80 px-3.5 backdrop-blur-xl">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setCollapsed((c) => !c)}
-            className="h-9 w-9 text-muted-foreground hover:text-foreground"
-          >
-            <Menu className="h-[18px] w-[18px]" />
-            <span className="sr-only">Toggle sidebar</span>
-          </Button>
-
-          <span className="text-sm font-medium">Research</span>
-
-          <div className="ml-auto flex items-center gap-2">
-            <span className="flex items-center gap-1.5 rounded-full border border-border bg-secondary px-2.5 py-1 text-[11.5px] font-medium text-muted-foreground">
-              <span className="h-1.5 w-1.5 rounded-full bg-fresh ring-[3px] ring-fresh/20" />
-              Data current
-            </span>
-            <span className="rounded-full border border-border bg-secondary px-2.5 py-1 text-[11.5px] font-medium text-muted-foreground">
-              UK gilts · US Treasuries
-            </span>
-          </div>
-        </header>
+      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Floating reopen control. Only interactive while the sidebar is
+            hidden, so it never doubles up with the sidebar's own collapse
+            button. */}
+        <button
+          onClick={() => setCollapsed(false)}
+          aria-label="Show sidebar"
+          className={cn(
+            'absolute left-3 top-3 z-30 grid h-9 w-9 place-items-center rounded-lg',
+            'border border-border/70 bg-card/70 text-muted-foreground backdrop-blur-md',
+            'transition-opacity hover:bg-accent hover:text-foreground',
+            collapsed
+              ? 'pointer-events-auto opacity-100'
+              : 'pointer-events-none opacity-0'
+          )}
+        >
+          <PanelLeft className="h-[17px] w-[17px]" />
+        </button>
 
         {isEmpty ? (
           <TalvrinMoonChat
@@ -126,11 +128,12 @@ export default function App() {
             onChange={setDraft}
             onSend={send}
             disabled={thinking}
+            theme={theme}
           />
         ) : (
           <>
             <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-slim">
-              <div className="mx-auto max-w-3xl px-6 pb-3 pt-8">
+              <div className="mx-auto max-w-3xl px-6 pb-3 pt-16">
                 {active.messages.map((m, i) => (
                   <Message key={i} {...m} />
                 ))}

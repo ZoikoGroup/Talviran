@@ -3,6 +3,8 @@
 import { useRef, useCallback, useEffect } from 'react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
+import Orb from '@/components/ui/orb'
+import { useReducedMotion } from '@/hooks/use-reduced-motion'
 import { cn } from '@/lib/utils'
 import {
   ArrowUpIcon,
@@ -74,18 +76,21 @@ const QUICK_ACTIONS = [
 interface QuickActionProps {
   icon: React.ReactNode
   label: string
+  isLight: boolean
   onClick: () => void
 }
 
-function QuickAction({ icon, label, onClick }: QuickActionProps) {
+function QuickAction({ icon, label, isLight, onClick }: QuickActionProps) {
   return (
     <Button
       variant="outline"
       onClick={onClick}
       className={cn(
-        'h-9 gap-2 rounded-full border-border/70 bg-card/50 px-3.5',
-        'text-muted-foreground backdrop-blur-sm transition-all',
-        'hover:-translate-y-0.5 hover:border-border hover:bg-accent hover:text-foreground'
+        'h-9 gap-2 rounded-full px-3.5 backdrop-blur-md transition-all',
+        'text-muted-foreground hover:-translate-y-0.5 hover:text-foreground',
+        isLight
+          ? 'border-border bg-card/90 shadow-sm hover:bg-card'
+          : 'border-border/70 bg-card/60 hover:border-border hover:bg-accent'
       )}
     >
       {icon}
@@ -98,11 +103,15 @@ function QuickAction({ icon, label, onClick }: QuickActionProps) {
    Hero
    ------------------------------------------------------------------ */
 
+/** Matches the --background token per theme so the Orb shader blends. */
+const ORB_BG = { dark: '#08080b', light: '#fcfcfe' } as const
+
 interface TalvrinMoonChatProps {
   value: string
   onChange: (v: string) => void
   onSend: (text?: string) => void
   disabled?: boolean
+  theme?: 'dark' | 'light'
 }
 
 export default function TalvrinMoonChat({
@@ -110,11 +119,14 @@ export default function TalvrinMoonChat({
   onChange,
   onSend,
   disabled,
+  theme = 'dark',
 }: TalvrinMoonChatProps) {
   const { textareaRef, adjustHeight } = useAutoResizeTextarea({
     minHeight: 52,
     maxHeight: 180,
   })
+  const reducedMotion = useReducedMotion()
+  const isLight = theme === 'light'
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -126,29 +138,67 @@ export default function TalvrinMoonChat({
 
   return (
     <div className="relative flex h-full w-full flex-col items-center overflow-hidden">
-      {/* Aurora arc + vignette (pure CSS, theme-aware) */}
-      <div className="moon-glow animate-glow-pulse" />
-      <div className="hero-vignette" />
+      {/* ---------- Background ----------
+          Sized off the container's own height (not vh) and kept square, so the
+          orb always sits fully inside the visible area whatever the sidebar
+          is doing. The wrapper clips anything that still overhangs. */}
+      {reducedMotion ? (
+        <>
+          <div className="moon-glow" />
+          <div className="hero-vignette" />
+        </>
+      ) : (
+        <div
+          aria-hidden="true"
+          className={cn(
+            'absolute left-1/2 top-1/2 aspect-square h-[78%] max-w-[92%]',
+            '-translate-x-1/2 -translate-y-1/2',
+            isLight ? 'opacity-40' : 'opacity-90'
+          )}
+        >
+          <Orb
+            hue={255}
+            hoverIntensity={0.45}
+            rotateOnHover
+            forceHoverState={false}
+            backgroundColor={ORB_BG[theme]}
+          />
+        </div>
+      )}
 
-      {/* Title */}
-      <div className="relative z-10 flex w-full flex-1 flex-col items-center justify-center px-6">
+      {/* ---------- Title ---------- */}
+      <div className="pointer-events-none relative z-10 flex w-full flex-1 flex-col items-center justify-center px-6">
         <div className="animate-rise text-center">
-          <h1 className="text-[2.75rem] font-semibold leading-none tracking-tight text-foreground">
+          <h1
+            className={cn(
+              'text-[2.75rem] font-semibold leading-none tracking-tight text-foreground',
+              !isLight && '[text-shadow:0_2px_28px_rgba(0,0,0,0.55)]'
+            )}
+          >
             Talvrin
           </h1>
-          <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-muted-foreground">
+          <p
+            className={cn(
+              'mx-auto mt-4 max-w-md text-[15px] leading-relaxed',
+              isLight
+                ? 'text-muted-foreground'
+                : 'text-muted-foreground [text-shadow:0_1px_16px_rgba(0,0,0,0.6)]'
+            )}
+          >
             Source-linked research for public markets — ask anything below.
           </p>
         </div>
       </div>
 
-      {/* Composer */}
-      <div className="relative z-10 mb-[14vh] w-full max-w-3xl px-6">
+      {/* ---------- Composer ---------- */}
+      <div className="relative z-10 mb-[10vh] w-full max-w-3xl px-6">
         <div
           className={cn(
-            'relative rounded-2xl border border-border/80 bg-card/70 backdrop-blur-xl',
-            'shadow-2xl shadow-black/40 transition-colors',
-            'focus-within:border-ring/60'
+            'relative rounded-2xl border backdrop-blur-2xl transition-colors',
+            'focus-within:border-ring/60',
+            isLight
+              ? 'border-border bg-card/95 shadow-xl shadow-slate-900/10'
+              : 'border-border/80 bg-card/75 shadow-2xl shadow-black/50'
           )}
         >
           <Textarea
@@ -201,20 +251,26 @@ export default function TalvrinMoonChat({
         </div>
 
         {/* Quick actions */}
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
           {QUICK_ACTIONS.map(({ icon: Ico, label, prompt }) => (
             <QuickAction
               key={label}
               icon={<Ico className="h-4 w-4" />}
               label={label}
+              isLight={isLight}
               onClick={() => onSend(prompt)}
             />
           ))}
         </div>
 
-        <p className="mt-6 text-center text-[11.5px] leading-relaxed text-muted-foreground/70">
+        <p
+          className={cn(
+            'mt-5 text-center text-[11.5px] leading-relaxed',
+            isLight ? 'text-muted-foreground' : 'text-muted-foreground/70'
+          )}
+        >
           Source-linked facts and reproducible calculations.{' '}
-          <span className="font-medium text-muted-foreground">
+          <span className="font-medium text-foreground/80">
             Talvrin does not give investment advice.
           </span>{' '}
           Prototype — no backend connected.

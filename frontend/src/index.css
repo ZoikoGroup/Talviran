@@ -7,8 +7,10 @@
     --background: 240 10% 3.5%;
     --foreground: 240 8% 96%;
 
-    --card: 240 10% 5.5%;
+    --card: 240 10% 7%;
     --card-foreground: 240 8% 96%;
+
+    --sidebar: 240 11% 5%;
 
     --popover: 240 10% 5.5%;
     --popover-foreground: 240 8% 96%;
@@ -28,8 +30,8 @@
     --destructive: 0 72% 62%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 240 7% 16%;
-    --input: 240 7% 18%;
+    --border: 240 7% 17%;
+    --input: 240 7% 19%;
     --ring: 245 75% 62%;
 
     --fresh: 158 64% 52%;
@@ -45,6 +47,8 @@
 
     --card: 0 0% 100%;
     --card-foreground: 240 12% 9%;
+
+    --sidebar: 240 20% 97%;
 
     --popover: 0 0% 100%;
     --popover-foreground: 240 12% 9%;
@@ -64,8 +68,8 @@
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 240 10% 89%;
-    --input: 240 10% 86%;
+    --border: 240 12% 86%;
+    --input: 240 12% 82%;
     --ring: 245 68% 56%;
 
     --fresh: 158 70% 38%;

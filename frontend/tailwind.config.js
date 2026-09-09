@@ -39,6 +39,7 @@ export default {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        sidebar: 'hsl(var(--sidebar))',
         /* Talvrin evidence/freshness semantics */
         fresh: 'hsl(var(--fresh))',
         delayed: 'hsl(var(--delayed))',
