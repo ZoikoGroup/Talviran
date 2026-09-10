@@ -1,0 +1,76 @@
+name: backend-ci
+
+on:
+  push:
+    paths: ["backend/**", ".github/workflows/backend-ci.yml"]
+  pull_request:
+    paths: ["backend/**", ".github/workflows/backend-ci.yml"]
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: talvrin
+          POSTGRES_PASSWORD: talvrin
+          POSTGRES_DB: talvrin
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U talvrin -d talvrin"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+      redis:
+        image: redis:7
+        ports: ["6380:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://talvrin_app:talvrin_app@localhost:5433/talvrin
+      ADMIN_DATABASE_URL: postgresql+asyncpg://talvrin:talvrin@localhost:5433/talvrin
+      REDIS_URL: redis://localhost:6380/0
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync
+
+      # Docker Compose's docker-entrypoint-initdb.d convention (infra/init-db/)
+      # only fires for containers started via `docker run`/compose, not GitHub
+      # Actions service containers — so the unprivileged app role that RLS
+      # depends on (see alembic/versions/f0477a8fb9fe_..., infra/init-db/01-roles.sql)
+      # is created here instead, from the same SQL file, to avoid drift.
+      - name: Create app DB role
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql "postgresql://talvrin:talvrin@localhost:5433/talvrin" -v ON_ERROR_STOP=1 -f ../infra/init-db/01-roles.sql
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Type-check (mypy)
+        run: uv run mypy app alembic tests
+
+      - name: Migrate database
+        run: uv run alembic upgrade head
+
+      - name: Test
+        run: uv run pytest -q
