@@ -6,18 +6,11 @@ import { Button } from '@/components/ui/button'
 import Orb from '@/components/ui/orb'
 import { useReducedMotion } from '@/hooks/use-reduced-motion'
 import { cn } from '@/lib/utils'
-import {
-  ArrowUpIcon,
-  Paperclip,
-  Landmark,
-  Calculator,
-  Scale,
-  BellRing,
-  FileSearch,
-  BookOpen,
-  ShieldCheck,
-  FileUp,
-} from 'lucide-react'
+import { ArrowUpIcon } from 'lucide-react'
+import { currentUser } from '@/data/user'
+import AttachMenu, { AttachmentChips } from '@/components/AttachMenu'
+import ModelSwitcher from '@/components/ModelSwitcher'
+import type { ModelId } from '@/data/models'
 
 /* ------------------------------------------------------------------
    Auto-resizing textarea
@@ -59,47 +52,6 @@ function useAutoResizeTextarea({ minHeight, maxHeight }: AutoResizeProps) {
 }
 
 /* ------------------------------------------------------------------
-   Quick actions — each seeds a real Talvrin research prompt
-   ------------------------------------------------------------------ */
-
-const QUICK_ACTIONS = [
-  { icon: Landmark, label: 'Explain an instrument', prompt: 'Explain the 4¼% Treasury Gilt 2036' },
-  { icon: Calculator, label: 'Run a calculation', prompt: 'What is accrued interest on a gilt?' },
-  { icon: Scale, label: 'Compare', prompt: 'Compare a 10-year gilt vs a 10-year US Treasury' },
-  { icon: BellRing, label: 'Set an alert', prompt: 'Alert me if a gilt yield crosses 4.5%' },
-  { icon: FileSearch, label: 'Search documents', prompt: 'Find the latest UK DMO gilt operations notice' },
-  { icon: BookOpen, label: 'Market conventions', prompt: 'How does ACT/ACT (ICMA) day count work?' },
-  { icon: ShieldCheck, label: 'Evidence trail', prompt: 'Show me the evidence chain for a gilt price' },
-  { icon: FileUp, label: 'Upload a document', prompt: 'I want to ask questions about a prospectus' },
-]
-
-interface QuickActionProps {
-  icon: React.ReactNode
-  label: string
-  isLight: boolean
-  onClick: () => void
-}
-
-function QuickAction({ icon, label, isLight, onClick }: QuickActionProps) {
-  return (
-    <Button
-      variant="outline"
-      onClick={onClick}
-      className={cn(
-        'h-9 gap-2 rounded-full px-3.5 backdrop-blur-md transition-all',
-        'text-muted-foreground hover:-translate-y-0.5 hover:text-foreground',
-        isLight
-          ? 'border-border bg-card/90 shadow-sm hover:bg-card'
-          : 'border-border/70 bg-card/60 hover:border-border hover:bg-accent'
-      )}
-    >
-      {icon}
-      <span className="text-xs font-medium">{label}</span>
-    </Button>
-  )
-}
-
-/* ------------------------------------------------------------------
    Hero
    ------------------------------------------------------------------ */
 
@@ -112,6 +64,11 @@ interface TalvrinMoonChatProps {
   onSend: (text?: string) => void
   disabled?: boolean
   theme?: 'dark' | 'light'
+  attachments: File[]
+  onAttach: (files: File[]) => void
+  onRemoveAttachment: (index: number) => void
+  model: ModelId
+  onModelChange: (id: ModelId) => void
 }
 
 export default function TalvrinMoonChat({
@@ -120,10 +77,15 @@ export default function TalvrinMoonChat({
   onSend,
   disabled,
   theme = 'dark',
+  attachments,
+  onAttach,
+  onRemoveAttachment,
+  model,
+  onModelChange,
 }: TalvrinMoonChatProps) {
   const { textareaRef, adjustHeight } = useAutoResizeTextarea({
-    minHeight: 52,
-    maxHeight: 180,
+    minHeight: 36,
+    maxHeight: 160,
   })
   const reducedMotion = useReducedMotion()
   const isLight = theme === 'light'
@@ -137,7 +99,7 @@ export default function TalvrinMoonChat({
   }
 
   return (
-    <div className="relative flex h-full w-full flex-col items-center overflow-hidden">
+    <div className="relative flex h-full w-full flex-col items-center justify-center overflow-hidden">
       {/* ---------- Background ----------
           Sized off the container's own height (not vh) and kept square, so the
           orb always sits fully inside the visible area whatever the sidebar
@@ -166,16 +128,16 @@ export default function TalvrinMoonChat({
         </div>
       )}
 
-      {/* ---------- Title ---------- */}
-      <div className="pointer-events-none relative z-10 flex w-full flex-1 flex-col items-center justify-center px-6">
-        <div className="animate-rise text-center">
+      {/* ---------- Greeting + composer, centred as one block ---------- */}
+      <div className="relative z-10 flex w-full max-w-3xl flex-col px-6">
+        <div className="animate-rise pointer-events-none text-center">
           <h1
             className={cn(
               'text-[2.75rem] font-semibold leading-none tracking-tight text-foreground',
               !isLight && '[text-shadow:0_2px_28px_rgba(0,0,0,0.55)]'
             )}
           >
-            Talvrin
+            Hello, {currentUser.firstName}
           </h1>
           <p
             className={cn(
@@ -185,24 +147,31 @@ export default function TalvrinMoonChat({
                 : 'text-muted-foreground [text-shadow:0_1px_16px_rgba(0,0,0,0.6)]'
             )}
           >
-            Source-linked research for public markets — ask anything below.
+            Source-linked research for public markets.
           </p>
         </div>
-      </div>
 
-      {/* ---------- Composer ---------- */}
-      <div className="relative z-10 mb-[10vh] w-full max-w-3xl px-6">
+        {/* ---------- Composer ---------- */}
+        <div className="mt-9 w-full">
+        <AttachmentChips files={attachments} onRemove={onRemoveAttachment} />
+
+        {/* A single slim row. `rounded-[26px]` reads as a pill at one line
+            and stays sensible once the textarea grows. */}
         <div
+          data-composer-bar
           className={cn(
-            'relative rounded-2xl border backdrop-blur-2xl transition-colors',
-            'focus-within:border-ring/60',
+            'relative flex items-end gap-1.5 rounded-[26px] border px-2 py-2',
+            'backdrop-blur-2xl transition-colors focus-within:border-ring/60',
             isLight
               ? 'border-border bg-card/95 shadow-xl shadow-slate-900/10'
               : 'border-border/80 bg-card/75 shadow-2xl shadow-black/50'
           )}
         >
+          <AttachMenu onFiles={onAttach} disabled={disabled} />
+
           <Textarea
             ref={textareaRef}
+            rows={1}
             value={value}
             onChange={(e) => {
               onChange(e.target.value)
@@ -211,70 +180,48 @@ export default function TalvrinMoonChat({
             onKeyDown={handleKeyDown}
             placeholder="Ask about an instrument, convention or calculation…"
             className={cn(
-              'w-full resize-none border-none bg-transparent px-4 pt-4',
-              'text-[15px] text-foreground',
+              'min-h-0 flex-1 resize-none border-none bg-transparent px-1 py-1.5',
+              'text-[15px] leading-6 text-foreground',
               'focus-visible:ring-0 focus-visible:ring-offset-0',
               'placeholder:text-muted-foreground/70'
             )}
             style={{ overflow: 'hidden' }}
           />
 
-          <div className="flex items-center justify-between px-3 pb-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 text-muted-foreground hover:text-foreground"
-              title="Attach a document"
-            >
-              <Paperclip className="h-4 w-4" />
-              <span className="sr-only">Attach a document</span>
-            </Button>
+          <ModelSwitcher value={model} onChange={onModelChange} disabled={disabled} />
 
-            <Button
-              size="icon"
-              onClick={() => {
-                onSend()
-                adjustHeight(true)
-              }}
-              disabled={disabled || !value.trim()}
-              className={cn(
-                'h-9 w-9 rounded-xl transition-transform',
-                'bg-gradient-to-br from-indigo-500 to-purple-500 text-white',
-                'hover:scale-105 active:scale-95',
-                'disabled:bg-secondary disabled:from-secondary disabled:to-secondary disabled:text-muted-foreground'
-              )}
-            >
-              <ArrowUpIcon className="h-4 w-4" />
-              <span className="sr-only">Send</span>
-            </Button>
-          </div>
+          <Button
+            size="icon"
+            onClick={() => {
+              onSend()
+              adjustHeight(true)
+            }}
+            disabled={disabled || !value.trim()}
+            className={cn(
+              'h-9 w-9 shrink-0 rounded-full transition-transform',
+              'bg-gradient-to-br from-indigo-500 to-purple-500 text-white',
+              'hover:scale-105 active:scale-95',
+              'disabled:bg-secondary disabled:from-secondary disabled:to-secondary disabled:text-muted-foreground'
+            )}
+          >
+            <ArrowUpIcon className="h-4 w-4" />
+            <span className="sr-only">Send</span>
+          </Button>
         </div>
 
-        {/* Quick actions */}
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
-          {QUICK_ACTIONS.map(({ icon: Ico, label, prompt }) => (
-            <QuickAction
-              key={label}
-              icon={<Ico className="h-4 w-4" />}
-              label={label}
-              isLight={isLight}
-              onClick={() => onSend(prompt)}
-            />
-          ))}
+          <p
+            className={cn(
+              'mt-5 text-center text-[11.5px] leading-relaxed',
+              isLight ? 'text-muted-foreground' : 'text-muted-foreground/70'
+            )}
+          >
+            Source-linked facts and reproducible calculations.{' '}
+            <span className="font-medium text-foreground/80">
+              Talvrin does not give investment advice.
+            </span>{' '}
+            Prototype — no backend connected.
+          </p>
         </div>
-
-        <p
-          className={cn(
-            'mt-5 text-center text-[11.5px] leading-relaxed',
-            isLight ? 'text-muted-foreground' : 'text-muted-foreground/70'
-          )}
-        >
-          Source-linked facts and reproducible calculations.{' '}
-          <span className="font-medium text-foreground/80">
-            Talvrin does not give investment advice.
-          </span>{' '}
-          Prototype — no backend connected.
-        </p>
       </div>
     </div>
   )

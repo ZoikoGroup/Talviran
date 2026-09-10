@@ -39,7 +39,14 @@ export default {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
-        sidebar: 'hsl(var(--sidebar))',
+        sidebar: {
+          DEFAULT: 'hsl(var(--sidebar))',
+          foreground: 'hsl(var(--sidebar-foreground))',
+          muted: 'hsl(var(--sidebar-muted))',
+          accent: 'hsl(var(--sidebar-accent))',
+          active: 'hsl(var(--sidebar-active))',
+          border: 'hsl(var(--sidebar-border))',
+        },
         /* Talvrin evidence/freshness semantics */
         fresh: 'hsl(var(--fresh))',
         delayed: 'hsl(var(--delayed))',

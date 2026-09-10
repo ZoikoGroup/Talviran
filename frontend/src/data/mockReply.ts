@@ -36,6 +36,8 @@ export interface Reply {
 export interface ChatMessage extends Partial<Reply> {
   role: 'user' | 'assistant'
   text: string
+  /** Which model answered — stamped at send time, shown in the transcript. */
+  model?: string
 }
 
 const ADVICE_PATTERNS = [

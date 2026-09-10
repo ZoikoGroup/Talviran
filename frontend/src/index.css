@@ -10,7 +10,14 @@
     --card: 240 10% 7%;
     --card-foreground: 240 8% 96%;
 
-    --sidebar: 240 11% 5%;
+    /* Sidebar is an *elevated* surface sitting above the canvas — the
+       Gemini relationship: no hard divider, the lift does the separating. */
+    --sidebar: 240 6% 11%;
+    --sidebar-foreground: 240 8% 95%;
+    --sidebar-muted: 240 5% 66%;
+    --sidebar-accent: 240 6% 17%;
+    --sidebar-active: 244 34% 26%;
+    --sidebar-border: 240 6% 18%;
 
     --popover: 240 10% 5.5%;
     --popover-foreground: 240 8% 96%;
@@ -48,7 +55,12 @@
     --card: 0 0% 100%;
     --card-foreground: 240 12% 9%;
 
-    --sidebar: 240 20% 97%;
+    --sidebar: 225 32% 95%;
+    --sidebar-foreground: 240 12% 11%;
+    --sidebar-muted: 240 6% 40%;
+    --sidebar-accent: 225 26% 90%;
+    --sidebar-active: 245 62% 90%;
+    --sidebar-border: 225 20% 87%;
 
     --popover: 0 0% 100%;
     --popover-foreground: 240 12% 9%;
@@ -146,6 +158,58 @@
         rgba(129, 140, 248, 0.13) 54%,
         transparent 70%
       );
+  }
+
+  /* ------------------------------------------------------------------
+     App ambient — a soft brand wash anchored to the left edge. Painted
+     behind everything so the translucent sidebar has something to pick
+     up; without it, acrylic over a flat background looks like flat
+     background. Kept off to the right so it never muddies the hero.
+     ------------------------------------------------------------------ */
+  .app-ambient {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        38% 55% at 0% 22%,
+        hsl(245 80% 62% / 0.22),
+        transparent 72%
+      ),
+      radial-gradient(
+        34% 45% at 2% 96%,
+        hsl(282 70% 60% / 0.16),
+        transparent 72%
+      );
+  }
+
+  .light .app-ambient {
+    background:
+      radial-gradient(
+        38% 55% at 0% 22%,
+        hsl(245 80% 62% / 0.14),
+        transparent 72%
+      ),
+      radial-gradient(
+        34% 45% at 2% 96%,
+        hsl(282 70% 60% / 0.1),
+        transparent 72%
+      );
+  }
+
+  /* ------------------------------------------------------------------
+     Brand lockup swap. The wordmark ships in two inks, so pick by theme
+     in CSS rather than threading `theme` through the component tree —
+     no prop drilling and no wrong-ink flash on first paint.
+     ------------------------------------------------------------------ */
+  .brand-on-light {
+    display: none;
+  }
+  .light .brand-on-light {
+    display: block;
+  }
+  .light .brand-on-dark {
+    display: none;
   }
 
   /* Vignette so content stays legible over the glow */

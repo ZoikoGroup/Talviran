@@ -1,27 +1,100 @@
 import { useState, useRef, useEffect } from 'react'
-import { PanelLeft } from 'lucide-react'
-import Sidebar, { type Thread } from '@/components/Sidebar'
+import Sidebar, { type Chat, type Project } from '@/components/Sidebar'
 import Message from '@/components/Message'
 import Composer from '@/components/Composer'
+import SettingsPage from '@/components/SettingsPage'
 import TalvrinMoonChat from '@/components/ui/talvrin-moon-chat'
 import { buildReply, type ChatMessage } from '@/data/mockReply'
-import { cn } from '@/lib/utils'
+import { mockChats, mockProjects } from '@/data/mockWorkspace'
+import { DEFAULT_MODEL, type ModelId } from '@/data/models'
 
-interface ChatThread extends Thread {
+interface ChatRecord extends Chat {
   messages: ChatMessage[]
 }
 
-let nextId = 1
-const newThread = (): ChatThread => ({
-  id: nextId++,
-  title: 'New thread',
+const uid = () =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2) + Date.now().toString(36)
+
+const newChat = (projectId: string | null = null): ChatRecord => ({
+  id: uid(),
+  title: 'New chat',
   messages: [],
+  createdAt: Date.now(),
+  projectId,
 })
 
+// No backend yet, so the history and projects live in localStorage — a chat
+// history that empties on reload isn't a history.
+const STORE = 'talvrin-workspace'
+
+interface Stored {
+  chats: ChatRecord[]
+  projects: Project[]
+  /** Set once the demo history has been planted, so it never returns. */
+  seeded: boolean
+}
+
+const loadWorkspace = (): Stored => {
+  let chats: ChatRecord[] = []
+  let projects: Project[] = []
+  let seeded = false
+
+  try {
+    const raw = localStorage.getItem(STORE)
+    if (raw) {
+      // `threads` is the pre-rename key — read it so an existing workspace
+      // isn't wiped by the rename.
+      const parsed = JSON.parse(raw) as Partial<Stored> & {
+        threads?: ChatRecord[]
+      }
+      const found = parsed.chats ?? parsed.threads
+      if (Array.isArray(found)) chats = found
+      if (Array.isArray(parsed.projects)) projects = parsed.projects
+      seeded = parsed.seeded === true
+    }
+  } catch {
+    // Corrupt or unavailable storage just means a fresh workspace.
+  }
+
+  // Plant the demo history exactly once per browser. It sits alongside
+  // anything already here rather than replacing it — and because the flag is
+  // then persisted, it never comes back, so it can't resurrect after a
+  // workspace is genuinely in use.
+  if (!seeded) {
+    return {
+      // Seeds sit *behind* a fresh empty chat, so the app opens on the hero
+      // rather than mid-conversation.
+      chats: [
+        newChat(),
+        ...mockChats(),
+        ...chats.filter((c) => c.messages.length > 0),
+      ],
+      projects: [...projects, ...mockProjects()],
+      seeded: true,
+    }
+  }
+
+  return {
+    chats: chats.length > 0 ? chats : [newChat()],
+    projects,
+    seeded: true,
+  }
+}
+
 export default function App() {
-  const [threads, setThreads] = useState<ChatThread[]>([newThread()])
-  const [activeId, setActiveId] = useState(1)
+  const [stored] = useState(loadWorkspace)
+  const [chats, setChats] = useState<ChatRecord[]>(stored.chats)
+  const [projects, setProjects] = useState<Project[]>(stored.projects)
+  // Derived from the chats actually in state — never a hardcoded id, which
+  // would drift from them under StrictMode's double-invoked initialiser.
+  const [activeId, setActiveId] = useState<string>(() => chats[0].id)
   const [draft, setDraft] = useState('')
+  const [attachments, setAttachments] = useState<File[]>([])
+  const [model, setModel] = useState<ModelId>(
+    () => (localStorage.getItem('talvrin-model') as ModelId) || DEFAULT_MODEL
+  )
   const [thinking, setThinking] = useState(false)
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('talvrin-sidebar') === 'collapsed'
@@ -29,9 +102,10 @@ export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>(
     () => (localStorage.getItem('talvrin-theme') as 'dark' | 'light') || 'dark'
   )
+  const [showSettings, setShowSettings] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
-  const active = threads.find((t) => t.id === activeId) ?? threads[0]
+  const active = chats.find((c) => c.id === activeId) ?? chats[0]
   const isEmpty = active.messages.length === 0
 
   // Theme drives the `.light` class that overrides the CSS variables.
@@ -39,6 +113,19 @@ export default function App() {
     document.documentElement.classList.toggle('light', theme === 'light')
     localStorage.setItem('talvrin-theme', theme)
   }, [theme])
+
+  // Persist the workspace so history and projects survive a reload.
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORE, JSON.stringify({ chats, projects, seeded: true }))
+    } catch {
+      // Quota or private mode — the session still works, it just won't persist.
+    }
+  }, [chats, projects])
+
+  useEffect(() => {
+    localStorage.setItem('talvrin-model', model)
+  }, [model])
 
   // Remember whether the sidebar was left open or closed.
   useEffect(() => {
@@ -53,82 +140,138 @@ export default function App() {
     })
   }, [active.messages.length, thinking])
 
-  const patchActive = (fn: (t: ChatThread) => ChatThread) =>
-    setThreads((prev) => prev.map((t) => (t.id === activeId ? fn(t) : t)))
+  const patchActive = (fn: (c: ChatRecord) => ChatRecord) =>
+    setChats((prev) => prev.map((c) => (c.id === activeId ? fn(c) : c)))
 
   const send = (text?: string) => {
     const content = (text ?? draft).trim()
     if (!content || thinking) return
 
     setDraft('')
+    setAttachments([])
     setThinking(true)
 
-    patchActive((t) => ({
-      ...t,
-      // First message becomes the thread title in the sidebar.
-      title: t.messages.length === 0 ? content.slice(0, 40) : t.title,
-      messages: [...t.messages, { role: 'user', text: content }],
+    patchActive((c) => ({
+      ...c,
+      // First message becomes the chat title in the sidebar.
+      title: c.messages.length === 0 ? content.slice(0, 40) : c.title,
+      messages: [...c.messages, { role: 'user', text: content }],
     }))
 
     // Placeholder latency so the typing indicator is visible.
     setTimeout(() => {
-      patchActive((t) => ({
-        ...t,
+      patchActive((c) => ({
+        ...c,
         messages: [
-          ...t.messages,
-          { role: 'assistant', ...buildReply(content) },
+          ...c.messages,
+          { role: 'assistant', model, ...buildReply(content) },
         ],
       }))
       setThinking(false)
     }, 750)
   }
 
-  const startThread = () => {
-    const t = newThread()
-    setThreads((prev) => [t, ...prev])
-    setActiveId(t.id)
+  const startChat = (projectId: string | null = null) => {
+    const c = newChat(projectId)
+    setChats((prev) => [c, ...prev])
+    setActiveId(c.id)
     setDraft('')
+    setAttachments([])
+  }
+
+  // Creating a project drops you straight into an empty chat inside it.
+  const addProject = (name: string) => {
+    const project: Project = { id: uid(), name }
+    setProjects((prev) => [...prev, project])
+    startChat(project.id)
+    return project.id
+  }
+
+  /** Move a chat into a project, or back out to the flat history (`null`). */
+  const moveChat = (chatId: string, projectId: string | null) =>
+    setChats((prev) =>
+      prev.map((c) => (c.id === chatId ? { ...c, projectId } : c))
+    )
+
+  const renameChat = (chatId: string, title: string) =>
+    setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, title } : c)))
+
+  const deleteChat = (chatId: string) => {
+    const next = chats.filter((c) => c.id !== chatId)
+    // The app always needs somewhere to type, so never leave zero chats.
+    if (next.length === 0) {
+      const fresh = newChat()
+      setChats([fresh])
+      setActiveId(fresh.id)
+      return
+    }
+    setChats(next)
+    if (chatId === activeId) setActiveId(next[0].id)
+  }
+
+  const renameProject = (projectId: string, name: string) =>
+    setProjects((prev) =>
+      prev.map((p) => (p.id === projectId ? { ...p, name } : p))
+    )
+
+  /** Deleting a project keeps its chats — they fall back to the flat history. */
+  const deleteProject = (projectId: string) => {
+    setProjects((prev) => prev.filter((p) => p.id !== projectId))
+    setChats((prev) =>
+      prev.map((c) => (c.projectId === projectId ? { ...c, projectId: null } : c))
+    )
   }
 
   return (
-    <div className="flex h-full overflow-hidden bg-background">
+    <div className="relative flex h-full overflow-hidden bg-background">
+      {/* Painted first so the sidebar's backdrop-filter samples it. */}
+      <div aria-hidden className="app-ambient" />
+
       <Sidebar
         collapsed={collapsed}
-        threads={threads}
+        chats={chats}
+        projects={projects}
         activeId={activeId}
-        onSelect={setActiveId}
-        onNew={startThread}
+        onSelect={(id) => {
+          setActiveId(id)
+          setShowSettings(false)
+        }}
+        onNew={(projectId) => {
+          startChat(projectId ?? null)
+          setShowSettings(false)
+        }}
+        onNewProject={addProject}
+        onMoveChat={moveChat}
+        onRenameChat={renameChat}
+        onDeleteChat={deleteChat}
+        onRenameProject={renameProject}
+        onDeleteProject={deleteProject}
         onCollapse={() => setCollapsed(true)}
-        theme={theme}
-        onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+        onExpand={() => setCollapsed(false)}
+        onOpenSettings={() => setShowSettings(true)}
       />
 
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Floating reopen control. Only interactive while the sidebar is
-            hidden, so it never doubles up with the sidebar's own collapse
-            button. */}
-        <button
-          onClick={() => setCollapsed(false)}
-          aria-label="Show sidebar"
-          className={cn(
-            'absolute left-3 top-3 z-30 grid h-9 w-9 place-items-center rounded-lg',
-            'border border-border/70 bg-card/70 text-muted-foreground backdrop-blur-md',
-            'transition-opacity hover:bg-accent hover:text-foreground',
-            collapsed
-              ? 'pointer-events-auto opacity-100'
-              : 'pointer-events-none opacity-0'
-          )}
-        >
-          <PanelLeft className="h-[17px] w-[17px]" />
-        </button>
-
-        {isEmpty ? (
+        {showSettings ? (
+          <SettingsPage
+            onBack={() => setShowSettings(false)}
+            theme={theme}
+            onThemeChange={setTheme}
+          />
+        ) : isEmpty ? (
           <TalvrinMoonChat
             value={draft}
             onChange={setDraft}
             onSend={send}
             disabled={thinking}
             theme={theme}
+            attachments={attachments}
+            onAttach={(files) => setAttachments((prev) => [...prev, ...files])}
+            onRemoveAttachment={(i) =>
+              setAttachments((prev) => prev.filter((_, n) => n !== i))
+            }
+            model={model}
+            onModelChange={setModel}
           />
         ) : (
           <>
@@ -165,6 +308,13 @@ export default function App() {
               onChange={setDraft}
               onSend={() => send()}
               disabled={thinking}
+              attachments={attachments}
+              onAttach={(files) => setAttachments((prev) => [...prev, ...files])}
+              onRemoveAttachment={(i) =>
+                setAttachments((prev) => prev.filter((_, n) => n !== i))
+              }
+              model={model}
+              onModelChange={setModel}
             />
           </>
         )}

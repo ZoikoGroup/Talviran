@@ -9,6 +9,7 @@ import {
   Info,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import brandIcon from '@/assets/brand/talvrin-icon.svg'
 import type {
   ChatMessage,
   Citation,
@@ -122,6 +123,7 @@ function Evidence({ citations }: { citations: Citation[] }) {
 export default function Message({
   role,
   text,
+  model,
   facts,
   citations = [],
   note,
@@ -138,12 +140,21 @@ export default function Message({
 
   return (
     <div className="mb-7 flex animate-rise gap-3.5">
-      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 text-[11.5px] font-bold text-white shadow-lg shadow-indigo-500/25">
-        T
-      </div>
+      <img
+        src={brandIcon}
+        alt=""
+        className="h-7 w-7 shrink-0 rounded-lg shadow-lg shadow-indigo-500/25"
+      />
 
       <div className="min-w-0 flex-1 pt-0.5">
-        <div className="mb-1.5 text-[13px] font-semibold">Talvrin</div>
+        <div className="mb-1.5 flex items-baseline gap-2 text-[13px] font-semibold">
+          Talvrin
+          {model && (
+            <span className="font-normal text-[11.5px] text-muted-foreground">
+              {model}
+            </span>
+          )}
+        </div>
         <div className="whitespace-pre-wrap break-words text-[14.75px] leading-relaxed">
           <RichText>{text}</RichText>
         </div>
