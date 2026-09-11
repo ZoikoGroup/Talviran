@@ -82,9 +82,9 @@ const GILT_REPLY: Reply = {
     title: 'Instrument facts',
     rows: [
       ['Instrument', '4¼% Treasury Gilt 2036'],
-      ['ISIN', 'GB00BDX8CX86'],
+      ['ISIN', 'GB0032452392'],
       ['Coupon', '4.250% semi-annual'],
-      ['Maturity', '07 Jun 2036'],
+      ['Maturity', '07 Mar 2036'],
       ['Day count', 'ACT/ACT (ICMA)'],
       ['Ex-dividend', '7 business days'],
       ['Currency', 'GBP'],

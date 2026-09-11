@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 import pytest_asyncio
+from redis.asyncio import Redis, from_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -46,6 +47,11 @@ _TRUNCATE_TABLES = text(
         governance.rights_profile,
         reference.issuer,
         reference.instrument,
+        market.source,
+        market.accepted_fact,
+        market.outbox_event,
+        evidence.document,
+        evidence.evidence_bundle,
         audit.event_log
     CASCADE
     """
@@ -78,3 +84,17 @@ async def _clean_test_tables() -> AsyncIterator[None]:
     await _truncate_test_tables()
     yield
     await _truncate_test_tables()
+
+
+@pytest_asyncio.fixture
+async def redis_client() -> AsyncIterator[Redis]:
+    # Same event-loop lesson as db_session: a fresh client per test, not
+    # app.core.redis_client's cached singleton.
+    client = from_url(get_settings().redis_url, decode_responses=True)
+    yield client
+    # Scoped delete-by-pattern, not FLUSHDB — Redis is shared infra and
+    # nothing guarantees it stays idempotency-only forever (caching,
+    # sessions may land here later).
+    async for key in client.scan_iter("idempotency:*"):
+        await client.delete(key)
+    await client.aclose()
