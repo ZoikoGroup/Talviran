@@ -198,6 +198,48 @@
   }
 
   /* ------------------------------------------------------------------
+     Auth banner — the branded half of the sign-in split. CSS rather than
+     the WebGL orb: this renders before a user is even signed in, so it
+     shouldn't cost a GPU context or stall first paint.
+     ------------------------------------------------------------------ */
+  .auth-banner {
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(120% 90% at 78% 6%, rgba(167, 139, 250, 0.42), transparent 56%),
+      radial-gradient(110% 85% at 8% 98%, rgba(99, 102, 241, 0.4), transparent 58%),
+      linear-gradient(155deg, hsl(245 48% 19%), hsl(242 38% 9%) 64%);
+  }
+
+  /* The crescent, echoing the chat hero without the shader. */
+  .auth-banner::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -54%;
+    width: 136%;
+    aspect-ratio: 1;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(
+      circle at 50% 0%,
+      transparent 58%,
+      rgba(196, 181, 253, 0.55) 60%,
+      rgba(129, 140, 248, 0.22) 64%,
+      transparent 72%
+    );
+    filter: blur(6px);
+  }
+
+  .light .auth-banner {
+    background:
+      radial-gradient(120% 90% at 78% 8%, rgba(167, 139, 250, 0.4), transparent 58%),
+      radial-gradient(100% 80% at 12% 96%, rgba(99, 102, 241, 0.3), transparent 60%),
+      linear-gradient(155deg, hsl(245 62% 60%), hsl(262 52% 44%) 70%);
+  }
+
+  /* ------------------------------------------------------------------
      Brand lockup swap. The wordmark ships in two inks, so pick by theme
      in CSS rather than threading `theme` through the component tree —
      no prop drilling and no wrong-ink flash on first paint.

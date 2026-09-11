@@ -7,7 +7,7 @@ import Orb from '@/components/ui/orb'
 import { useReducedMotion } from '@/hooks/use-reduced-motion'
 import { cn } from '@/lib/utils'
 import { ArrowUpIcon } from 'lucide-react'
-import { currentUser } from '@/data/user'
+import { useCurrentUser } from '@/data/user'
 import AttachMenu, { AttachmentChips } from '@/components/AttachMenu'
 import ModelSwitcher from '@/components/ModelSwitcher'
 import type { ModelId } from '@/data/models'
@@ -88,6 +88,7 @@ export default function TalvrinMoonChat({
     maxHeight: 160,
   })
   const reducedMotion = useReducedMotion()
+  const currentUser = useCurrentUser()
   const isLight = theme === 'light'
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

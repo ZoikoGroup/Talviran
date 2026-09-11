@@ -15,6 +15,7 @@ dependencies = [
     "uuid-utils>=0.9",
     "redis>=5.1",
     "defusedxml>=0.7",
+    "argon2-cffi>=25.1.0",
 ]
 
 [dependency-groups]

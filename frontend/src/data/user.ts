@@ -1,15 +1,36 @@
 /**
- * The signed-in user, for the UI prototype.
+ * The signed-in user, as the UI displays them.
  *
- * Hardcoded until identity lands (the backend's identity module is in place,
- * but the frontend isn't wired to it yet). Kept in one place so the sidebar
- * footer and the hero greeting can't drift apart.
+ * Identity now comes from the local session rather than a hardcoded constant,
+ * so whoever signs in is who the sidebar and the greeting show. The plan is
+ * still fixed — there is no billing or entitlement endpoint yet (RIGHTS-001).
  */
 
-export const currentUser = {
-  name: 'Vignesh K.',
+import { useAuth } from '@/auth/AuthContext'
+
+export interface DisplayUser {
+  name: string
   /** Used for the greeting — a full name reads oddly after "Hello,". */
-  firstName: 'Vignesh',
-  initials: 'VK',
-  plan: 'FREE',
-} as const
+  firstName: string
+  initials: string
+  plan: string
+}
+
+const initialsFrom = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p.charAt(0).toUpperCase())
+    .join('') || 'T'
+
+export function useCurrentUser(): DisplayUser {
+  const { session } = useAuth()
+  const name = session?.name ?? 'Guest'
+  return {
+    name,
+    firstName: name.split(/\s+/)[0] || name,
+    initials: initialsFrom(name),
+    plan: 'FREE',
+  }
+}

@@ -7,6 +7,8 @@ import TalvrinMoonChat from '@/components/ui/talvrin-moon-chat'
 import { buildReply, type ChatMessage } from '@/data/mockReply'
 import { mockChats, mockProjects } from '@/data/mockWorkspace'
 import { DEFAULT_MODEL, type ModelId } from '@/data/models'
+import { useTheme } from '@/theme/ThemeContext'
+import brandIcon from '@/assets/brand/talvrin-icon.svg'
 
 interface ChatRecord extends Chat {
   messages: ChatMessage[]
@@ -99,20 +101,12 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('talvrin-sidebar') === 'collapsed'
   )
-  const [theme, setTheme] = useState<'dark' | 'light'>(
-    () => (localStorage.getItem('talvrin-theme') as 'dark' | 'light') || 'dark'
-  )
+  const { theme, setTheme } = useTheme()
   const [showSettings, setShowSettings] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const active = chats.find((c) => c.id === activeId) ?? chats[0]
   const isEmpty = active.messages.length === 0
-
-  // Theme drives the `.light` class that overrides the CSS variables.
-  useEffect(() => {
-    document.documentElement.classList.toggle('light', theme === 'light')
-    localStorage.setItem('talvrin-theme', theme)
-  }, [theme])
 
   // Persist the workspace so history and projects survive a reload.
   useEffect(() => {
@@ -187,6 +181,16 @@ export default function App() {
     return project.id
   }
 
+  /** Wipes the workspace and starts a single empty chat. */
+  const clearWorkspace = () => {
+    const fresh = newChat()
+    setChats([fresh])
+    setProjects([])
+    setActiveId(fresh.id)
+    setDraft('')
+    setAttachments([])
+  }
+
   /** Move a chat into a project, or back out to the flat history (`null`). */
   const moveChat = (chatId: string, projectId: string | null) =>
     setChats((prev) =>
@@ -257,6 +261,12 @@ export default function App() {
             onBack={() => setShowSettings(false)}
             theme={theme}
             onThemeChange={setTheme}
+            stats={{
+              chats: chats.filter((c) => c.messages.length > 0).length,
+              projects: projects.length,
+              messages: chats.reduce((n, c) => n + c.messages.length, 0),
+            }}
+            onClearWorkspace={clearWorkspace}
           />
         ) : isEmpty ? (
           <TalvrinMoonChat
@@ -283,9 +293,7 @@ export default function App() {
 
                 {thinking && (
                   <div className="mb-7 flex gap-3.5">
-                    <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 text-[11.5px] font-bold text-white">
-                      T
-                    </div>
+                    <img src={brandIcon} alt="" className="h-7 w-7 shrink-0 rounded-lg" />
                     <div className="pt-0.5">
                       <div className="mb-1.5 text-[13px] font-semibold">Talvrin</div>
                       <div className="flex gap-1.5 pt-1.5">

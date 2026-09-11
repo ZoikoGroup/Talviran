@@ -35,6 +35,8 @@ env/
 *.egg-info/
 
 # ---- Misc ----
+# Word/Excel lock files, created while a doc in docs/ is open.
+~$*
 # Brand kit ships extracted under frontend/Talvrin_Logo/; the archive is redundant.
 frontend/Talvrin_Logo.zip
 tmp/

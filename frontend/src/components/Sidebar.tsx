@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { currentUser } from '@/data/user'
+import { useCurrentUser } from '@/data/user'
 import PopoverMenu from '@/components/ui/popover-menu'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
 import wordmarkOnDark from '@/assets/brand/talvrin-wordmark-on-dark.svg'
@@ -100,6 +100,8 @@ export default function Sidebar({
   onExpand,
   onOpenSettings,
 }: SidebarProps) {
+  const currentUser = useCurrentUser()
+
   // A chat only enters the history once it has actually been asked something,
   // so an untouched "New chat" never litters the list.
   const started = chats.filter((c) => c.messages.length > 0)
