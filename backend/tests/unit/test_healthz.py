@@ -16,6 +16,11 @@ def test_request_id_is_echoed() -> None:
     assert response.headers["x-request-id"] == "test-123"
 
 
+def test_pack_registry_is_wired_into_app_state() -> None:
+    app = create_app()
+    assert app.state.pack_registry.get("uk-gilts") is not None
+
+
 def test_unknown_route_returns_canonical_envelope() -> None:
     client = TestClient(create_app())
     response = client.get("/does-not-exist")
