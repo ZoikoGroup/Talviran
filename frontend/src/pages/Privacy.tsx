@@ -1,5 +1,10 @@
 import { AlertTriangle } from 'lucide-react'
-import PageLayout, { Bullets, RuleTable, Section } from '@/components/layouts/PageLayout'
+import PageLayout, {
+  Bullets,
+  RuleTable,
+  Section,
+  type TocEntry,
+} from '@/components/layouts/PageLayout'
 
 /**
  * Privacy page.
@@ -15,11 +20,24 @@ import PageLayout, { Bullets, RuleTable, Section } from '@/components/layouts/Pa
  * notice at the top of the page says so plainly, and POL-001 requires
  * customer-facing copy to be a versioned, approved artefact in any case.
  */
+const TOC: TocEntry[] = [
+  { id: 'principles', label: 'Principles we build to' },
+  { id: 'by-default', label: 'Your research' },
+  { id: 'classification', label: 'Data classification' },
+  { id: 'retention', label: 'Retention and deletion' },
+  { id: 'residency', label: 'Where data lives' },
+  { id: 'protection', label: 'How it is protected' },
+  { id: 'vendors', label: 'Third parties' },
+  { id: 'incidents', label: 'If something goes wrong' },
+  { id: 'contact', label: 'Contact' },
+]
+
 export default function Privacy() {
   return (
     <PageLayout
       title="Privacy"
       meta="How Talvrin handles your data · Engineering commitments from SEC-001"
+      toc={TOC}
     >
       <div className="mb-9 flex gap-3 rounded-xl border border-delayed/40 bg-delayed/10 px-4 py-3.5">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-delayed" />

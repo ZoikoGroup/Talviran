@@ -1,15 +1,25 @@
 import { useId, useState } from 'react'
-import { Eye, EyeOff } from 'lucide-react'
+import { AlertCircle, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface FieldProps extends Omit<React.ComponentProps<'input'>, 'id'> {
   label: string
-  /** Shown in red under the input and wired up via aria-describedby. */
+  /** Shown under the input and wired up via aria-describedby. */
   error?: string | null
   hint?: string
+  /** Rendered at the right of the label row — e.g. a "Forgot password?" link. */
+  action?: React.ReactNode
 }
 
-export function Field({ label, error, hint, className, type, ...rest }: FieldProps) {
+export function Field({
+  label,
+  error,
+  hint,
+  action,
+  className,
+  type,
+  ...rest
+}: FieldProps) {
   const id = useId()
   const [reveal, setReveal] = useState(false)
   const isPassword = type === 'password'
@@ -17,9 +27,15 @@ export function Field({ label, error, hint, className, type, ...rest }: FieldPro
 
   return (
     <div>
-      <label htmlFor={id} className="mb-1.5 block text-[13px] font-medium">
-        {label}
-      </label>
+      {/* Label and its action share a row so the field below stays a clean
+          rectangle — a link floating under the input pushes the next field
+          out of rhythm. */}
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <label htmlFor={id} className="text-[13px] font-medium leading-none">
+          {label}
+        </label>
+        {action}
+      </div>
 
       <div className="relative">
         <input
@@ -28,11 +44,18 @@ export function Field({ label, error, hint, className, type, ...rest }: FieldPro
           aria-invalid={!!error}
           aria-describedby={describedBy}
           className={cn(
-            'w-full rounded-xl border bg-background/60 px-3.5 py-2.5 text-[14px]',
-            'outline-none transition-colors placeholder:text-muted-foreground/60',
-            'focus:border-ring/70 focus:ring-2 focus:ring-ring/20',
+            // 44px tall: the minimum comfortable pointer target, and it stops
+            // the form looking cramped next to the 26px heading.
+            'h-11 w-full rounded-xl border bg-background/50 px-3.5 text-[14px]',
+            'outline-none transition-[border-color,box-shadow,background-color] duration-150',
+            'placeholder:text-muted-foreground/50',
+            'hover:border-border/80',
+            'focus:bg-background/80',
+            error
+              ? 'border-destructive/60 focus:border-destructive focus:ring-[3px] focus:ring-destructive/15'
+              : 'border-border focus:border-ring/80 focus:ring-[3px] focus:ring-ring/15',
+            'disabled:cursor-not-allowed disabled:opacity-60',
             isPassword && 'pr-11',
-            error ? 'border-destructive/70' : 'border-border',
             className
           )}
           {...rest}
@@ -41,9 +64,10 @@ export function Field({ label, error, hint, className, type, ...rest }: FieldPro
         {isPassword && (
           <button
             type="button"
+            tabIndex={-1}
             onClick={() => setReveal((r) => !r)}
             aria-label={reveal ? 'Hide password' : 'Show password'}
-            className="absolute right-1.5 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="absolute right-1.5 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
           >
             {reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -51,11 +75,17 @@ export function Field({ label, error, hint, className, type, ...rest }: FieldPro
       </div>
 
       {error ? (
-        <p id={`${id}-error`} className="mt-1.5 text-[12px] text-destructive">
+        <p
+          id={`${id}-error`}
+          className="mt-2 flex items-start gap-1.5 text-[12px] leading-snug text-destructive"
+        >
+          {/* The icon carries the meaning for anyone who can't distinguish the
+              colour — red text alone is not an error indicator. */}
+          <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
           {error}
         </p>
       ) : hint ? (
-        <p id={`${id}-hint`} className="mt-1.5 text-[12px] text-muted-foreground">
+        <p id={`${id}-hint`} className="mt-2 text-[12px] leading-snug text-muted-foreground">
           {hint}
         </p>
       ) : null}
@@ -67,21 +97,32 @@ export function Field({ label, error, hint, className, type, ...rest }: FieldPro
 export function SubmitButton({
   children,
   busy,
+  className,
   ...rest
 }: React.ComponentProps<'button'> & { busy?: boolean }) {
   return (
     <button
       type="submit"
       disabled={busy || rest.disabled}
+      aria-busy={busy}
       {...rest}
       className={cn(
-        'w-full rounded-xl px-4 py-2.5 text-[14px] font-medium text-white transition-all',
+        'relative inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl',
+        'text-[14px] font-medium text-white transition-all duration-150',
         'bg-gradient-to-br from-indigo-500 to-purple-500',
-        'hover:brightness-110 active:scale-[0.99]',
-        'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:brightness-100'
+        'shadow-lg shadow-indigo-500/20',
+        'hover:shadow-xl hover:shadow-indigo-500/25 hover:brightness-110',
+        'active:scale-[0.99] active:shadow-md',
+        'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
+        'disabled:cursor-not-allowed disabled:opacity-70 disabled:shadow-none',
+        'disabled:hover:brightness-100 disabled:active:scale-100',
+        className
       )}
     >
-      {busy ? 'Please wait…' : children}
+      {/* The label stays put and a spinner joins it, rather than swapping in
+          "Please wait…" — the button keeps its width and its meaning. */}
+      {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+      {children}
     </button>
   )
 }

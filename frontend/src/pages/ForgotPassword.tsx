@@ -29,7 +29,7 @@ export default function ForgotPassword() {
         title="Check your email"
         subtitle="If an account exists for that address, a reset link is on its way."
         footer={
-          <Link to="/login" className="font-medium text-primary hover:underline">
+          <Link to="/login" className="font-medium text-primary underline-offset-4 hover:underline">
             Back to sign in
           </Link>
         }
@@ -60,12 +60,12 @@ export default function ForgotPassword() {
       title="Reset your password"
       subtitle="Enter your email and we'll send you a reset link."
       footer={
-        <Link to="/login" className="font-medium text-primary hover:underline">
+        <Link to="/login" className="font-medium text-primary underline-offset-4 hover:underline">
           Back to sign in
         </Link>
       }
     >
-      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+      <form onSubmit={submit} noValidate className="flex flex-col gap-5">
         <Field
           label="Email"
           type="email"
@@ -74,6 +74,7 @@ export default function ForgotPassword() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           error={error}
+          disabled={busy}
         />
         <SubmitButton busy={busy}>Send reset link</SubmitButton>
       </form>

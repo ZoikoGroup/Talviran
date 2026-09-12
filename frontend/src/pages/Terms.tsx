@@ -1,5 +1,10 @@
 import { AlertTriangle, Check, X } from 'lucide-react'
-import PageLayout, { Bullets, RuleTable, Section } from '@/components/layouts/PageLayout'
+import PageLayout, {
+  Bullets,
+  RuleTable,
+  Section,
+  type TocEntry,
+} from '@/components/layouts/PageLayout'
 
 /**
  * Terms page.
@@ -35,11 +40,24 @@ const PROHIBITED = [
   'Any execution, dealing or broker purchase path.',
 ] as const
 
+const TOC: TocEntry[] = [
+  { id: 'what', label: 'What Talvrin is' },
+  { id: 'allowed', label: 'What you can ask' },
+  { id: 'prohibited', label: 'What it will never do' },
+  { id: 'decisions', label: 'Your decisions' },
+  { id: 'data', label: 'Licensed data' },
+  { id: 'account', label: 'Your account' },
+  { id: 'availability', label: 'Availability' },
+  { id: 'jurisdiction', label: 'Where it is available' },
+  { id: 'changes', label: 'Changes to these terms' },
+]
+
 export default function Terms() {
   return (
     <PageLayout
       title="Terms and Conditions"
       meta="How you may use Talvrin · Product commitments from PRD-001, RIGHTS-001 and POL-001"
+      toc={TOC}
     >
       <div className="mb-9 flex gap-3 rounded-xl border border-delayed/40 bg-delayed/10 px-4 py-3.5">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-delayed" />

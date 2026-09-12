@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { KeyRound } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import AuthLayout from '@/components/layouts/AuthLayout'
 import { Field, SubmitButton } from '@/components/ui/field'
 import { useAuth } from '@/auth/AuthContext'
@@ -63,43 +63,22 @@ export default function Login() {
       footer={
         <>
           New to Talvrin?{' '}
-          <Link to="/signup" className="font-medium text-primary hover:underline">
+          <Link
+            to="/signup"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
             Create an account
           </Link>
         </>
       }
     >
-      <div className="mb-5 flex items-start gap-3 rounded-xl border border-border bg-card/70 px-3.5 py-3">
-        <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-        <div className="min-w-0 flex-1 text-[13px] leading-relaxed">
-          <p className="font-medium text-foreground">Demo access</p>
-          <p className="mt-0.5 text-muted-foreground">
-            Sign in with{' '}
-            <code className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[12px] text-foreground">
-              {DEMO_ID}
-            </code>{' '}
-            /{' '}
-            <code className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[12px] text-foreground">
-              {DEMO_PASSWORD}
-            </code>
-            .
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={fillDemo}
-          className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        >
-          Use
-        </button>
-      </div>
-
-      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+      <form onSubmit={submit} noValidate className="flex flex-col gap-5">
         {failed && (
           <p
             role="alert"
-            className="rounded-xl border border-destructive/40 bg-destructive/10 px-3.5 py-2.5 text-[13px] text-destructive"
+            className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3.5 py-3 text-[13px] leading-snug text-destructive"
           >
+            <AlertCircle className="mt-px h-4 w-4 shrink-0" />
             Incorrect username or password.
           </p>
         )}
@@ -112,29 +91,49 @@ export default function Login() {
           value={identifier}
           onChange={(e) => setIdentifier(e.target.value)}
           error={errors.identifier}
+          disabled={busy}
         />
 
-        <div>
-          <Field
-            label="Password"
-            type="password"
-            autoComplete="current-password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            error={errors.password}
-          />
-          <div className="mt-2 text-right">
+        <Field
+          label="Password"
+          type="password"
+          autoComplete="current-password"
+          placeholder="••••••••"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          error={errors.password}
+          disabled={busy}
+          action={
             <Link
               to="/forgot-password"
-              className="text-[12.5px] text-muted-foreground transition-colors hover:text-foreground"
+              className="rounded text-[12.5px] text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
             >
-              Forgot your password?
+              Forgot password?
             </Link>
-          </div>
-        </div>
+          }
+        />
 
         <SubmitButton busy={busy}>Sign in</SubmitButton>
+
+        {/* A helper, not the headline — so it sits below the action and stays
+            visually quiet rather than announcing "prototype" first. */}
+        <div className="flex items-center justify-center gap-2 text-[12px] text-muted-foreground">
+          <span>Demo access</span>
+          <code className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11.5px] text-foreground">
+            {DEMO_ID}
+          </code>
+          <span className="text-muted-foreground/50">/</span>
+          <code className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11.5px] text-foreground">
+            {DEMO_PASSWORD}
+          </code>
+          <button
+            type="button"
+            onClick={fillDemo}
+            className="rounded font-medium text-primary underline-offset-4 transition-colors hover:underline"
+          >
+            Use
+          </button>
+        </div>
       </form>
     </AuthLayout>
   )

@@ -53,13 +53,13 @@ export default function Signup() {
       footer={
         <>
           Already have an account?{' '}
-          <Link to="/login" className="font-medium text-primary hover:underline">
+          <Link to="/login" className="font-medium text-primary underline-offset-4 hover:underline">
             Sign in
           </Link>
         </>
       }
     >
-      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+      <form onSubmit={submit} noValidate className="flex flex-col gap-5">
         <Field
           label="Email"
           type="email"
@@ -68,6 +68,7 @@ export default function Signup() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           error={errors.email}
+          disabled={busy}
         />
 
         <Field
@@ -78,6 +79,7 @@ export default function Signup() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           error={errors.password}
+          disabled={busy}
           hint="At least 8 characters, including a number."
         />
 
@@ -89,6 +91,7 @@ export default function Signup() {
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           error={errors.confirm}
+          disabled={busy}
         />
 
         <div>
@@ -101,11 +104,11 @@ export default function Signup() {
             />
             <span>
               I agree to the{' '}
-              <Link to="/terms" className="text-primary hover:underline">
+              <Link to="/terms" className="text-primary underline-offset-4 hover:underline">
                 Terms and Conditions
               </Link>{' '}
               and{' '}
-              <Link to="/privacy" className="text-primary hover:underline">
+              <Link to="/privacy" className="text-primary underline-offset-4 hover:underline">
                 Privacy Policy
               </Link>
               .
