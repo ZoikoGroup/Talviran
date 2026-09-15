@@ -23,6 +23,18 @@ class Settings(BaseSettings):
     secret_key: str = "dev-only-change-me"
     cors_allow_origins: list[str] = ["http://localhost:5173"]
 
+    # Wraps the per-account data keys that encrypt research content
+    # (SEC-001 §15.1). Base64 of 32 bytes. The default is a fixed development
+    # value and is useless as a secret — `CookiePolicy.for_environment` style
+    # fail-closed behaviour lives in research.keys.build_key_wrapper, which
+    # refuses to start outside development unless this is overridden or a KMS
+    # key is configured instead.
+    content_master_key: str = "ZGV2LW9ubHktbWFzdGVyLWtleS0zMi1ieXRlcyEhISE="
+
+    # Set in production to wrap DEKs with Cloud KMS rather than a local key:
+    # "projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k>".
+    kms_key_name: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

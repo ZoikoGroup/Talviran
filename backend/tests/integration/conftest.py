@@ -36,6 +36,11 @@ def _requires_postgres() -> None:
 _TRUNCATE_TABLES = text(
     """
     TRUNCATE
+        research.conversation_share,
+        research.message,
+        research.conversation,
+        research.project,
+        research.account_data_key,
         identity.session,
         identity.principal,
         identity.account,
