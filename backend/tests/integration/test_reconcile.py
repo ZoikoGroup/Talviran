@@ -246,6 +246,93 @@ _INSERT_ACCEPTED_FACT = text(
 )
 
 
+async def test_non_overlapping_valid_ranges_coexist_as_separate_active_facts(
+    db_session: AsyncSession,
+) -> None:
+    """A genuine time series (e.g. a yield curve point) writes one fact per
+    real-world period, and none of them "corrects" another — day 2 must not
+    be treated as superseding day 1 just because both are ACTIVE. This is
+    what _get_current_accepted_fact's valid_range-overlap scoping exists for.
+    """
+    subject_id = uuid.uuid4()
+    day1 = Range(
+        lower=dt.datetime(2026, 9, 14, tzinfo=dt.UTC),
+        upper=dt.datetime(2026, 9, 15, tzinfo=dt.UTC),
+        bounds="[)",
+    )
+    day2 = Range(
+        lower=dt.datetime(2026, 9, 15, tzinfo=dt.UTC),
+        upper=dt.datetime(2026, 9, 16, tzinfo=dt.UTC),
+        bounds="[)",
+    )
+    now = dt.datetime.now(dt.UTC)
+
+    first = await reconcile_and_publish(
+        db_session, subject_type="YIELD_CURVE_POINT", subject_id=subject_id,
+        metric_id="TEST_METRIC",
+        candidates=[await _candidate(db_session, coupon_rate="4.10")],
+        policy=_POLICY, valid_range=day1, knowledge_time=now,
+    )
+    await db_session.commit()
+
+    second = await reconcile_and_publish(
+        db_session, subject_type="YIELD_CURVE_POINT", subject_id=subject_id,
+        metric_id="TEST_METRIC",
+        candidates=[await _candidate(db_session, coupon_rate="4.25")],
+        policy=_POLICY, valid_range=day2, knowledge_time=now,
+    )
+    await db_session.commit()
+
+    assert first.decision == "ACCEPTED"
+    assert second.decision == "ACCEPTED"
+    assert second.accepted_fact_id != first.accepted_fact_id
+
+    day1_fact = await db_session.get(AcceptedFact, first.accepted_fact_id)
+    day2_fact = await db_session.get(AcceptedFact, second.accepted_fact_id)
+    assert day1_fact is not None and day2_fact is not None
+    assert day1_fact.status == "ACTIVE", "day 1 must NOT be superseded by day 2's different value"
+    assert day2_fact.status == "ACTIVE"
+    assert day1_fact.value == {"coupon_rate": "4.10"}
+    assert day2_fact.value == {"coupon_rate": "4.25"}
+
+
+async def test_same_day_correction_still_supersedes(db_session: AsyncSession) -> None:
+    """The overlap-scoped lookup must still catch a genuine correction to
+    the SAME real-world period, not just skip straight to "always insert".
+    """
+    subject_id = uuid.uuid4()
+    day1 = Range(
+        lower=dt.datetime(2026, 9, 14, tzinfo=dt.UTC),
+        upper=dt.datetime(2026, 9, 15, tzinfo=dt.UTC),
+        bounds="[)",
+    )
+    t0 = dt.datetime.now(dt.UTC)
+    t1 = t0 + dt.timedelta(hours=1)
+
+    first = await reconcile_and_publish(
+        db_session, subject_type="YIELD_CURVE_POINT", subject_id=subject_id,
+        metric_id="TEST_METRIC",
+        candidates=[await _candidate(db_session, coupon_rate="4.10")],
+        policy=_POLICY, valid_range=day1, knowledge_time=t0,
+    )
+    await db_session.commit()
+
+    second = await reconcile_and_publish(
+        db_session, subject_type="YIELD_CURVE_POINT", subject_id=subject_id,
+        metric_id="TEST_METRIC",
+        candidates=[await _candidate(db_session, coupon_rate="4.11")],
+        policy=_POLICY, valid_range=day1, knowledge_time=t1,
+    )
+    await db_session.commit()
+
+    assert second.decision == "ACCEPTED"
+    old_fact = await db_session.get(AcceptedFact, first.accepted_fact_id)
+    new_fact = await db_session.get(AcceptedFact, second.accepted_fact_id)
+    assert old_fact is not None and new_fact is not None
+    assert old_fact.status == "SUPERSEDED"
+    assert new_fact.status == "ACTIVE"
+
+
 async def test_gist_exclusion_constraint_rejects_overlapping_ranges_at_db_level(
     db_session: AsyncSession,
 ) -> None:

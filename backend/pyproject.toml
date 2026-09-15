@@ -16,6 +16,7 @@ dependencies = [
     "redis>=5.1",
     "defusedxml>=0.7",
     "argon2-cffi>=25.1.0",
+    "openpyxl>=3.1",
 ]
 
 [dependency-groups]
@@ -24,6 +25,7 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.7",
     "mypy>=1.13",
+    "types-openpyxl>=3.1",
 ]
 
 [tool.ruff]

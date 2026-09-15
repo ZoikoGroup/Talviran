@@ -52,14 +52,28 @@ def _value_key(value: dict[str, Any]) -> str:
 
 
 async def _get_current_accepted_fact(
-    session: AsyncSession, subject_id: uuid.UUID, metric_id: str
+    session: AsyncSession,
+    subject_id: uuid.UUID,
+    metric_id: str,
+    valid_range: Range[dt.datetime],
 ) -> AcceptedFact | None:
+    """Scoped to the fact whose valid_range actually overlaps the candidate's
+    — not just "any ACTIVE fact for this subject/metric". For a metric with
+    one open-ended, occasionally-corrected value (e.g. gilt reference terms)
+    there's only ever one such row. But for a genuine time series (e.g. a
+    yield curve point, where each day's rate is permanently true for its own
+    day and never "corrects" another day's), multiple ACTIVE rows coexist
+    for the same subject/metric — the accepted_fact_no_overlap exclusion
+    constraint already guarantees at most one of them overlaps any given
+    valid_range, so scalar_one_or_none() is safe here.
+    """
     return (
         await session.execute(
             select(AcceptedFact).where(
                 AcceptedFact.subject_id == subject_id,
                 AcceptedFact.metric_id == metric_id,
                 AcceptedFact.status == "ACTIVE",
+                AcceptedFact.valid_range.op("&&")(valid_range),
             )
         )
     ).scalar_one_or_none()
@@ -129,7 +143,7 @@ async def reconcile_and_publish(
         observation_ids = [c.observation_id for c in only_group]
         conflict_reason = None
 
-    current = await _get_current_accepted_fact(session, subject_id, metric_id)
+    current = await _get_current_accepted_fact(session, subject_id, metric_id, valid_range)
 
     if current is not None and _value_key(current.value) == _value_key(candidate_value):
         reason = "candidate matches current accepted fact"

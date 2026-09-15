@@ -50,6 +50,8 @@ _TRUNCATE_TABLES = text(
         market.source,
         market.accepted_fact,
         market.outbox_event,
+        calculation.calculation_specification,
+        calculation.calculation_result,
         evidence.document,
         evidence.evidence_bundle,
         audit.event_log

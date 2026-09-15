@@ -12,6 +12,7 @@ from app.core.db import Base
 # Importing each module's models.py registers its tables on Base.metadata so
 # autogenerate sees them. Add a line here as each module gains a models.py.
 from app.modules.audit import models as audit_models  # noqa: F401
+from app.modules.calculation import models as calculation_models  # noqa: F401
 from app.modules.evidence import models as evidence_models  # noqa: F401
 from app.modules.identity import models as identity_models  # noqa: F401
 from app.modules.market import models as market_models  # noqa: F401
