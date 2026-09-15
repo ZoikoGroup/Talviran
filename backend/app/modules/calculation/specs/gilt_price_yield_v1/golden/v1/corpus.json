@@ -1,0 +1,31 @@
+{
+  "source": {
+    "document": "UK DMO - Price/yield and Accrued Interest Calculation Examples (yldconv.pdf, 8 June 1998)",
+    "url": "https://www.dmo.gov.uk/media/ftjpyv1z/yldconv.pdf",
+    "retrieved": "2026-09-15",
+    "note": "Real DMO-published worked examples for two conventional gilts (8% Treasury Loan 2015, 6.75% Treasury Stock 2004), both regular (non-first-period) settlements. Long/short first dividend period cases and index-linked cases exist in the same source document but are out of scope for gilt_price_yield_v1 v1 - see the spec's own docstring. accrued_interest_cases includes only 'Case (1)' from the document's accrued-interest worked-example box - Cases (2) and (3) on the same page use variables (r2, t*) matching the adjacent long-first-dividend-period example, not the standard formula, and were not independently reproducible with standard-period inputs, so they were left out rather than force-fit."
+  },
+  "price_from_yield_cases": [
+    {"id": "8pc2015-s1", "bond": "8% 2015", "y": "0.04445", "c": "8", "f": 2, "r": 14, "s": 182, "n": 33, "d1": "4", "d2": "4", "expected_dirty_price": "145.012268"},
+    {"id": "8pc2015-s2", "bond": "8% 2015", "y": "0.04445", "c": "8", "f": 2, "r": 12, "s": 182, "n": 33, "d1": "4", "d2": "4", "expected_dirty_price": "145.047301"},
+    {"id": "8pc2015-s3-exdiv", "bond": "8% 2015", "y": "0.04445", "c": "8", "f": 2, "r": 11, "s": 182, "n": 33, "d1": "0", "d2": "4", "expected_dirty_price": "141.070132"},
+    {"id": "8pc2015-s4-on-qcd", "bond": "8% 2015", "y": "0.04445", "c": "8", "f": 2, "r": 183, "s": 183, "n": 32, "d1": "4", "d2": "4", "expected_dirty_price": "141.257676"},
+    {"id": "6.75pc2004-s1", "bond": "6.75% 2004", "y": "0.04634", "c": "6.75", "f": 2, "r": 16, "s": 181, "n": 11, "d1": "3.375", "d2": "3.375", "expected_dirty_price": "113.315543"},
+    {"id": "6.75pc2004-s2", "bond": "6.75% 2004", "y": "0.04634", "c": "6.75", "f": 2, "r": 9, "s": 181, "n": 11, "d1": "3.375", "d2": "3.375", "expected_dirty_price": "113.415969"},
+    {"id": "6.75pc2004-s3-exdiv", "bond": "6.75% 2004", "y": "0.04634", "c": "6.75", "f": 2, "r": 8, "s": 181, "n": 11, "d1": "0", "d2": "3.375", "expected_dirty_price": "110.058738"},
+    {"id": "6.75pc2004-s4-on-qcd", "bond": "6.75% 2004", "y": "0.04634", "c": "6.75", "f": 2, "r": 184, "s": 184, "n": 10, "d1": "3.375", "d2": "3.375", "expected_dirty_price": "110.170218"}
+  ],
+  "accrued_interest_cases": [
+    {"id": "case1-standard-period", "next_cash_flow": "3", "days_since_previous_quasi_coupon": 22, "days_in_quasi_coupon_period": 182, "settled_on_or_before_ex_dividend": true, "expected_accrued_interest": "0.362637"}
+  ],
+  "yield_from_price_cases": [
+    {"id": "8pc2015-yield-s1", "bond": "8% 2015", "dirty_price": "135", "c": "8", "f": 2, "r": 14, "s": 182, "n": 33, "d1": "4", "d2": "4", "expected_yield": "0.051620635"},
+    {"id": "8pc2015-yield-s2", "bond": "8% 2015", "dirty_price": "135", "c": "8", "f": 2, "r": 12, "s": 182, "n": 33, "d1": "4", "d2": "4", "expected_yield": "0.051649111"},
+    {"id": "8pc2015-yield-s3-exdiv", "bond": "8% 2015", "dirty_price": "135", "c": "8", "f": 2, "r": 11, "s": 182, "n": 33, "d1": "0", "d2": "4", "expected_yield": "0.04871425"},
+    {"id": "8pc2015-yield-s4-on-qcd", "bond": "8% 2015", "dirty_price": "135", "c": "8", "f": 2, "r": 183, "s": 183, "n": 32, "d1": "4", "d2": "4", "expected_yield": "0.048856785"},
+    {"id": "6.75pc2004-yield-s1", "bond": "6.75% 2004", "dirty_price": "108", "c": "6.75", "f": 2, "r": 16, "s": 181, "n": 11, "d1": "3.375", "d2": "3.375", "expected_yield": "0.057009527"},
+    {"id": "6.75pc2004-yield-s2", "bond": "6.75% 2004", "dirty_price": "108", "c": "6.75", "f": 2, "r": 9, "s": 181, "n": 11, "d1": "3.375", "d2": "3.375", "expected_yield": "0.057253361"},
+    {"id": "6.75pc2004-yield-s3-exdiv", "bond": "6.75% 2004", "dirty_price": "108", "c": "6.75", "f": 2, "r": 8, "s": 181, "n": 11, "d1": "0", "d2": "3.375", "expected_yield": "0.050413308"},
+    {"id": "6.75pc2004-yield-s4-on-qcd", "bond": "6.75% 2004", "dirty_price": "108", "c": "6.75", "f": 2, "r": 184, "s": 184, "n": 10, "d1": "3.375", "d2": "3.375", "expected_yield": "0.050652248"}
+  ]
+}

@@ -40,6 +40,14 @@ GILT_REFERENCE_TERMS_POLICY = ReconciliationPolicy(
     conflict_action=CONFLICT_ACTION_FLAG,
 )
 
+UK_GILT_NOMINAL_SPOT_CURVE_POLICY = ReconciliationPolicy(
+    metric_id="UK_GILT_NOMINAL_SPOT_CURVE",
+    ordered_source_codes=("boe",),
+    tolerance=None,
+    conflict_action=CONFLICT_ACTION_FLAG,
+)
+
 DEFAULT_POLICIES: dict[str, ReconciliationPolicy] = {
     GILT_REFERENCE_TERMS_POLICY.metric_id: GILT_REFERENCE_TERMS_POLICY,
+    UK_GILT_NOMINAL_SPOT_CURVE_POLICY.metric_id: UK_GILT_NOMINAL_SPOT_CURVE_POLICY,
 }

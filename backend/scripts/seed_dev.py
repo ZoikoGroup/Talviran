@@ -32,6 +32,7 @@ _JURISDICTION = "GB"
 _CAPABILITIES = ["reference.issuers.read", "reference.instruments.read"]
 
 UK_DMO_GILTS_RIGHTS_PROFILE_CODE = "uk-dmo.gilts"
+BOE_YIELD_CURVE_RIGHTS_PROFILE_CODE = "boe.yield-curve"
 SEED_GILT_ISIN = "GB0032452392"
 
 
@@ -158,6 +159,9 @@ async def seed() -> None:
         await _seed_rights_profile(session, REFERENCE_RIGHTS_PROFILE_CODE, ["retrieve"])
         await _seed_rights_profile(
             session, UK_DMO_GILTS_RIGHTS_PROFILE_CODE, ["retrieve", "store"]
+        )
+        await _seed_rights_profile(
+            session, BOE_YIELD_CURVE_RIGHTS_PROFILE_CODE, ["retrieve", "store"]
         )
         await _seed_gilt_reference_data(session)
         await session.commit()
