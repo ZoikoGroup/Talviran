@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session_factory
+from app.modules.calculation.models import CalculationSpecification
 from app.modules.policy.models import ActivationRecord, CapabilityStatus
 from app.modules.reference.models import FiSovereignTerms, Instrument, InstrumentAlias, Issuer
 from app.modules.reference.service import REFERENCE_RIGHTS_PROFILE_CODE
@@ -151,6 +152,25 @@ async def _seed_gilt_reference_data(session: AsyncSession) -> None:
     print(f"  + fi_sovereign_terms for {instrument.name}")
 
 
+async def _seed_calculation_specification(
+    session: AsyncSession, *, code: str, version: str, description: str
+) -> None:
+    # DRAFT, not APPROVED: moving to APPROVED is FIN-001's dual-implementation
+    # + golden-test governance sign-off, never something seed/app code decides.
+    existing = (
+        await session.execute(
+            select(CalculationSpecification).where(CalculationSpecification.code == code)
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        session.add(
+            CalculationSpecification(
+                code=code, version=version, status="DRAFT", description=description
+            )
+        )
+        print(f"  + calculation_specification {code} v{version} -> DRAFT")
+
+
 async def seed() -> None:
     factory = get_session_factory()
     async with factory() as session:
@@ -164,6 +184,21 @@ async def seed() -> None:
             session, BOE_YIELD_CURVE_RIGHTS_PROFILE_CODE, ["retrieve", "store"]
         )
         await _seed_gilt_reference_data(session)
+        await _seed_calculation_specification(
+            session,
+            code="gilt_price_yield_v1",
+            version="1",
+            description="UK DMO conventional-gilt price/yield formula (Section One).",
+        )
+        await _seed_calculation_specification(
+            session,
+            code="gilt_price_from_curve_v1",
+            version="1",
+            description=(
+                "Model-implied gilt price from the BoE nominal spot curve — "
+                "MODEL_IMPLIED basis, never a market quote."
+            ),
+        )
         await session.commit()
     print("Seed complete.")
 
