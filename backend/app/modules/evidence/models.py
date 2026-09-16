@@ -77,6 +77,12 @@ class EvidenceBundle(UUIDPrimaryKeyMixin, Base):
     purpose_type: Mapped[str] = mapped_column(String(64))
     knowledge_time: Mapped[dt.datetime]
     status: Mapped[str] = mapped_column(String(32), default="ASSEMBLING")
+    # Not an FK: research.message is owned/migrated by the research module
+    # (raw SQL, encrypted content) - see migration 0012's docstring for why
+    # evidence.* doesn't take a cross-schema FK dependency on it.
+    research_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), index=True, default=None
+    )
 
 
 class EvidenceMember(UUIDPrimaryKeyMixin, Base):

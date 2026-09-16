@@ -30,7 +30,7 @@ from app.modules.reference.service import REFERENCE_RIGHTS_PROFILE_CODE
 from app.modules.rights.models import RightsGrant, RightsProfile
 
 _JURISDICTION = "GB"
-_CAPABILITIES = ["reference.issuers.read", "reference.instruments.read"]
+_CAPABILITIES = ["reference.issuers.read", "reference.instruments.read", "research.answer"]
 
 UK_DMO_GILTS_RIGHTS_PROFILE_CODE = "uk-dmo.gilts"
 BOE_YIELD_CURVE_RIGHTS_PROFILE_CODE = "boe.yield-curve"
@@ -178,10 +178,10 @@ async def seed() -> None:
         await _seed_activation_record(session)
         await _seed_rights_profile(session, REFERENCE_RIGHTS_PROFILE_CODE, ["retrieve"])
         await _seed_rights_profile(
-            session, UK_DMO_GILTS_RIGHTS_PROFILE_CODE, ["retrieve", "store"]
+            session, UK_DMO_GILTS_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
         )
         await _seed_rights_profile(
-            session, BOE_YIELD_CURVE_RIGHTS_PROFILE_CODE, ["retrieve", "store"]
+            session, BOE_YIELD_CURVE_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
         )
         await _seed_gilt_reference_data(session)
         await _seed_calculation_specification(

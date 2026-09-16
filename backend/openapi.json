@@ -1,6 +1,41 @@
 {
   "components": {
     "schemas": {
+      "CitationOut": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "pill": {
+            "title": "Pill",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "meta",
+          "pill",
+          "kind"
+        ],
+        "title": "CitationOut",
+        "type": "object"
+      },
       "ConversationDetailOut": {
         "properties": {
           "created_at": {
@@ -205,6 +240,37 @@
           "password"
         ],
         "title": "Credentials",
+        "type": "object"
+      },
+      "FactTableOut": {
+        "properties": {
+          "rows": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "rows"
+        ],
+        "title": "FactTableOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -474,6 +540,106 @@
           "created_at"
         ],
         "title": "ProjectOut",
+        "type": "object"
+      },
+      "ResearchIn": {
+        "properties": {
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "query": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "query"
+        ],
+        "title": "ResearchIn",
+        "type": "object"
+      },
+      "ResearchOut": {
+        "properties": {
+          "allowed_output_type": {
+            "title": "Allowed Output Type",
+            "type": "string"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/CitationOut"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "evidence_bundle_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Bundle Id"
+          },
+          "facts": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FactTableOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "message_id": {
+            "format": "uuid",
+            "title": "Message Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "generated_at",
+          "evidence_bundle_id",
+          "allowed_output_type",
+          "message_id",
+          "text",
+          "facts",
+          "citations",
+          "note"
+        ],
+        "title": "ResearchOut",
         "type": "object"
       },
       "ShareIn": {
@@ -1374,6 +1540,58 @@
           }
         },
         "summary": "Rename Project",
+        "tags": [
+          "research"
+        ]
+      }
+    },
+    "/api/v1/research": {
+      "post": {
+        "operationId": "create_research_answer_api_v1_research_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Research Answer",
         "tags": [
           "research"
         ]
