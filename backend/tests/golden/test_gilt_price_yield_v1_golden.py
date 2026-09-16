@@ -5,6 +5,7 @@ here means the implementation has diverged from the DMO's own formula, not
 just "a test changed" — this corpus is versioned and never edited in place.
 """
 
+import hashlib
 import json
 from decimal import Decimal
 from pathlib import Path
@@ -34,8 +35,28 @@ CORPUS_PATH = (
 )
 CORPUS = json.loads(CORPUS_PATH.read_text())
 
+# Recorded the moment this v1 corpus was finalized from yldconv.pdf. This
+# corpus is versioned and never edited in place (see the module docstring
+# and the plan's own Week 12 requirement) - a change to corpus.json's bytes
+# without a deliberate version bump (a new golden/v2/ directory, a new hash
+# recorded here, and a written reason for the change) is exactly the
+# silent-drift scenario this test exists to catch. If you legitimately
+# need to change v1's corpus, don't just update this constant - that
+# defeats the point; add a v2 corpus instead.
+_CORPUS_V1_SHA256 = "3fe7b07f75482814d6e8779d51e64a6da9079a505698dfdaa093bc5015b32fe9"
+
 _PRICE_TOLERANCE = Decimal("1E-6")
 _YIELD_TOLERANCE = Decimal("1E-8")
+
+
+def test_corpus_v1_bytes_have_not_silently_changed() -> None:
+    actual = hashlib.sha256(CORPUS_PATH.read_bytes()).hexdigest()
+    assert actual == _CORPUS_V1_SHA256, (
+        "golden/v1/corpus.json has changed since it was finalized from DMO's "
+        "yldconv.pdf. If this is a deliberate correction, don't just update "
+        "this hash - add a golden/v2/ corpus instead, so v1's history is "
+        "never silently rewritten."
+    )
 
 
 def _inputs_from_case(case: dict[str, object]) -> ConventionalGiltInputs:

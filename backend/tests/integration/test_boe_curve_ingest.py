@@ -107,7 +107,7 @@ async def test_real_fixture_flows_through_to_an_accepted_fact(db_session: AsyncS
     assert fact.status == "ACTIVE"
     assert fact.subject_type == "YIELD_CURVE_POINT"
     assert fact.subject_id == curve_point_subject_id(Decimal("10"))
-    assert fact.value == {"spot_rate_pct": "5.206769"}
+    assert fact.value == {"tenor_years": "10", "spot_rate_pct": "5.206769"}
 
 
 async def test_two_different_days_coexist_without_superseding(db_session: AsyncSession) -> None:

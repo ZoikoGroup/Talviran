@@ -20,10 +20,15 @@ import { AuthProvider, useAuth } from '@/auth/AuthContext'
 import { ThemeProvider } from '@/theme/ThemeContext'
 import '@/index.css'
 
-/** Sends signed-out visitors to sign in, remembering where they were going. */
+/** Sends signed-out visitors to sign in, remembering where they were going.
+ * Renders nothing while the initial session check is in flight - deciding
+ * before it settles would bounce a signed-in visitor through /login on
+ * every reload, since there is no synchronous way to know a cookie is
+ * still valid. */
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { session } = useAuth()
+  const { session, loading } = useAuth()
   const location = useLocation()
+  if (loading) return null
   if (!session) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
   }
@@ -32,7 +37,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 /** Signed-in users have no business on the auth screens. */
 function RedirectIfSignedIn({ children }: { children: React.ReactNode }) {
-  const { session } = useAuth()
+  const { session, loading } = useAuth()
+  if (loading) return null
   return session ? <Navigate to="/" replace /> : <>{children}</>
 }
 

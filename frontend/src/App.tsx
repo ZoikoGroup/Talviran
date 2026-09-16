@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { PanelLeft } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import Sidebar, { type Chat, type Project } from '@/components/Sidebar'
 import Message from '@/components/Message'
 import Composer from '@/components/Composer'
@@ -9,12 +10,33 @@ import { buildReply, type ChatMessage } from '@/data/mockReply'
 import { mockChats, mockProjects } from '@/data/mockWorkspace'
 import { DEFAULT_MODEL, type ModelId } from '@/data/models'
 import { useTheme } from '@/theme/ThemeContext'
+import { ApiError, createChat, postResearch } from '@/lib/api'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
 import wordmarkOnDark from '@/assets/brand/talvrin-wordmark-on-dark.svg'
 import wordmarkOnLight from '@/assets/brand/talvrin-wordmark-on-light.svg'
 
 interface ChatRecord extends Chat {
   messages: ChatMessage[]
+  /** The real server-side conversation this local chat is backed by, once
+   * it exists. Created lazily on the first message sent in a given chat -
+   * a brand-new chat the user never types in never needs a backend row. */
+  backendId?: string
+}
+
+// Set VITE_USE_MOCK=true for an offline dev fallback; never true in a
+// production build even if the flag leaks into one (import.meta.env.PROD
+// is baked in at build time, not runtime-configurable).
+const USE_MOCK = !import.meta.env.PROD && import.meta.env.VITE_USE_MOCK === 'true'
+
+function errorMessageFor(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.code === 'RATE_LIMITED') {
+      return 'Too many requests right now. Please wait a moment and try again.'
+    }
+    if (err.code === 'POLICY_BLOCKED') return 'This response is not currently permitted.'
+    return err.message
+  }
+  return "Talvrin couldn't reach the backend. Please check your connection and try again."
 }
 
 const uid = () =>
@@ -89,6 +111,7 @@ const loadWorkspace = (): Stored => {
 }
 
 export default function App() {
+  const navigate = useNavigate()
   const [stored] = useState(loadWorkspace)
   const [chats, setChats] = useState<ChatRecord[]>(stored.chats)
   const [projects, setProjects] = useState<Project[]>(stored.projects)
@@ -143,9 +166,18 @@ export default function App() {
   const patchActive = (fn: (c: ChatRecord) => ChatRecord) =>
     setChats((prev) => prev.map((c) => (c.id === activeId ? fn(c) : c)))
 
+  const appendAssistantMessage = (chatId: string, message: ChatMessage) =>
+    setChats((prev) =>
+      prev.map((c) => (c.id === chatId ? { ...c, messages: [...c.messages, message] } : c))
+    )
+
   const send = (text?: string) => {
     const content = (text ?? draft).trim()
     if (!content || thinking) return
+
+    const chatId = activeId
+    const before = chats.find((c) => c.id === chatId)
+    const isFirstMessage = !before || before.messages.length === 0
 
     setDraft('')
     setAttachments([])
@@ -158,17 +190,53 @@ export default function App() {
       messages: [...c.messages, { role: 'user', text: content }],
     }))
 
-    // Placeholder latency so the typing indicator is visible.
-    setTimeout(() => {
-      patchActive((c) => ({
-        ...c,
-        messages: [
-          ...c.messages,
-          { role: 'assistant', model, ...buildReply(content) },
-        ],
-      }))
-      setThinking(false)
-    }, 750)
+    if (USE_MOCK) {
+      // Placeholder latency so the typing indicator is visible.
+      setTimeout(() => {
+        appendAssistantMessage(chatId, { role: 'assistant', model, ...buildReply(content) })
+        setThinking(false)
+      }, 750)
+      return
+    }
+
+    void (async () => {
+      try {
+        let backendId = before?.backendId
+        if (!backendId) {
+          const created = await createChat(
+            model,
+            isFirstMessage ? content.slice(0, 40) : before?.title
+          )
+          backendId = created.id
+          setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, backendId } : c)))
+        }
+
+        const answer = await postResearch(backendId, content)
+        appendAssistantMessage(chatId, {
+          role: 'assistant',
+          model,
+          text: answer.text,
+          facts: answer.facts,
+          citations: answer.citations,
+          note: answer.note,
+        })
+      } catch (err) {
+        if (err instanceof ApiError && err.code === 'UNAUTHENTICATED') {
+          navigate('/login', { replace: true })
+          return
+        }
+        appendAssistantMessage(chatId, {
+          role: 'assistant',
+          model,
+          text: errorMessageFor(err),
+          facts: null,
+          citations: [],
+          note: null,
+        })
+      } finally {
+        setThinking(false)
+      }
+    })()
   }
 
   const startChat = (projectId: string | null = null) => {

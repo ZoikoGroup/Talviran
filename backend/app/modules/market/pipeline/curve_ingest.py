@@ -60,7 +60,13 @@ class CurveIngestResult:
 
 
 def curve_point_value(candidate: CurvePointCandidate) -> dict[str, str]:
-    return {"spot_rate_pct": str(candidate.spot_rate_pct)}
+    # tenor_years is redundant with subject_id (which is a one-way uuid5
+    # hash of it) but a fact must be self-describing to a reader — nothing
+    # should have to reverse-engineer a hash to know what a fact even means.
+    return {
+        "tenor_years": str(candidate.tenor_years),
+        "spot_rate_pct": str(candidate.spot_rate_pct),
+    }
 
 
 def curve_semantic_observation_key(
