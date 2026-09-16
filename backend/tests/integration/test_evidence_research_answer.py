@@ -306,3 +306,19 @@ async def test_yield_curve_query_with_no_curve_data_falls_back(db_session: Async
 
     assert answer.facts is None
     assert answer.evidence_bundle_id is None
+
+
+async def test_help_query_lists_real_current_topics(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="which topics do u answer",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
+    assert "gilt reference terms" in answer.text.lower()
+    assert "spot curve" in answer.text.lower()
+    assert "accrued" in answer.text.lower()
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None

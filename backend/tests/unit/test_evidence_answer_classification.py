@@ -6,6 +6,7 @@ prove the port is faithful, not that the patterns themselves are novel.
 
 from app.modules.evidence.service import (
     _is_advice,
+    _is_help_request,
     _mentions_accrued,
     _mentions_gilt,
     _mentions_yield_curve,
@@ -82,3 +83,23 @@ def test_yield_curve_also_mentioning_gilt_is_still_yield_curve() -> None:
     query = "what's the yield curve for gilts?"
     assert _mentions_yield_curve(query)
     assert _mentions_gilt(query)
+
+
+def test_help_requests_detected() -> None:
+    assert _is_help_request("which topics do u answer")
+    assert _is_help_request("what topics do you cover")
+    assert _is_help_request("what can you do")
+    assert _is_help_request("what can you help with")
+    assert _is_help_request("what do you know")
+    assert _is_help_request("what are your capabilities")
+    assert not _is_help_request("tell me about the 2036 gilt")
+    assert not _is_help_request("what's the yield curve")
+
+
+def test_help_request_does_not_swallow_a_genuine_data_question() -> None:
+    # a bare "help" must not be the trigger, or a real accrued-interest
+    # question phrased with "help" would wrongly show the topics list
+    # instead of the actual explanation.
+    query = "can you help me understand accrued interest"
+    assert not _is_help_request(query)
+    assert _mentions_accrued(query)

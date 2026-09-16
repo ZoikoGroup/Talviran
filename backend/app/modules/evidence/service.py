@@ -16,6 +16,13 @@ gilt-facts branch's model-implied price — a user asking specifically about
 "the yield curve" deserves the actual curve, not just the one derived
 number it feeds into elsewhere.
 
+A sixth branch (help) answers meta-questions about what the platform
+covers ("what topics do you answer") with an honest, current capability
+list, rather than the generic "no reconciled data" default — that default
+reads as evasive for a question about the platform itself, not about a
+missing fact. Checked right after advice, since a genuine capability
+question is a different kind of thing from a request for financial data.
+
 Single-instrument, single-jurisdiction P1 scope, matching every other
 module built so far: `_DEV_JURISDICTION` is hardcoded (real auth exists now,
 but per-account jurisdiction resolution is still P2 - see
@@ -69,10 +76,23 @@ _ACCRUED_PATTERN = re.compile(
 _YIELD_CURVE_PATTERN = re.compile(
     r"yield curve|spot curve|interest rates?\b|bank of england|\bboe\b", re.I
 )
+# Deliberately specific phrasings only (not a bare "help") - a genuine data
+# question like "can you help me understand accrued interest" must still
+# reach the accrued-interest branch, not this one ("help me [do something]"
+# doesn't match; only the generic, topic-less "help with" / "what can/do
+# you ..." phrasings do).
+_HELP_PATTERN = re.compile(
+    r"which topics|what topics|what (can|do) (you|u) (do|answer|cover|know)|"
+    r"help with\b|what (are|is) your capabilit", re.I,
+)
 
 
 def _is_advice(text: str) -> bool:
     return any(p.search(text) for p in _ADVICE_PATTERNS)
+
+
+def _is_help_request(text: str) -> bool:
+    return bool(_HELP_PATTERN.search(text))
 
 
 def _mentions_gilt(text: str) -> bool:
@@ -130,6 +150,28 @@ def _advice_reply() -> ResearchAnswer:
             "Redirected by the recommendation-safe perimeter. No response type for "
             "buy/sell/hold exists in the platform (PRD-001 SS11, POL-001)."
         ),
+        allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
+        evidence_bundle_id=None,
+    )
+
+
+def _help_reply() -> ResearchAnswer:
+    return ResearchAnswer(
+        text=(
+            "Right now I can answer from real, reconciled data on:\n\n"
+            "- UK gilt reference terms — currently the 4¼% Treasury Stock 2036 "
+            "(coupon, maturity, day count and other accepted facts)\n"
+            "- The Bank of England's UK nominal gilt spot curve — their published "
+            "interest-rate curve, updated daily\n"
+            "- Accrued interest, clean vs dirty price, and ex-dividend methodology — "
+            "general explanations, not tied to live data\n\n"
+            "I never give investment recommendations, price targets, or buy/sell/hold "
+            "guidance — that's a structural limit of the platform, not a missing "
+            "feature."
+        ),
+        facts=None,
+        citations=[],
+        note=None,
         allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
         evidence_bundle_id=None,
     )
@@ -461,6 +503,8 @@ async def assemble_research_answer(
 ) -> ResearchAnswer:
     if _is_advice(query_text):
         answer = _advice_reply()
+    elif _is_help_request(query_text):
+        answer = _help_reply()
     elif _mentions_accrued(query_text):
         answer = _accrued_reply()
     elif _mentions_yield_curve(query_text):
