@@ -101,8 +101,7 @@ export default function Composer({
         Source-linked facts and reproducible calculations.{' '}
         <span className="font-medium text-muted-foreground">
           Talvrin does not give investment advice.
-        </span>{' '}
-        Prototype — no backend connected.
+        </span>
       </p>
     </div>
   )

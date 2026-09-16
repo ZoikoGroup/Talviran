@@ -1,37 +1,91 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import * as api from '@/lib/api'
 import {
-  getSession,
-  renameSession,
-  signIn as storeSignIn,
-  signOut as storeSignOut,
-  type Session,
+  clearDisplayNameOverride,
+  getDisplayNameOverride,
+  nameFromEmail,
+  setDisplayNameOverride,
 } from '@/auth/session'
+
+export interface Session {
+  email: string
+  name: string
+}
 
 interface AuthValue {
   session: Session | null
-  signIn: (email: string) => void
-  signOut: () => void
+  /** True until the initial "is there already a valid session cookie" check
+   * resolves — the router must not decide to redirect before this settles,
+   * or a signed-in visitor briefly bounces through /login on every reload. */
+  loading: boolean
+  signIn: (email: string, password: string) => Promise<void>
+  signUp: (email: string, password: string) => Promise<void>
+  signOut: () => Promise<void>
   rename: (name: string) => void
 }
 
 const AuthContext = createContext<AuthValue | null>(null)
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(getSession)
+const toSession = (principal: { email: string }): Session => ({
+  email: principal.email,
+  name: getDisplayNameOverride() ?? nameFromEmail(principal.email),
+})
 
-  const signIn = useCallback((email: string) => setSession(storeSignIn(email)), [])
-  const signOut = useCallback(() => {
-    storeSignOut()
-    setSession(null)
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .me()
+      .then((principal) => {
+        if (!cancelled) setSession(toSession(principal))
+      })
+      .catch(() => {
+        if (!cancelled) setSession(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    const principal = await api.login(email, password)
+    setSession(toSession(principal))
+  }, [])
+
+  const signUp = useCallback(async (email: string, password: string) => {
+    const principal = await api.signup(email, password)
+    setSession(toSession(principal))
+  }, [])
+
+  const signOut = useCallback(async () => {
+    try {
+      await api.logout()
+    } finally {
+      // Cleared even if the network call fails - a caller choosing to sign
+      // out must end up signed out locally regardless.
+      clearDisplayNameOverride()
+      setSession(null)
+    }
+  }, [])
+
+  /** Display only - there is no backend profile/display-name endpoint yet
+   * (see session.ts's module docstring). */
   const rename = useCallback((name: string) => {
-    const next = renameSession(name)
-    if (next) setSession(next)
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setDisplayNameOverride(trimmed)
+    setSession((prev) => (prev ? { ...prev, name: trimmed } : prev))
   }, [])
 
   const value = useMemo(
-    () => ({ session, signIn, signOut, rename }),
-    [session, signIn, signOut, rename]
+    () => ({ session, loading, signIn, signUp, signOut, rename }),
+    [session, loading, signIn, signUp, signOut, rename]
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
