@@ -63,7 +63,9 @@ _ADVICE_PATTERNS = [
     re.compile(r"worth (buying|investing)", re.I),
 ]
 _GILT_PATTERN = re.compile(r"\bgilt|treasury gilt|2036\b", re.I)
-_ACCRUED_PATTERN = re.compile(r"accrued|day count|convention|clean|dirty|act/act", re.I)
+_ACCRUED_PATTERN = re.compile(
+    r"accrued|day count|convention|clean|dirty|act/act|ex[- ]?dividend", re.I
+)
 _YIELD_CURVE_PATTERN = re.compile(
     r"yield curve|spot curve|interest rates?\b|bank of england|\bboe\b", re.I
 )

@@ -51,6 +51,16 @@ def test_accrued_mentions_detected() -> None:
     assert not _mentions_accrued("what's the weather like")
 
 
+def test_ex_dividend_mentions_are_treated_as_accrued() -> None:
+    # Found missing during live testing: the accrued-interest explanation's
+    # own text covers ex-dividend periods, but the query pattern didn't
+    # recognize the term itself - a real classification miss, not a "no
+    # data" case.
+    assert _mentions_accrued("how does the ex-dividend period work")
+    assert _mentions_accrued("what is the ex dividend date")
+    assert _mentions_accrued("explain ex-dividend")
+
+
 def test_advice_takes_priority_even_if_it_also_mentions_gilt() -> None:
     query = "should I buy this gilt?"
     assert _is_advice(query)
