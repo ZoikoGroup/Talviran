@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { AlertCircle } from 'lucide-react'
 import AuthLayout from '@/components/layouts/AuthLayout'
 import { Field, SubmitButton } from '@/components/ui/field'
 import { useAuth } from '@/auth/AuthContext'
 import { isEmail, passwordProblem } from '@/auth/session'
+import { ApiError } from '@/lib/api'
 
 export default function Signup() {
-  const { signIn } = useAuth()
+  const { signUp } = useAuth()
   const navigate = useNavigate()
 
   const [email, setEmail] = useState('')
@@ -19,10 +21,13 @@ export default function Signup() {
     confirm?: string
     accepted?: string
   }>({})
+  const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
+    setFormError(null)
+
     const next: typeof errors = {}
     if (!email.trim()) next.email = 'Enter your email address.'
     else if (!isEmail(email)) next.email = 'That does not look like an email address.'
@@ -40,10 +45,18 @@ export default function Signup() {
     if (Object.keys(next).length > 0) return
 
     setBusy(true)
-    setTimeout(() => {
-      signIn(email)
-      navigate('/', { replace: true })
-    }, 450)
+    signUp(email, password)
+      .then(() => navigate('/', { replace: true }))
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.code === 'CONFLICT') {
+          setFormError('An account already exists for that email address.')
+        } else if (err instanceof ApiError && err.code === 'VALIDATION_ERROR') {
+          setErrors((prev) => ({ ...prev, password: err.message }))
+        } else {
+          setFormError('Something went wrong. Please try again.')
+        }
+      })
+      .finally(() => setBusy(false))
   }
 
   return (
@@ -60,6 +73,16 @@ export default function Signup() {
       }
     >
       <form onSubmit={submit} noValidate className="flex flex-col gap-5">
+        {formError && (
+          <p
+            role="alert"
+            className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3.5 py-3 text-[13px] leading-snug text-destructive"
+          >
+            <AlertCircle className="mt-px h-4 w-4 shrink-0" />
+            {formError}
+          </p>
+        )}
+
         <Field
           label="Email"
           type="email"
@@ -120,11 +143,6 @@ export default function Signup() {
         </div>
 
         <SubmitButton busy={busy}>Create account</SubmitButton>
-
-        <p className="text-[12px] leading-relaxed text-muted-foreground">
-          The prototype does not persist accounts — this signs you straight in.
-          To sign in again later, use the demo credentials on the sign-in page.
-        </p>
       </form>
     </AuthLayout>
   )

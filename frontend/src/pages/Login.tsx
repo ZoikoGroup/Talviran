@@ -4,12 +4,8 @@ import { AlertCircle } from 'lucide-react'
 import AuthLayout from '@/components/layouts/AuthLayout'
 import { Field, SubmitButton } from '@/components/ui/field'
 import { useAuth } from '@/auth/AuthContext'
-import {
-  DEMO_ID,
-  DEMO_PASSWORD,
-  credentialsMatch,
-  isValidIdentifier,
-} from '@/auth/session'
+import { isEmail } from '@/auth/session'
+import { ApiError } from '@/lib/api'
 
 export default function Login() {
   const { signIn } = useAuth()
@@ -18,42 +14,36 @@ export default function Login() {
   // Where the user was headed before being bounced to sign in.
   const from = (location.state as { from?: string } | null)?.from ?? '/'
 
-  const [identifier, setIdentifier] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [errors, setErrors] = useState<{ identifier?: string; password?: string }>({})
-  const [failed, setFailed] = useState(false)
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({})
+  const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-
-  const fillDemo = () => {
-    setIdentifier(DEMO_ID)
-    setPassword(DEMO_PASSWORD)
-    setErrors({})
-    setFailed(false)
-  }
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
-    setFailed(false)
+    setFormError(null)
 
     const next: typeof errors = {}
-    if (!identifier.trim()) next.identifier = 'Enter your username or email.'
-    else if (!isValidIdentifier(identifier))
-      next.identifier = 'That does not look like a username or email address.'
+    if (!email.trim()) next.email = 'Enter your email address.'
+    else if (!isEmail(email)) next.email = 'That does not look like an email address.'
     if (!password) next.password = 'Enter your password.'
     setErrors(next)
     if (Object.keys(next).length > 0) return
 
     setBusy(true)
-    // Stands in for the round trip the real endpoint will make.
-    setTimeout(() => {
-      if (!credentialsMatch(identifier, password)) {
-        setBusy(false)
-        setFailed(true)
-        return
-      }
-      signIn(identifier)
-      navigate(from, { replace: true })
-    }, 450)
+    signIn(email, password)
+      .then(() => navigate(from, { replace: true }))
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.code === 'RATE_LIMITED') {
+          setFormError('Too many attempts. Please wait a moment and try again.')
+        } else if (err instanceof ApiError && err.code === 'UNAUTHENTICATED') {
+          setFormError('Incorrect email or password.')
+        } else {
+          setFormError('Something went wrong. Please try again.')
+        }
+      })
+      .finally(() => setBusy(false))
   }
 
   return (
@@ -73,24 +63,24 @@ export default function Login() {
       }
     >
       <form onSubmit={submit} noValidate className="flex flex-col gap-5">
-        {failed && (
+        {formError && (
           <p
             role="alert"
             className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3.5 py-3 text-[13px] leading-snug text-destructive"
           >
             <AlertCircle className="mt-px h-4 w-4 shrink-0" />
-            Incorrect username or password.
+            {formError}
           </p>
         )}
 
         <Field
-          label="Username or email"
-          type="text"
+          label="Email"
+          type="email"
           autoComplete="username"
-          placeholder={DEMO_ID}
-          value={identifier}
-          onChange={(e) => setIdentifier(e.target.value)}
-          error={errors.identifier}
+          placeholder="you@company.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          error={errors.email}
           disabled={busy}
         />
 
@@ -114,26 +104,6 @@ export default function Login() {
         />
 
         <SubmitButton busy={busy}>Sign in</SubmitButton>
-
-        {/* A helper, not the headline — so it sits below the action and stays
-            visually quiet rather than announcing "prototype" first. */}
-        <div className="flex items-center justify-center gap-2 text-[12px] text-muted-foreground">
-          <span>Demo access</span>
-          <code className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11.5px] text-foreground">
-            {DEMO_ID}
-          </code>
-          <span className="text-muted-foreground/50">/</span>
-          <code className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[11.5px] text-foreground">
-            {DEMO_PASSWORD}
-          </code>
-          <button
-            type="button"
-            onClick={fillDemo}
-            className="rounded font-medium text-primary underline-offset-4 transition-colors hover:underline"
-          >
-            Use
-          </button>
-        </div>
       </form>
     </AuthLayout>
   )

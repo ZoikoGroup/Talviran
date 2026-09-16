@@ -12,10 +12,12 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import Depends, Request
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.errors import ErrorCode, TalvrinAPIError
+from app.core.redis_client import get_redis
 from app.modules.identity import service as identity_service
 from app.modules.identity.cookies import SESSION_COOKIE_NAME
 from app.modules.research import service as research_service
@@ -23,6 +25,7 @@ from app.modules.research.crypto import KeyWrapper
 from app.modules.research.keys import get_key_wrapper
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+RedisDep = Annotated[Redis, Depends(get_redis)]
 
 
 async def current_identity(
