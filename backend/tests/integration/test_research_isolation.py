@@ -21,6 +21,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, cast
 
+import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import CursorResult, Result, text
@@ -53,10 +54,10 @@ def _email() -> str:
     return f"iso-{uuid.uuid4().hex[:12]}@example.com"
 
 
-async def _make_tenant(session: AsyncSession) -> Tenant:
+async def _make_tenant(session: AsyncSession, http: httpx.AsyncClient) -> Tenant:
     """A registered account with its data key materialised."""
     login = await identity_service.register(
-        session, email=_email(), password=PASSWORD
+        session, email=_email(), password=PASSWORD, http=http
     )
     identity = login.identity
     dek = await service.account_dek(
@@ -83,13 +84,17 @@ async def _act_as(session: AsyncSession, tenant: Tenant) -> None:
 
 
 @pytest_asyncio.fixture
-async def alice(db_session: AsyncSession) -> AsyncIterator[Tenant]:
-    yield await _make_tenant(db_session)
+async def alice(
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient
+) -> AsyncIterator[Tenant]:
+    yield await _make_tenant(db_session, supabase_http)
 
 
 @pytest_asyncio.fixture
-async def bob(db_session: AsyncSession) -> AsyncIterator[Tenant]:
-    yield await _make_tenant(db_session)
+async def bob(
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient
+) -> AsyncIterator[Tenant]:
+    yield await _make_tenant(db_session, supabase_http)
 
 
 async def _alice_conversation(

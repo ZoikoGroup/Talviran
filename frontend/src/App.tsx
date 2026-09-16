@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { PanelLeft } from 'lucide-react'
 import Sidebar, { type Chat, type Project } from '@/components/Sidebar'
 import Message from '@/components/Message'
 import Composer from '@/components/Composer'
@@ -9,6 +10,8 @@ import { mockChats, mockProjects } from '@/data/mockWorkspace'
 import { DEFAULT_MODEL, type ModelId } from '@/data/models'
 import { useTheme } from '@/theme/ThemeContext'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
+import wordmarkOnDark from '@/assets/brand/talvrin-wordmark-on-dark.svg'
+import wordmarkOnLight from '@/assets/brand/talvrin-wordmark-on-light.svg'
 
 interface ChatRecord extends Chat {
   messages: ChatMessage[]
@@ -101,6 +104,9 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('talvrin-sidebar') === 'collapsed'
   )
+  // Below `lg` the sidebar is an off-canvas drawer, closed by default —
+  // unlike `collapsed`, this is session state, not a device preference.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const { theme, setTheme } = useTheme()
   const [showSettings, setShowSettings] = useState(false)
 
@@ -253,9 +259,32 @@ export default function App() {
         onCollapse={() => setCollapsed(true)}
         onExpand={() => setCollapsed(false)}
         onOpenSettings={() => setShowSettings(true)}
+        mobileOpen={mobileNavOpen}
+        onMobileClose={() => setMobileNavOpen(false)}
       />
 
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Mobile-only top bar: the sidebar is off-canvas below `lg`, so this
+            is the only way to reach it once a chat is open. Hidden on
+            desktop, where the sidebar is already a permanent column. */}
+        <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2 py-2 lg:hidden">
+          <button
+            onClick={() => setMobileNavOpen(true)}
+            aria-label="Open sidebar"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <PanelLeft className="h-[18px] w-[18px]" />
+          </button>
+          <img src={wordmarkOnDark} alt="Talvrin" className="brand-on-dark ml-1 h-[22px] w-auto" />
+          <img src={wordmarkOnLight} alt="Talvrin" className="brand-on-light ml-1 h-[22px] w-auto" />
+        </div>
+
+        {/* Sized against what's left after the mobile top bar above, not the
+            whole of `main` — each branch below fills this via its own
+            flex-1/h-full, and without this wrapper that percentage would
+            resolve against main's full height and overflow by the bar's
+            height under `overflow-hidden`. */}
+        <div className="flex min-h-0 flex-1 flex-col">
         {showSettings ? (
           <SettingsPage
             onBack={() => setShowSettings(false)}
@@ -286,7 +315,7 @@ export default function App() {
         ) : (
           <>
             <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-slim">
-              <div className="mx-auto max-w-3xl px-6 pb-3 pt-16">
+              <div className="mx-auto max-w-3xl px-4 pb-3 pt-6 sm:px-6 lg:pt-16">
                 {active.messages.map((m, i) => (
                   <Message key={i} {...m} />
                 ))}
@@ -326,6 +355,7 @@ export default function App() {
             />
           </>
         )}
+        </div>
       </main>
     </div>
   )

@@ -1,21 +1,26 @@
 """Authentication service (SEC-001 §5–§9).
 
-Everything here is deliberately shaped around three rules from the spec:
+Credentials are Supabase's problem now (`supabase_auth.py`): password
+storage, hashing, and verification all happen on their side, over TLS, and
+this module never sees a stored hash. What stays here, unchanged from before
+that split, are the properties SEC-001 actually cares about at *this* layer:
 
-1. **No account enumeration** (§7.1). Sign-in returns the same failure whether
-   the email is unknown, the password is wrong, or the principal is suspended.
-   To keep the *timing* the same too, a miss still performs one Argon2 verify
-   against a dummy hash — otherwise "fast rejection" tells an attacker the
-   address is unregistered just as loudly as a different error message would.
+1. **No account enumeration** (§7.1). `supabase_auth.sign_in_with_password`
+   already collapses "wrong password" and "unknown address" into one
+   `InvalidCredentials`, so nothing here has to reconstruct that property —
+   it just has to not undo it.
 
 2. **Sessions are server-side rows** (§8), not self-contained signed tokens,
    because revocation has to be immediate and absolute. The cookie carries a
-   random token; only its digest is stored.
+   random token; only its digest is stored. This is entirely local — it has
+   nothing to do with Supabase's own session/refresh tokens, which this
+   backend never stores or forwards to the browser at all.
 
-3. **RLS is never bypassed wholesale.** Reads that must happen before an
-   identity exists go through the two narrow SECURITY DEFINER functions from
-   migration 0009. Everything after that runs with `app.account_id` and
-   `app.principal_id` set, so ordinary policies apply.
+3. **RLS is never bypassed wholesale.** The one read that must happen before
+   an identity exists — resolving a Supabase user id to a local principal —
+   goes through the SECURITY DEFINER function from migration 0012. Everything
+   after that runs with `app.account_id` and `app.principal_id` set, so
+   ordinary policies apply.
 """
 
 from __future__ import annotations
@@ -24,24 +29,13 @@ import datetime as dt
 import uuid
 from dataclasses import dataclass
 
+import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings, get_settings
 from app.core.uuid7 import new_uuid7
-from app.modules.identity import tokens
-from app.modules.identity.passwords import (
-    BreachScreen,
-    NullBreachScreen,
-    PasswordPolicyError,
-    check_policy,
-    hash_password,
-    verify_password,
-)
-
-#: A real Argon2id hash of a value no one can present. Verifying against this
-#: on a failed lookup keeps the timing of "unknown email" and "wrong password"
-#: indistinguishable. Generated once at import, not per call.
-_DUMMY_HASH = hash_password(str(uuid.uuid4()) + "-unmatchable")
+from app.modules.identity import supabase_auth, tokens
 
 
 class AuthError(Exception):
@@ -60,6 +54,19 @@ class WeakPassword(AuthError):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+class InvalidResetToken(AuthError):
+    """The recovery link's token was missing, malformed, expired, or already
+    used to reset a password once already."""
+
+
+class EmailNotConfirmed(AuthError):
+    """Only reachable if Supabase email confirmation is switched back on —
+    see supabase_auth.EmailNotConfirmed. The product runs with confirmation
+    disabled so sign-up can sign a user in immediately, but a login attempt
+    must still handle this honestly rather than mislabel it as a wrong
+    password if that setting ever changes."""
 
 
 @dataclass(frozen=True)
@@ -104,118 +111,187 @@ async def apply_rls_context(
     )
 
 
-async def register(
-    session: AsyncSession,
-    *,
-    email: str,
-    password: str,
-    breach_screen: BreachScreen | None = None,
-) -> IssuedLogin:
-    """Creates an account, its first principal, and a signed-in session."""
-    address = normalise_email(email)
-
-    try:
-        check_policy(password)
-    except PasswordPolicyError as exc:
-        raise WeakPassword(str(exc)) from exc
-
-    screen = breach_screen or NullBreachScreen()
-    if await screen.is_compromised(password):
-        raise WeakPassword(
-            "That password has appeared in a known data breach. Please choose another."
-        )
-
-    existing = (
+async def _find_local_principal(
+    session: AsyncSession, *, supabase_user_id: uuid.UUID
+) -> Identity | None:
+    row = (
         await session.execute(
-            text("SELECT principal_id FROM identity.lookup_principal_for_auth(:e)"),
-            {"e": address},
+            text(
+                "SELECT principal_id, account_id, email, status "
+                "FROM identity.lookup_principal_by_supabase_id(:s)"
+            ),
+            {"s": supabase_user_id},
         )
     ).first()
-    if existing is not None:
-        raise EmailAlreadyRegistered(address)
+    if row is None or row.status != "ACTIVE":
+        return None
+    return Identity(principal_id=row.principal_id, account_id=row.account_id, email=row.email)
 
+
+async def _create_local_principal(
+    session: AsyncSession, *, supabase_user_id: uuid.UUID, email: str
+) -> Identity:
+    """Mirrors a Supabase user into `identity.account`/`identity.principal`.
+
+    Called both right after sign-up and, defensively, on a sign-in that
+    finds no matching local row — a user created directly in the Supabase
+    dashboard, or one from before this account existed locally, should still
+    be able to sign in rather than hit an opaque failure the first time.
+    """
     account_id = new_uuid7()
     principal_id = new_uuid7()
 
-    # identity.account has no RLS; principal does, so the context has to be in
-    # place before the insert or its WITH CHECK rejects our own row.
+    # identity.account has no RLS; principal does, so the context has to be
+    # in place before the insert or its WITH CHECK rejects our own row.
     await session.execute(
         text(
             "INSERT INTO identity.account (id, name, status) "
             "VALUES (:id, :name, 'ACTIVE')"
         ),
-        {"id": account_id, "name": address},
+        {"id": account_id, "name": email},
     )
     await apply_rls_context(session, account_id=account_id, principal_id=principal_id)
     await session.execute(
         text(
             "INSERT INTO identity.principal "
-            "(id, account_id, email, status, password_hash) "
-            "VALUES (:id, :account_id, :email, 'ACTIVE', :hash)"
+            "(id, account_id, email, status, supabase_user_id) "
+            "VALUES (:id, :account_id, :email, 'ACTIVE', :sub)"
         ),
         {
             "id": principal_id,
             "account_id": account_id,
-            "email": address,
-            "hash": hash_password(password),
+            "email": email,
+            "sub": supabase_user_id,
         },
     )
+    return Identity(principal_id=principal_id, account_id=account_id, email=email)
 
-    identity = Identity(principal_id=principal_id, account_id=account_id, email=address)
+
+async def register(
+    session: AsyncSession,
+    *,
+    email: str,
+    password: str,
+    http: httpx.AsyncClient,
+    settings: Settings | None = None,
+) -> IssuedLogin:
+    """Creates the account in Supabase, mirrors it locally, and signs in.
+
+    `http` is caller-supplied rather than a module-level client for the same
+    reason `market/connectors/dmo_gilts/client.py` takes one: production
+    injects a real client via FastAPI's dependency, tests inject one backed
+    by a fake transport, and this function does not need to know which.
+    """
+    address = normalise_email(email)
+    cfg = settings or get_settings()
+
+    try:
+        user = await supabase_auth.sign_up(http, email=address, password=password, settings=cfg)
+    except supabase_auth.EmailAlreadyRegistered as exc:
+        raise EmailAlreadyRegistered(address) from exc
+    except supabase_auth.WeakPassword as exc:
+        raise WeakPassword(exc.reason) from exc
+
+    identity = await _create_local_principal(
+        session, supabase_user_id=user.id, email=user.email
+    )
     return await _issue_session(session, identity)
 
 
 async def authenticate(
-    session: AsyncSession, *, email: str, password: str
+    session: AsyncSession,
+    *,
+    email: str,
+    password: str,
+    http: httpx.AsyncClient,
+    settings: Settings | None = None,
 ) -> IssuedLogin:
-    """Verifies credentials and starts a session.
+    """Verifies credentials against Supabase and starts a local session.
 
-    Raises InvalidCredentials for every failure mode, by design.
+    Raises InvalidCredentials for a wrong password or an unknown address —
+    Supabase's own error code already collapses the two — and
+    EmailNotConfirmed only if confirmation is switched back on.
     """
     address = normalise_email(email)
-    row = (
-        await session.execute(
-            text(
-                "SELECT principal_id, account_id, email, status, password_hash "
-                "FROM identity.lookup_principal_for_auth(:e)"
-            ),
-            {"e": address},
+    cfg = settings or get_settings()
+
+    try:
+        user = await supabase_auth.sign_in_with_password(
+            http, email=address, password=password, settings=cfg
         )
-    ).first()
+    except supabase_auth.InvalidCredentials as exc:
+        raise InvalidCredentials from exc
+    except supabase_auth.EmailNotConfirmed as exc:
+        raise EmailNotConfirmed from exc
 
-    # Unknown address, or a principal with no password (passkey-only, or not
-    # yet set): still spend the time, then fail identically.
-    if row is None or row.password_hash is None:
-        verify_password(_DUMMY_HASH, password)
-        raise InvalidCredentials
-
-    result = verify_password(row.password_hash, password)
-    if not result.ok:
-        raise InvalidCredentials
-
-    # Status is checked *after* the password so a suspended account cannot be
-    # distinguished from a wrong password by an attacker probing addresses.
-    if row.status != "ACTIVE":
-        raise InvalidCredentials
-
-    identity = Identity(
-        principal_id=row.principal_id, account_id=row.account_id, email=row.email
-    )
-    await apply_rls_context(
-        session, account_id=identity.account_id, principal_id=identity.principal_id
-    )
-
-    # §7: a login is the only moment the plaintext exists, so it is the only
-    # chance to re-hash one stored under weaker parameters.
-    if result.needs_rehash:
-        await session.execute(
-            text(
-                "UPDATE identity.principal SET password_hash = :h WHERE id = :id"
-            ),
-            {"h": hash_password(password), "id": identity.principal_id},
+    identity = await _find_local_principal(session, supabase_user_id=user.id)
+    if identity is None:
+        identity = await _create_local_principal(
+            session, supabase_user_id=user.id, email=user.email
+        )
+    else:
+        await apply_rls_context(
+            session, account_id=identity.account_id, principal_id=identity.principal_id
         )
 
     return await _issue_session(session, identity)
+
+
+async def complete_password_reset(
+    session: AsyncSession,
+    *,
+    access_token: str,
+    new_password: str,
+    http: httpx.AsyncClient,
+    settings: Settings | None = None,
+) -> IssuedLogin:
+    """Sets the new password, then signs the user straight in.
+
+    The reset link already proves the person clicking it controls the
+    mailbox on file — that is a stronger check than a password would be, so
+    there is no reason to make them type the new password twice in two
+    separate steps. Confirmed live: PUT /auth/v1/user with the recovery
+    token's bearer changes the credential immediately, and a fresh
+    password-grant login with the new password succeeds right after.
+    """
+    cfg = settings or get_settings()
+    try:
+        user = await supabase_auth.update_password(
+            http, access_token=access_token, new_password=new_password, settings=cfg
+        )
+    except supabase_auth.InvalidResetToken as exc:
+        raise InvalidResetToken from exc
+    except supabase_auth.WeakPassword as exc:
+        raise WeakPassword(exc.reason) from exc
+
+    identity = await _find_local_principal(session, supabase_user_id=user.id)
+    if identity is None:
+        identity = await _create_local_principal(
+            session, supabase_user_id=user.id, email=user.email
+        )
+    else:
+        await apply_rls_context(
+            session, account_id=identity.account_id, principal_id=identity.principal_id
+        )
+
+    return await _issue_session(session, identity)
+
+
+async def request_password_reset(
+    *,
+    email: str,
+    http: httpx.AsyncClient,
+    settings: Settings | None = None,
+    redirect_to: str | None = None,
+) -> None:
+    """Asks Supabase to send a reset email. Never raises for an unknown
+    address — see supabase_auth.request_password_reset."""
+    await supabase_auth.request_password_reset(
+        http,
+        email=normalise_email(email),
+        settings=settings or get_settings(),
+        redirect_to=redirect_to,
+    )
 
 
 async def _issue_session(session: AsyncSession, identity: Identity) -> IssuedLogin:

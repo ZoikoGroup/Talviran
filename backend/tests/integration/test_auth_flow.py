@@ -2,7 +2,14 @@
 
 These exercise the HTTP surface rather than the service functions, because
 the parts most likely to break in production live in the wiring: cookie
-flags, RLS context on a pooled connection, and what a failure discloses.
+flags, RLS context on a pooled connection, what a failure discloses — and now
+also whether the credential calls actually reach Supabase in the shape
+identity/supabase_auth.py expects. That last part runs against
+FakeSupabaseAuth (tests/integration/conftest.py), not the real project: these
+tests assert this codebase's own behaviour, not GoTrue's, and a fake user
+store makes "duplicate email", "wrong password" and "unknown address" cheap
+and deterministic to set up rather than dependent on a real inbox and a
+shared-tier email rate limit.
 """
 
 import uuid
@@ -22,9 +29,10 @@ from sqlalchemy.ext.asyncio import (
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.main import app
-from app.modules.api.v1.auth import _redis
+from app.modules.api.v1.auth import _http, _redis
 from app.modules.identity.cookies import SESSION_COOKIE_NAME
 from app.modules.identity.tokens import hash_token
+from tests.integration.conftest import FakeSupabaseAuth
 
 PASSWORD = "correct-horse-9"
 
@@ -45,7 +53,7 @@ def _session_token(client: AsyncClient) -> str:
 
 
 @pytest_asyncio.fixture
-async def client() -> AsyncIterator[AsyncClient]:
+async def client(supabase_http: AsyncClient) -> AsyncIterator[AsyncClient]:
     """A client whose engine and Redis connection belong to *this* test's loop.
 
     app.core.db and app.core.redis_client both cache a process-level
@@ -53,7 +61,8 @@ async def client() -> AsyncIterator[AsyncClient]:
     here: pytest-asyncio gives every test its own loop, so a connection opened
     in one test is unusable in the next ("Event loop is closed"). Overriding
     the dependencies is cleaner than resetting the module globals, because it
-    leaves the production wiring untouched.
+    leaves the production wiring untouched. `_http` gets the same treatment
+    so signup/login reach FakeSupabaseAuth instead of the real project.
     """
     settings = get_settings()
     engine = create_async_engine(settings.database_url)
@@ -66,6 +75,7 @@ async def client() -> AsyncIterator[AsyncClient]:
 
     app.dependency_overrides[get_session] = _session_override
     app.dependency_overrides[_redis] = lambda: redis
+    app.dependency_overrides[_http] = lambda: supabase_http
 
     # Rate-limit counters are keyed by IP, and every test shares the ASGI
     # client's address — without this, earlier tests exhaust the budget and
@@ -119,7 +129,9 @@ async def test_signup_rejects_a_duplicate_email(client: AsyncClient) -> None:
 
 async def test_email_uniqueness_ignores_case(client: AsyncClient) -> None:
     """Otherwise Shiva@… and shiva@… become two accounts and sign-in becomes
-    ambiguous."""
+    ambiguous. Enforced by service.normalise_email() lower-casing before the
+    address ever reaches Supabase, not by a local index — Supabase is what
+    now decides whether an email is taken."""
     email = _email()
     assert (await _signup(client, email)).status_code == 201
     again = await _signup(client, email.upper())
@@ -313,3 +325,84 @@ async def test_repeated_failures_are_rate_limited(
 
     assert 429 in statuses, statuses
     assert statuses.index(429) > 0, "should not block the very first attempt"
+
+
+# ------------------------------------------------------------ reset password
+
+
+async def test_reset_password_signs_the_user_in_with_the_new_password(
+    client: AsyncClient, fake_supabase: FakeSupabaseAuth
+) -> None:
+    email = _email()
+    await _signup(client, email)
+    client.cookies.clear()
+
+    await client.post("/api/v1/auth/forgot-password", json={"email": email})
+    token = fake_supabase.recovery_token_for(email)
+
+    r = await client.post(
+        "/api/v1/auth/reset-password",
+        json={"access_token": token, "new_password": "Brand-New-Horse-9"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["email"] == email
+    assert client.cookies.get(SESSION_COOKIE_NAME), "reset should sign the user in"
+
+    # The new password is what actually works now.
+    client.cookies.clear()
+    old = await client.post(
+        "/api/v1/auth/login", json={"email": email, "password": PASSWORD}
+    )
+    assert old.status_code == 401, "the old password must stop working"
+
+    new = await client.post(
+        "/api/v1/auth/login", json={"email": email, "password": "Brand-New-Horse-9"}
+    )
+    assert new.status_code == 200
+
+
+async def test_reset_password_rejects_a_forged_token(client: AsyncClient) -> None:
+    r = await client.post(
+        "/api/v1/auth/reset-password",
+        json={"access_token": "not-a-real-token", "new_password": "Brand-New-Horse-9"},
+    )
+    assert r.status_code == 401
+    assert SESSION_COOKIE_NAME not in r.cookies
+
+
+async def test_reset_password_token_is_single_use(
+    client: AsyncClient, fake_supabase: FakeSupabaseAuth
+) -> None:
+    email = _email()
+    await _signup(client, email)
+    client.cookies.clear()
+
+    await client.post("/api/v1/auth/forgot-password", json={"email": email})
+    token = fake_supabase.recovery_token_for(email)
+
+    first = await client.post(
+        "/api/v1/auth/reset-password",
+        json={"access_token": token, "new_password": "Brand-New-Horse-9"},
+    )
+    assert first.status_code == 200
+
+    client.cookies.clear()
+    second = await client.post(
+        "/api/v1/auth/reset-password",
+        json={"access_token": token, "new_password": "Yet-Another-Horse-9"},
+    )
+    assert second.status_code == 401, "a spent recovery token must not work twice"
+
+
+async def test_forgot_password_does_not_reveal_whether_an_account_exists(
+    client: AsyncClient,
+) -> None:
+    """§7.1 again: the response must not depend on whether the address has
+    an account — Supabase's own /recover already answers this way, and this
+    only breaks if something along the way starts branching on the result."""
+    known = _email()
+    await _signup(client, known)
+
+    for address in (known, _email()):
+        r = await client.post("/api/v1/auth/forgot-password", json={"email": address})
+        assert r.status_code == 202

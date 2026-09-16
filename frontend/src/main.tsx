@@ -11,6 +11,7 @@ import App from '@/App'
 import Login from '@/pages/Login'
 import Signup from '@/pages/Signup'
 import ForgotPassword from '@/pages/ForgotPassword'
+import ResetPassword from '@/pages/ResetPassword'
 import Privacy from '@/pages/Privacy'
 import Terms from '@/pages/Terms'
 import Contact from '@/pages/Contact'
@@ -65,6 +66,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 </RedirectIfSignedIn>
               }
             />
+            {/* Reachable by anyone holding a valid recovery token, signed in
+                or not — unlike the other auth screens, this isn't gated on
+                the current session either way. */}
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="/contact" element={<Contact />} />

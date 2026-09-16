@@ -37,11 +37,23 @@ async def test_principal_rls_isolates_by_account(db_session: AsyncSession) -> No
 
     async with db_session.begin():
         await _set_account_context(db_session, account_a_id)
-        db_session.add(Principal(account_id=account_a_id, email="a@example.com"))
+        db_session.add(
+            Principal(
+                account_id=account_a_id,
+                email="a@example.com",
+                supabase_user_id=uuid.uuid4(),
+            )
+        )
 
     async with db_session.begin():
         await _set_account_context(db_session, account_b_id)
-        db_session.add(Principal(account_id=account_b_id, email="b@example.com"))
+        db_session.add(
+            Principal(
+                account_id=account_b_id,
+                email="b@example.com",
+                supabase_user_id=uuid.uuid4(),
+            )
+        )
 
     async with db_session.begin():
         await _set_account_context(db_session, account_a_id)

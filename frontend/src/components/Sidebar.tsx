@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCurrentUser } from '@/data/user'
+import { useIsDesktop } from '@/hooks/use-media-query'
 import PopoverMenu from '@/components/ui/popover-menu'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
 import wordmarkOnDark from '@/assets/brand/talvrin-wordmark-on-dark.svg'
@@ -54,6 +55,11 @@ interface SidebarProps {
   onCollapse: () => void
   onExpand: () => void
   onOpenSettings: () => void
+  /** Below `lg` the sidebar is an off-canvas drawer rather than a permanent
+   * column — there is no room for the icon rail, so it is simply open or
+   * closed. `collapsed` is a desktop-only concept and is ignored here. */
+  mobileOpen: boolean
+  onMobileClose: () => void
 }
 
 const DAY = 86_400_000
@@ -99,8 +105,11 @@ export default function Sidebar({
   onCollapse,
   onExpand,
   onOpenSettings,
+  mobileOpen,
+  onMobileClose,
 }: SidebarProps) {
   const currentUser = useCurrentUser()
+  const isDesktop = useIsDesktop()
 
   // A chat only enters the history once it has actually been asked something,
   // so an untouched "New chat" never litters the list.
@@ -257,8 +266,12 @@ export default function Sidebar({
     </div>
   )
 
-  const tab = collapsed ? -1 : 0
-  const rail = collapsed ? 0 : -1
+  // The icon rail only exists on desktop; below `lg` the full panel is
+  // always what's on screen (open or off-canvas, never a slim rail), so its
+  // controls stay tabbable regardless of the desktop-only `collapsed` flag.
+  const railShowing = isDesktop && collapsed
+  const tab = railShowing ? -1 : 0
+  const rail = railShowing ? 0 : -1
 
   const chatRow = (c: Chat, nested = false) => {
     if (renaming?.id === c.id) return <div key={c.id}>{renameRow('chat', nested)}</div>
@@ -288,7 +301,10 @@ export default function Sidebar({
         )}
       >
         <button
-          onClick={() => onSelect(c.id)}
+          onClick={() => {
+            onSelect(c.id)
+            onMobileClose()
+          }}
           tabIndex={tab}
           className={cn(
             'flex min-w-0 flex-1 items-center gap-2.5 py-[7px] pr-8 text-left text-[13.5px]',
@@ -321,23 +337,41 @@ export default function Sidebar({
   }
 
   return (
-    <aside
-      className={cn(
-        'relative flex shrink-0 flex-col overflow-hidden text-sidebar-foreground',
-        // Acrylic: a translucent tint over a blurred, slightly saturated
-        // backdrop, finished with a hairline edge so it reads as a pane.
-        'bg-sidebar/60 backdrop-blur-2xl backdrop-saturate-150',
-        'border-r border-sidebar-border/60',
-        'transition-[width] duration-300 ease-out',
-        collapsed ? 'w-[56px]' : 'w-[276px]'
+    <>
+      {/* Below `lg`, an open drawer sits over the app rather than beside it
+          — the backdrop both dims it and gives the drawer somewhere to
+          close to when tapped. Never rendered as a blocker on desktop. */}
+      {mobileOpen && (
+        <div
+          aria-hidden
+          onClick={onMobileClose}
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+        />
       )}
-    >
-      {/* ---------------- Collapsed icon rail ---------------- */}
+
+      <aside
+        className={cn(
+          'flex flex-col overflow-hidden text-sidebar-foreground',
+          // Acrylic: a translucent tint over a blurred, slightly saturated
+          // backdrop, finished with a hairline edge so it reads as a pane.
+          'bg-sidebar/60 backdrop-blur-2xl backdrop-saturate-150',
+          'border-r border-sidebar-border/60',
+          // Mobile: a fixed off-canvas drawer, sliding in over the app.
+          'fixed inset-y-0 left-0 z-40 w-[276px]',
+          'transition-transform duration-300 ease-out',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full',
+          // Desktop: back to a permanent column with the width transition
+          // driving the collapse/expand rail instead of a slide.
+          'lg:relative lg:z-auto lg:translate-x-0 lg:transition-[width]',
+          collapsed ? 'lg:w-[56px]' : 'lg:w-[276px]'
+        )}
+      >
+      {/* ---------------- Collapsed icon rail (desktop only) ---------------- */}
       <div
         className={cn(
-          'absolute inset-y-0 left-0 flex w-[56px] flex-col items-center py-4',
-          'transition-opacity duration-200',
-          collapsed ? 'opacity-100' : 'pointer-events-none opacity-0'
+          'absolute inset-y-0 left-0 hidden w-[56px] flex-col items-center py-4',
+          'transition-opacity duration-200 lg:flex',
+          collapsed ? 'lg:opacity-100' : 'lg:pointer-events-none lg:opacity-0'
         )}
       >
         {/* The mark doubles as the expand control — it swaps to the panel
@@ -405,14 +439,17 @@ export default function Sidebar({
         </button>
       </div>
 
-      {/* ---------------- Expanded panel ---------------- */}
+      {/* ---------------- Expanded panel ----------------
+          Below `lg` this is the only content the drawer ever shows — the
+          icon rail above is a desktop-only affordance — so it stays fully
+          opaque and interactive there regardless of `collapsed`. */}
       <div
         className={cn(
-          'flex w-[276px] flex-1 flex-col overflow-hidden transition-opacity duration-200',
-          collapsed ? 'pointer-events-none opacity-0' : 'opacity-100'
+          'flex w-[276px] flex-1 flex-col overflow-hidden opacity-100 transition-opacity duration-200',
+          collapsed && 'lg:pointer-events-none lg:opacity-0'
         )}
       >
-        {/* Brand + collapse */}
+        {/* Brand + collapse/close */}
         {/* Single row: the lockup already carries the name, and its height
             is matched to the rail's mark so the logo barely moves when the
             sidebar collapses. */}
@@ -427,18 +464,31 @@ export default function Sidebar({
             alt="Talvrin"
             className="brand-on-light h-8 w-auto shrink-0"
           />
+          {/* Mobile: closes the drawer entirely. Desktop: collapses to the
+              icon rail instead — two different actions, so two buttons
+              rather than one handler branching on viewport. */}
+          <button
+            onClick={onMobileClose}
+            aria-label="Close sidebar"
+            className="ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden"
+          >
+            <X className="h-[18px] w-[18px]" />
+          </button>
           <button
             onClick={onCollapse}
             aria-label="Hide sidebar"
             tabIndex={tab}
-            className="ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="ml-auto hidden h-8 w-8 shrink-0 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground lg:grid"
           >
             <PanelLeftClose className="h-[17px] w-[17px]" />
           </button>
         </div>
 
         <button
-          onClick={() => onNew(null)}
+          onClick={() => {
+            onNew(null)
+            onMobileClose()
+          }}
           tabIndex={tab}
           className="mx-3 mb-3 flex items-center gap-2.5 rounded-full bg-sidebar-accent px-4 py-2.5 text-left text-[13.5px] font-medium transition-all hover:brightness-125 active:scale-[0.985]"
         >
@@ -624,7 +674,10 @@ export default function Sidebar({
                   <>
                     {inProject.map((c) => chatRow(c, true))}
                     <button
-                      onClick={() => onNew(p.id)}
+                      onClick={() => {
+                        onNew(p.id)
+                        onMobileClose()
+                      }}
                       tabIndex={tab}
                       className="flex w-full items-center gap-2.5 rounded-full py-[7px] pl-8 pr-3 text-left text-[13px] text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
                     >
@@ -696,7 +749,10 @@ export default function Sidebar({
             {currentUser.plan}
           </span>
           <button
-            onClick={onOpenSettings}
+            onClick={() => {
+              onOpenSettings()
+              onMobileClose()
+            }}
             tabIndex={tab}
             aria-label="Settings"
             title="Settings"
@@ -833,6 +889,7 @@ export default function Sidebar({
         </PopoverMenu>
       )}
 
-    </aside>
+      </aside>
+    </>
   )
 }

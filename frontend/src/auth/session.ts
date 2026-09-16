@@ -1,13 +1,18 @@
 /**
  * Session handling for the UI prototype.
  *
- * The backend has identity *models* (Account, Principal, Session) but exposes
- * no auth endpoints yet — `openapi.json` serves only /instruments, /issuers
- * and /healthz. So nothing here authenticates anybody: it stores a local
- * session so the signed-in and signed-out routes can be built and demonstrated.
+ * The backend now has a real /api/v1/auth/* surface (Supabase-backed sign-up,
+ * sign-in, sign-out, forgot/reset password — see auth/api.ts), but Login and
+ * Signup below still authenticate against nothing but the DEMO_ID constant.
+ * Only the forgot/reset-password pages call the real backend so far.
  *
- * When SEC-001 auth lands, this module is replaced by real token handling and
- * nothing else in the UI should need to change.
+ * That means a real backend session (an HttpOnly cookie the browser holds
+ * and this code never sees) and this module's own idea of "signed in" — a
+ * plain object in localStorage — are two separate, unsynchronised things.
+ * ResetPassword.tsx bridges them at the one moment a real session begins, by
+ * calling signIn() itself right after the backend confirms a reset; nothing
+ * else does that yet. Wiring Login/Signup to the real endpoints the same way
+ * is the rest of this module's replacement, not yet done.
  */
 
 const KEY = 'talvrin-session'

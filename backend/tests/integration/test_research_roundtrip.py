@@ -34,7 +34,8 @@ TEST_WRAPPER = LocalKeyWrapper(b"\x55" * DEK_BYTES, key_name="test/probe")
 
 
 @pytest_asyncio.fixture
-async def client() -> AsyncIterator[AsyncClient]:
+async def client(supabase_http: AsyncClient) -> AsyncIterator[AsyncClient]:
+    from app.modules.api.v1 import auth as auth_module
     from app.modules.api.v1 import deps
 
     engine = create_async_engine(get_settings().database_url)
@@ -46,6 +47,7 @@ async def client() -> AsyncIterator[AsyncClient]:
 
     app.dependency_overrides[get_session] = _session_override
     app.dependency_overrides[deps.key_wrapper] = lambda: TEST_WRAPPER
+    app.dependency_overrides[auth_module._http] = lambda: supabase_http
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -218,7 +220,7 @@ async def test_a_read_without_rls_context_raises_rather_than_returning_empty(
 
 
 async def test_the_account_data_key_is_stable_across_sessions(
-    db_session: AsyncSession,
+    db_session: AsyncSession, supabase_http: AsyncClient
 ) -> None:
     """Whoever wins the first-write race, everyone must end up on one key.
 
@@ -230,8 +232,10 @@ async def test_the_account_data_key_is_stable_across_sessions(
     from app.modules.research import service
 
     login = await identity_service.register(
-        db_session, email=f"key-{uuid.uuid4().hex[:10]}@example.com",
+        db_session,
+        email=f"key-{uuid.uuid4().hex[:10]}@example.com",
         password=PASSWORD,
+        http=supabase_http,
     )
     account_id = login.identity.account_id
 

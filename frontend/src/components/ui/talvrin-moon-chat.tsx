@@ -1,55 +1,17 @@
 'use client'
 
-import { useRef, useCallback, useEffect } from 'react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import Orb from '@/components/ui/orb'
 import { useReducedMotion } from '@/hooks/use-reduced-motion'
+import { useAutoResizeTextarea } from '@/hooks/use-auto-resize-textarea'
+import { useMediaQuery } from '@/hooks/use-media-query'
 import { cn } from '@/lib/utils'
 import { ArrowUpIcon } from 'lucide-react'
 import { useCurrentUser } from '@/data/user'
 import AttachMenu, { AttachmentChips } from '@/components/AttachMenu'
 import ModelSwitcher from '@/components/ModelSwitcher'
 import type { ModelId } from '@/data/models'
-
-/* ------------------------------------------------------------------
-   Auto-resizing textarea
-   ------------------------------------------------------------------ */
-
-interface AutoResizeProps {
-  minHeight: number
-  maxHeight?: number
-}
-
-function useAutoResizeTextarea({ minHeight, maxHeight }: AutoResizeProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  const adjustHeight = useCallback(
-    (reset?: boolean) => {
-      const textarea = textareaRef.current
-      if (!textarea) return
-
-      if (reset) {
-        textarea.style.height = `${minHeight}px`
-        return
-      }
-
-      textarea.style.height = `${minHeight}px` // reset first
-      const newHeight = Math.max(
-        minHeight,
-        Math.min(textarea.scrollHeight, maxHeight ?? Infinity)
-      )
-      textarea.style.height = `${newHeight}px`
-    },
-    [minHeight, maxHeight]
-  )
-
-  useEffect(() => {
-    if (textareaRef.current) textareaRef.current.style.height = `${minHeight}px`
-  }, [minHeight])
-
-  return { textareaRef, adjustHeight }
-}
 
 /* ------------------------------------------------------------------
    Hero
@@ -90,6 +52,12 @@ export default function TalvrinMoonChat({
   const reducedMotion = useReducedMotion()
   const currentUser = useCurrentUser()
   const isLight = theme === 'light'
+  // The full sentence wraps the composer's textarea rather than the pill,
+  // so a narrow viewport gets the shorter form before that ever happens.
+  const isNarrow = !useMediaQuery('(min-width: 400px)')
+  const placeholder = isNarrow
+    ? 'Ask a question…'
+    : 'Ask about an instrument, convention or calculation…'
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -130,11 +98,11 @@ export default function TalvrinMoonChat({
       )}
 
       {/* ---------- Greeting + composer, centred as one block ---------- */}
-      <div className="relative z-10 flex w-full max-w-3xl flex-col px-6">
+      <div className="relative z-10 flex w-full max-w-3xl flex-col px-4 sm:px-6">
         <div className="animate-rise pointer-events-none text-center">
           <h1
             className={cn(
-              'text-[2.75rem] font-semibold leading-none tracking-tight text-foreground',
+              'text-[2.25rem] font-semibold leading-none tracking-tight text-foreground sm:text-[2.75rem]',
               !isLight && '[text-shadow:0_2px_28px_rgba(0,0,0,0.55)]'
             )}
           >
@@ -179,7 +147,7 @@ export default function TalvrinMoonChat({
               adjustHeight()
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about an instrument, convention or calculation…"
+            placeholder={placeholder}
             className={cn(
               'min-h-0 flex-1 resize-none border-none bg-transparent px-1 py-1.5',
               'text-[15px] leading-6 text-foreground',

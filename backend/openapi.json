@@ -207,6 +207,20 @@
         "title": "Credentials",
         "type": "object"
       },
+      "ForgotPasswordIn": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ForgotPasswordIn",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -476,6 +490,27 @@
         "title": "ProjectOut",
         "type": "object"
       },
+      "ResetPasswordIn": {
+        "properties": {
+          "access_token": {
+            "minLength": 1,
+            "title": "Access Token",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "new_password"
+        ],
+        "title": "ResetPasswordIn",
+        "type": "object"
+      },
       "ShareIn": {
         "properties": {
           "expires_at": {
@@ -658,6 +693,46 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/auth/forgot-password": {
+      "post": {
+        "description": "Always 202, whether or not the address has an account.\n\nMatching /login's enumeration resistance (SEC-001 \u00a77.1): Supabase's own\n`/auth/v1/recover` already answers identically for a known and an\nunknown address, so there is nothing here to branch on that wouldn't\nreopen the thing that endpoint already closed.",
+        "operationId": "forgot_password_api_v1_auth_forgot_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Forgot Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "operationId": "login_api_v1_auth_login_post",
@@ -729,6 +804,47 @@
           }
         },
         "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/reset-password": {
+      "post": {
+        "operationId": "reset_password_api_v1_auth_reset_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Password",
         "tags": [
           "auth"
         ]
