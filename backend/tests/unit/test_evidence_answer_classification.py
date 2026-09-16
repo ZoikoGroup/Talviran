@@ -4,7 +4,12 @@ product behaviour worth keeping per the plan this was built from), so these
 prove the port is faithful, not that the patterns themselves are novel.
 """
 
-from app.modules.evidence.service import _is_advice, _mentions_accrued, _mentions_gilt
+from app.modules.evidence.service import (
+    _is_advice,
+    _mentions_accrued,
+    _mentions_gilt,
+    _mentions_yield_curve,
+)
 
 ADVICE_QUERIES = [
     "should I buy this gilt?",
@@ -50,3 +55,20 @@ def test_advice_takes_priority_even_if_it_also_mentions_gilt() -> None:
     query = "should I buy this gilt?"
     assert _is_advice(query)
     assert _mentions_gilt(query)  # both match; caller must check advice first
+
+
+def test_yield_curve_mentions_detected() -> None:
+    assert _mentions_yield_curve("what's the yield curve look like?")
+    assert _mentions_yield_curve("show me the spot curve")
+    assert _mentions_yield_curve("what are interest rates right now")
+    assert _mentions_yield_curve("what does the Bank of England say")
+    assert _mentions_yield_curve("what's the BoE curve at 10 years")
+    assert not _mentions_yield_curve("tell me about the 2036 gilt")
+    assert not _mentions_yield_curve("what's the weather like")
+
+
+def test_yield_curve_also_mentioning_gilt_is_still_yield_curve() -> None:
+    # caller must check yield-curve before the more general gilt-facts branch
+    query = "what's the yield curve for gilts?"
+    assert _mentions_yield_curve(query)
+    assert _mentions_gilt(query)

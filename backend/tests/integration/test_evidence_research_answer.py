@@ -1,11 +1,12 @@
-"""assemble_research_answer against real Postgres: each of the four
+"""assemble_research_answer against real Postgres: each of the five
 branches, the PDP gate actually blocking when a capability is unregistered,
-and the gilt-facts branch pulling real accepted_fact/calculation_result
-rows (never fabricated ones) with correct MODEL_IMPLIED labeling.
+and the gilt-facts/yield-curve branches pulling real accepted_fact/
+calculation_result rows (never fabricated ones) with correct labeling.
 """
 
 import datetime as dt
 import uuid
+from decimal import Decimal
 
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,11 @@ from app.modules.calculation.pipeline.curve_pricing import METRIC_MODEL_IMPLIED_
 from app.modules.evidence.models import EvidenceBundle
 from app.modules.evidence.service import SEED_GILT_ISIN, assemble_research_answer
 from app.modules.market.models import AcceptedFact
+from app.modules.market.pipeline.curve_ingest import (
+    METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+    SUBJECT_TYPE_YIELD_CURVE_POINT,
+    curve_point_subject_id,
+)
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
 from app.modules.policy.allowed_output_type import AllowedOutputType
 from app.modules.policy.models import ActivationRecord, CapabilityStatus
@@ -27,6 +33,11 @@ from app.modules.rights.models import RightsGrant, RightsProfile
 
 _OPEN_RANGE: Range[dt.datetime] = Range(
     lower=dt.datetime(2003, 2, 27, tzinfo=dt.UTC), upper=None, bounds="[)"
+)
+_CURVE_DAY_RANGE: Range[dt.datetime] = Range(
+    lower=dt.datetime(2026, 9, 14, tzinfo=dt.UTC),
+    upper=dt.datetime(2026, 9, 15, tzinfo=dt.UTC),
+    bounds="[)",
 )
 
 
@@ -94,6 +105,22 @@ async def _seed_reference_fact(session: AsyncSession, instrument_id: uuid.UUID) 
             status="ACTIVE",
         )
     )
+    await session.flush()
+
+
+async def _seed_curve_points(session: AsyncSession, tenor_to_rate: dict[str, str]) -> None:
+    for tenor, rate in tenor_to_rate.items():
+        session.add(
+            AcceptedFact(
+                subject_type=SUBJECT_TYPE_YIELD_CURVE_POINT,
+                subject_id=curve_point_subject_id(Decimal(tenor)),
+                metric_id=METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+                valid_range=_CURVE_DAY_RANGE,
+                knowledge_range=Range(lower=dt.datetime.now(dt.UTC), upper=None, bounds="[)"),
+                value={"tenor_years": tenor, "spot_rate_pct": rate},
+                status="ACTIVE",
+            )
+        )
     await session.flush()
 
 
@@ -204,4 +231,78 @@ async def test_pdp_denies_when_capability_is_unregistered(db_session: AsyncSessi
         principal_id=None, account_id=None,
     )
     assert "not currently permitted" in answer.text
+    assert answer.evidence_bundle_id is None
+
+
+_CURVE_FIXTURE = {"1": "4.0", "2": "4.2", "5": "4.5", "10": "5.2", "20": "5.5", "30": "5.6"}
+
+
+async def test_yield_curve_query_returns_real_curve_points(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_curve_points(db_session, _CURVE_FIXTURE)
+    await _seed_rights_profile(db_session, code="boe.yield-curve", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what's the current UK yield curve?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.FACTUAL_EVIDENCE
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows == {
+        "1Y": "4.0%", "2Y": "4.2%", "5Y": "4.5%",
+        "10Y": "5.2%", "20Y": "5.5%", "30Y": "5.6%",
+    }
+    assert len(answer.citations) == 1
+    assert answer.citations[0].label == "Bank of England — daily nominal gilt spot curve"
+    assert answer.citations[0].pill == "CURRENT", "these are real published facts, not an estimate"
+    assert answer.evidence_bundle_id is not None
+
+
+async def test_yield_curve_query_takes_priority_over_gilt_facts(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_curve_points(db_session, _CURVE_FIXTURE)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+    await _seed_rights_profile(db_session, code="boe.yield-curve", actions=["display"])
+
+    # Mentions both "gilt" and "yield curve" - the curve branch must win.
+    answer = await assemble_research_answer(
+        db_session, query_text="what's the yield curve for gilts?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert answer.facts.title == "UK nominal gilt spot curve (Bank of England)"
+
+
+async def test_yield_curve_query_without_display_rights_falls_back(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_curve_points(db_session, _CURVE_FIXTURE)
+    # No RightsGrant for "boe.yield-curve" -> fail-closed DENY on display.
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what's the yield curve today?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+
+
+async def test_yield_curve_query_with_no_curve_data_falls_back(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="boe.yield-curve", actions=["display"])
+    # No curve points seeded at all.
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what's the yield curve today?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
     assert answer.evidence_bundle_id is None

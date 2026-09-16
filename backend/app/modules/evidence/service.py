@@ -9,6 +9,13 @@ calculation_result rows instead of returning canned text, and every
 response (including the advice-redirect, which used to be a client-side
 regex match) is evaluated through the PDP against AllowedOutputType first.
 
+A fifth branch (yield-curve) was added afterward, once BoE curve data was
+live: the curve's own points are real, directly-published, reconciled
+facts in their own right (FACTUAL_EVIDENCE), not merely an input to the
+gilt-facts branch's model-implied price — a user asking specifically about
+"the yield curve" deserves the actual curve, not just the one derived
+number it feeds into elsewhere.
+
 Single-instrument, single-jurisdiction P1 scope, matching every other
 module built so far: `_DEV_JURISDICTION` is hardcoded (real auth exists now,
 but per-account jurisdiction resolution is still P2 - see
@@ -23,14 +30,19 @@ import datetime as dt
 import re
 import uuid
 from dataclasses import dataclass
+from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.calculation.models import CalculationResult
 from app.modules.calculation.pipeline.curve_pricing import METRIC_MODEL_IMPLIED_CLEAN_PRICE
 from app.modules.evidence.models import EvidenceBundle, EvidenceMember
 from app.modules.market.models import AcceptedFact
+from app.modules.market.pipeline.curve_ingest import (
+    METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+    SUBJECT_TYPE_YIELD_CURVE_POINT,
+)
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
 from app.modules.policy.allowed_output_type import AllowedOutputType
 from app.modules.policy.pdp import PolicyContext, evaluate
@@ -52,6 +64,9 @@ _ADVICE_PATTERNS = [
 ]
 _GILT_PATTERN = re.compile(r"\bgilt|treasury gilt|2036\b", re.I)
 _ACCRUED_PATTERN = re.compile(r"accrued|day count|convention|clean|dirty|act/act", re.I)
+_YIELD_CURVE_PATTERN = re.compile(
+    r"yield curve|spot curve|interest rates?\b|bank of england|\bboe\b", re.I
+)
 
 
 def _is_advice(text: str) -> bool:
@@ -60,6 +75,10 @@ def _is_advice(text: str) -> bool:
 
 def _mentions_gilt(text: str) -> bool:
     return bool(_GILT_PATTERN.search(text))
+
+
+def _mentions_yield_curve(text: str) -> bool:
+    return bool(_YIELD_CURVE_PATTERN.search(text))
 
 
 def _mentions_accrued(text: str) -> bool:
@@ -296,6 +315,113 @@ async def _gilt_facts_reply(session: AsyncSession) -> ResearchAnswer:
     )
 
 
+_BENCHMARK_TENORS: list[tuple[Decimal, str]] = [
+    (Decimal("1"), "1Y"),
+    (Decimal("2"), "2Y"),
+    (Decimal("5"), "5Y"),
+    (Decimal("10"), "10Y"),
+    (Decimal("20"), "20Y"),
+    (Decimal("30"), "30Y"),
+]
+
+
+async def _latest_curve_date(session: AsyncSession) -> dt.datetime | None:
+    return (
+        await session.execute(
+            select(func.lower(AcceptedFact.valid_range))
+            .where(
+                AcceptedFact.subject_type == SUBJECT_TYPE_YIELD_CURVE_POINT,
+                AcceptedFact.metric_id == METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+                AcceptedFact.status == "ACTIVE",
+            )
+            .order_by(func.lower(AcceptedFact.valid_range).desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+async def _curve_point_facts_at(session: AsyncSession, *, at: dt.datetime) -> list[AcceptedFact]:
+    return list(
+        (
+            await session.execute(
+                select(AcceptedFact).where(
+                    AcceptedFact.subject_type == SUBJECT_TYPE_YIELD_CURVE_POINT,
+                    AcceptedFact.metric_id == METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+                    AcceptedFact.status == "ACTIVE",
+                    AcceptedFact.valid_range.contains(at),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def _yield_curve_reply(session: AsyncSession) -> ResearchAnswer:
+    """The curve's own points, not the gilt-facts branch's model-implied
+    price derived FROM them — these are real, directly-published, reconciled
+    facts (FACTUAL_EVIDENCE) in their own right, so a user asking about the
+    curve gets the curve, not just the one derived number it feeds into
+    elsewhere.
+    """
+    if not await _display_allowed(session, "boe.yield-curve"):
+        return _default_reply("UK yield curve")
+
+    latest_date = await _latest_curve_date(session)
+    if latest_date is None:
+        return _default_reply("UK yield curve")
+
+    curve_facts = await _curve_point_facts_at(session, at=latest_date)
+    if not curve_facts:
+        return _default_reply("UK yield curve")
+
+    by_tenor = {Decimal(f.value["tenor_years"]): f for f in curve_facts}
+    rows: list[tuple[str, str]] = []
+    used_facts: list[AcceptedFact] = []
+    for tenor, label in _BENCHMARK_TENORS:
+        fact = by_tenor.get(tenor)
+        if fact is None:
+            continue
+        rows.append((label, f"{fact.value['spot_rate_pct']}%"))
+        used_facts.append(fact)
+
+    if not rows:
+        return _default_reply("UK yield curve")
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION",
+        knowledge_time=dt.datetime.now(dt.UTC),
+        status="ASSEMBLING",
+    )
+    session.add(bundle)
+    await session.flush()
+    for fact in used_facts:
+        session.add(
+            EvidenceMember(evidence_bundle_id=bundle.id, kind="FACT", accepted_fact_id=fact.id)
+        )
+
+    as_of = latest_date.date().isoformat()
+    return ResearchAnswer(
+        text=(
+            f"Here is the Bank of England's UK nominal gilt spot curve as of {as_of} "
+            "— the government's own published interest-rate curve, not any specific "
+            "instrument's price."
+        ),
+        facts=FactTable(title="UK nominal gilt spot curve (Bank of England)", rows=rows),
+        citations=[
+            Citation(
+                label="Bank of England — daily nominal gilt spot curve",
+                meta=f"Published {as_of} — Open Government Licence v3.0",
+                pill="CURRENT",
+                kind="doc",
+            )
+        ],
+        note=None,
+        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        evidence_bundle_id=bundle.id,
+    )
+
+
 async def _pdp_permits(
     session: AsyncSession,
     *,
@@ -335,6 +461,8 @@ async def assemble_research_answer(
         answer = _advice_reply()
     elif _mentions_accrued(query_text):
         answer = _accrued_reply()
+    elif _mentions_yield_curve(query_text):
+        answer = await _yield_curve_reply(session)
     elif _mentions_gilt(query_text):
         answer = await _gilt_facts_reply(session)
     else:
