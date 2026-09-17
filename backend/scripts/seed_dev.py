@@ -36,6 +36,8 @@ _CAPABILITIES = [
     "reference.instruments.read",
     "research.answer",
     "calculation.results.read",
+    "monitoring.alerts.create",
+    "monitoring.alerts.read",
 ]
 
 UK_DMO_GILTS_RIGHTS_PROFILE_CODE = "uk-dmo.gilts"
