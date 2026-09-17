@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Query
 
+from app.core.pagination import PageOut
 from app.modules.api.v1.deps import SessionDep
 from app.modules.reference import service
-from app.modules.reference.schemas import InstrumentOut, PageOut
+from app.modules.reference.schemas import InstrumentOut
 
 router = APIRouter(prefix="/instruments", tags=["reference"])
 

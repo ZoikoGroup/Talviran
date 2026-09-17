@@ -5,8 +5,10 @@ prove the port is faithful, not that the patterns themselves are novel.
 """
 
 from app.modules.evidence.service import (
+    SEED_GILT_ISIN,
     _is_advice,
     _is_help_request,
+    _mentioned_year,
     _mentions_accrued,
     _mentions_gilt,
     _mentions_yield_curve,
@@ -103,3 +105,10 @@ def test_help_request_does_not_swallow_a_genuine_data_question() -> None:
     query = "can you help me understand accrued interest"
     assert not _is_help_request(query)
     assert _mentions_accrued(query)
+
+
+def test_mentioned_year_extracted_correctly() -> None:
+    assert _mentioned_year("tell me about the 2036 gilt") == 2036
+    assert _mentioned_year("tell me about the 2065 gilt") == 2065
+    assert _mentioned_year("what are the terms of the treasury gilt") is None
+    assert _mentioned_year(f"ISIN {SEED_GILT_ISIN}") is None  # no false match inside an ISIN

@@ -1,0 +1,6 @@
+{
+  "version": "v1",
+  "sha256": "3fe7b07f75482814d6e8779d51e64a6da9079a505698dfdaa093bc5015b32fe9",
+  "reason": "Initial corpus: DMO's own worked examples from yldconv.pdf (price-from-yield, yield-from-price, accrued-interest cases, including ex-dividend and on-quasi-coupon-date boundaries).",
+  "created_at": "2026-09-15T18:50:29+05:30"
+}

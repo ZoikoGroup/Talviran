@@ -51,6 +51,7 @@ export default {
         fresh: 'hsl(var(--fresh))',
         delayed: 'hsl(var(--delayed))',
         stale: 'hsl(var(--stale))',
+        unavailable: 'hsl(var(--unavailable))',
       },
       borderRadius: {
         lg: 'var(--radius)',

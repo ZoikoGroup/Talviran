@@ -65,6 +65,22 @@ class ResearchOut(BaseModel):
     note: str | None
 
 
+class EvidenceItemOut(BaseModel):
+    kind: str
+    subject_type: str | None
+    metric_id: str | None
+    value: dict[str, Any] | None
+    basis: str | None
+    as_of: str | None
+
+
+class EvidenceOut(BaseModel):
+    evidence_bundle_id: uuid.UUID | None
+    purpose_type: str | None
+    status: str | None
+    items: list[EvidenceItemOut]
+
+
 def _not_found() -> TalvrinAPIError:
     return TalvrinAPIError(code=ErrorCode.NOT_FOUND, message="Not found.")
 
@@ -156,3 +172,43 @@ async def create_research_answer(
         raise TalvrinAPIError(code=ErrorCode.CONFLICT, message=str(exc)) from exc
 
     return JSONResponse(status_code=result.status_code, content=result.body)
+
+
+@router.get("/research/{message_id}/evidence", response_model=EvidenceOut)
+async def get_research_evidence(
+    message_id: uuid.UUID,
+    db: SessionDep,
+    identity: IdentityDep,
+) -> EvidenceOut:
+    """404 for both "no such message" and "not yours" - RLS (applied per
+    request via identity's session context) already makes those
+    indistinguishable, same principle as chats.py's _not_found(). A message
+    that exists and IS the caller's own but simply has no evidence bundle
+    (e.g. an advice-redirect reply) is not an error - it returns an empty
+    item list.
+    """
+    if not await evidence_service.is_message_visible(db, message_id=message_id):
+        raise _not_found()
+
+    detail = await evidence_service.get_evidence_for_message(db, message_id=message_id)
+    await db.commit()
+
+    if detail is None:
+        return EvidenceOut(evidence_bundle_id=None, purpose_type=None, status=None, items=[])
+
+    return EvidenceOut(
+        evidence_bundle_id=detail.evidence_bundle_id,
+        purpose_type=detail.purpose_type,
+        status=detail.status,
+        items=[
+            EvidenceItemOut(
+                kind=i.kind,
+                subject_type=i.subject_type,
+                metric_id=i.metric_id,
+                value=i.value,
+                basis=i.basis,
+                as_of=i.as_of,
+            )
+            for i in detail.items
+        ],
+    )

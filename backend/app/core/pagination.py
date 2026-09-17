@@ -10,6 +10,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from pydantic import BaseModel
 from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
@@ -20,6 +21,18 @@ MAX_PAGE_SIZE = 200
 
 @dataclass(frozen=True)
 class Page[T]:
+    items: list[T]
+    next_cursor: str | None
+    has_more: bool
+
+
+class PageOut[T](BaseModel):
+    """API-001's cursor-pagination envelope, shared by every list endpoint -
+    the API-response mirror of Page[T] above. Lives here (not per-module)
+    for the same reason the codec itself does: one shared contract, not
+    re-decided (or silently re-duplicated) per endpoint.
+    """
+
     items: list[T]
     next_cursor: str | None
     has_more: bool

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ShieldCheck,
   Link2,
@@ -7,8 +7,10 @@ import {
   Table2,
   ChevronDown,
   Info,
+  Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getResearchEvidence, type EvidenceItem } from '@/lib/api'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
 import type {
   ChatMessage,
@@ -23,6 +25,7 @@ const PILL_STYLE: Record<Freshness, string> = {
   CURRENT: 'bg-fresh/15 text-fresh',
   DELAYED: 'bg-delayed/15 text-delayed',
   STALE: 'bg-stale/15 text-stale',
+  UNAVAILABLE: 'bg-unavailable/15 text-unavailable',
   SOURCE: 'bg-secondary text-muted-foreground',
 }
 
@@ -63,7 +66,79 @@ function Facts({ title, rows }: FactTable) {
   )
 }
 
-function Evidence({ citations }: { citations: Citation[] }) {
+/** The resolved fact/calculation behind a citation - fetched on demand from
+ * GET /research/{id}/evidence, not embedded in the reply itself (that
+ * endpoint didn't exist when the citation list was first built). Only
+ * fetched once, the first time the panel opens, for a message that came
+ * from the real backend (mock replies have no messageId to fetch with). */
+function RawEvidence({ messageId }: { messageId: string }) {
+  const [state, setState] = useState<
+    { status: 'loading' } | { status: 'error' } | { status: 'ready'; items: EvidenceItem[] }
+  >({ status: 'loading' })
+
+  useEffect(() => {
+    let cancelled = false
+    getResearchEvidence(messageId)
+      .then((detail) => {
+        if (!cancelled) setState({ status: 'ready', items: detail.items })
+      })
+      .catch((err: unknown) => {
+        // A message with no evidence bundle at all (e.g. an advice-redirect
+        // reply) never renders this component in the first place - Evidence
+        // only mounts once citations.length > 0 - so any failure here is a
+        // genuine fetch problem, not the normal "nothing to show" case.
+        if (!cancelled) {
+          console.error('Failed to load evidence detail', err)
+          setState({ status: 'error' })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [messageId])
+
+  if (state.status === 'loading') {
+    return (
+      <div className="flex items-center gap-2 border-t border-border px-3.5 py-2.5 text-[12px] text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Loading resolved evidence…
+      </div>
+    )
+  }
+
+  if (state.status === 'error' || state.items.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="border-t border-border bg-secondary/30 px-3.5 py-2.5">
+      <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+        Resolved values
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {state.items.map((item, i) => (
+          <div key={i} className="flex flex-wrap items-baseline gap-x-2 text-[12px]">
+            <span className="font-mono text-muted-foreground">{item.metricId ?? item.kind}</span>
+            {item.basis === 'MODEL_IMPLIED' && (
+              <span className="rounded bg-secondary px-1 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">
+                estimate
+              </span>
+            )}
+            {item.asOf && <span className="text-muted-foreground/60">as of {item.asOf}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Evidence({
+  citations,
+  messageId,
+}: {
+  citations: Citation[]
+  messageId?: string
+}) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -114,6 +189,7 @@ function Evidence({ citations }: { citations: Citation[] }) {
               </div>
             )
           })}
+          {messageId && <RawEvidence messageId={messageId} />}
         </div>
       )}
     </div>
@@ -127,6 +203,7 @@ export default function Message({
   facts,
   citations = [],
   note,
+  messageId,
 }: ChatMessage) {
   if (role === 'user') {
     return (
@@ -160,7 +237,7 @@ export default function Message({
         </div>
 
         {facts && <Facts {...facts} />}
-        {citations.length > 0 && <Evidence citations={citations} />}
+        {citations.length > 0 && <Evidence citations={citations} messageId={messageId} />}
 
         {note && (
           <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2.5 text-[12.25px] leading-relaxed text-muted-foreground">
