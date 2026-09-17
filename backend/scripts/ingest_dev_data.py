@@ -26,7 +26,12 @@ import httpx
 from sqlalchemy import select
 
 from app.core.db import get_session_factory
-from app.modules.market.connectors.base import AcquiredPayload
+from app.modules.calculation.models import CalculationSpecification
+from app.modules.calculation.pipeline.job_queue import (
+    enqueue_model_implied_price_job,
+    run_next_job,
+)
+from app.modules.market.connectors.base import AcquiredPayload, Quarantined, validate_and_parse
 from app.modules.market.connectors.boe_yield_curve.mapping import CurvePointCandidate
 from app.modules.market.connectors.boe_yield_curve.reference_connector import (
     BoEYieldCurveConnector,
@@ -39,6 +44,8 @@ from app.modules.market.pipeline.stages import ingest_gilt_reference_candidate
 from app.modules.reference.models import InstrumentAlias
 from app.modules.rights.models import RightsProfile
 from scripts.seed_dev import SEED_GILT_ISIN
+
+_GILT_PRICE_FROM_CURVE_SPEC_CODE = "gilt_price_from_curve_v1"
 
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 DMO_FIXTURE_PATH = _BACKEND_ROOT / "tests" / "fixtures" / "dmo_gilts_in_issue.xml"
@@ -90,7 +97,13 @@ async def main() -> None:
             raw_bytes=DMO_FIXTURE_PATH.read_bytes(), content_type="text/xml", status_code=200,
             fetched_at=dt.datetime.now(dt.UTC), source_url="dev-fixture",
         )
-        candidates = dmo_connector.parse(dmo_payload)
+        # validate_and_parse, not connector.parse() directly - a connector's
+        # own transport/schema checks (DATA-002 §7) are useless if nothing
+        # ever calls them before parsing (see connectors/base.py's docstring).
+        candidates_or_quarantine = validate_and_parse(dmo_connector, dmo_payload)
+        if isinstance(candidates_or_quarantine, Quarantined):
+            raise SystemExit(f"DMO payload quarantined: {candidates_or_quarantine.reasons}")
+        candidates = candidates_or_quarantine
         seed_candidate = next(
             c for c in candidates if not isinstance(c, RecordIssue) and c.isin == SEED_GILT_ISIN
         )
@@ -133,7 +146,10 @@ async def main() -> None:
         session.add(boe_artifact)
         await session.flush()
 
-        boe_candidates = boe_connector.parse(boe_payload)
+        boe_candidates_or_quarantine = validate_and_parse(boe_connector, boe_payload)
+        if isinstance(boe_candidates_or_quarantine, Quarantined):
+            raise SystemExit(f"BoE payload quarantined: {boe_candidates_or_quarantine.reasons}")
+        boe_candidates = boe_candidates_or_quarantine
         points = [c for c in boe_candidates if isinstance(c, CurvePointCandidate)]
         latest_date = max(p.curve_date for p in points)
         latest_points = [p for p in points if p.curve_date == latest_date]
@@ -145,7 +161,36 @@ async def main() -> None:
             )
         await session.commit()
         print(f"BoE curve: ingested {len(latest_points)} points for {latest_date}.")
-        print("Done. Now run the calculation specs' approval gate and compute a price if needed.")
+
+        # Enqueue + drain rather than calling compute_and_persist_model_implied_price
+        # directly in-process (P2's job-table handoff - see
+        # app/modules/calculation/pipeline/job_queue.py). If the spec isn't
+        # APPROVED yet (scripts.approve_calculation_spec hasn't been run),
+        # the job still runs to completion and records why it was skipped -
+        # that's the correct fail-closed outcome, not a script error.
+        spec = (
+            await session.execute(
+                select(CalculationSpecification).where(
+                    CalculationSpecification.code == _GILT_PRICE_FROM_CURVE_SPEC_CODE
+                )
+            )
+        ).scalar_one_or_none()
+        if spec is None:
+            print(
+                f"No {_GILT_PRICE_FROM_CURVE_SPEC_CODE} calculation_specification found - "
+                "run scripts.seed_dev first. Skipping pricing job."
+            )
+            return
+
+        await enqueue_model_implied_price_job(
+            session, instrument_id=instrument_id, as_of_date=latest_date,
+            calculation_specification_id=spec.id,
+        )
+        await session.commit()
+
+        result = await run_next_job(session)
+        if result is not None:
+            print(f"Pricing job: {result.outcome}")
 
 
 if __name__ == "__main__":

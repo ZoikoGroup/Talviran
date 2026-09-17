@@ -39,18 +39,20 @@ import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.calculation.models import CalculationResult
 from app.modules.calculation.pipeline.curve_pricing import METRIC_MODEL_IMPLIED_CLEAN_PRICE
 from app.modules.evidence.models import EvidenceBundle, EvidenceMember
+from app.modules.market.freshness import compute_freshness
 from app.modules.market.models import AcceptedFact
 from app.modules.market.pipeline.curve_ingest import (
     METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
     SUBJECT_TYPE_YIELD_CURVE_POINT,
 )
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
+from app.modules.market.queries import current_accepted_fact_at
 from app.modules.policy.allowed_output_type import AllowedOutputType
 from app.modules.policy.pdp import PolicyContext, evaluate
 from app.modules.reference.models import Instrument, InstrumentAlias
@@ -70,6 +72,7 @@ _ADVICE_PATTERNS = [
     re.compile(r"worth (buying|investing)", re.I),
 ]
 _GILT_PATTERN = re.compile(r"\bgilt|treasury gilt|2036\b", re.I)
+_YEAR_PATTERN = re.compile(r"\b(19|20)\d{2}\b")
 _ACCRUED_PATTERN = re.compile(
     r"accrued|day count|convention|clean|dirty|act/act|ex[- ]?dividend", re.I
 )
@@ -99,6 +102,11 @@ def _mentions_gilt(text: str) -> bool:
     return bool(_GILT_PATTERN.search(text))
 
 
+def _mentioned_year(text: str) -> int | None:
+    match = _YEAR_PATTERN.search(text)
+    return int(match.group()) if match else None
+
+
 def _mentions_yield_curve(text: str) -> bool:
     return bool(_YIELD_CURVE_PATTERN.search(text))
 
@@ -111,7 +119,7 @@ def _mentions_accrued(text: str) -> bool:
 class Citation:
     label: str
     meta: str | None
-    pill: str  # CURRENT | DELAYED | STALE | SOURCE - mirrors frontend's Freshness
+    pill: str  # CURRENT | DELAYED | STALE | UNAVAILABLE | SOURCE - mirrors frontend's Freshness
     kind: str  # doc | book | link
 
 
@@ -225,21 +233,6 @@ def _default_reply(query: str) -> ResearchAnswer:
     )
 
 
-async def _accepted_fact_at(
-    session: AsyncSession, *, subject_id: uuid.UUID, metric_id: str, at: dt.datetime
-) -> AcceptedFact | None:
-    return (
-        await session.execute(
-            select(AcceptedFact).where(
-                AcceptedFact.subject_id == subject_id,
-                AcceptedFact.metric_id == metric_id,
-                AcceptedFact.status == "ACTIVE",
-                AcceptedFact.valid_range.contains(at),
-            )
-        )
-    ).scalar_one_or_none()
-
-
 async def _latest_calculation_result(
     session: AsyncSession, *, subject_id: uuid.UUID, metric_id: str
 ) -> CalculationResult | None:
@@ -267,7 +260,7 @@ async def _display_allowed(session: AsyncSession, rights_profile_code: str) -> b
     return decision is RightsDecision.ALLOW
 
 
-async def _gilt_facts_reply(session: AsyncSession) -> ResearchAnswer:
+async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchAnswer:
     instrument = (
         await session.execute(
             select(Instrument)
@@ -282,11 +275,34 @@ async def _gilt_facts_reply(session: AsyncSession) -> ResearchAnswer:
         return _default_reply("gilt reference facts")
 
     now = dt.datetime.now(dt.UTC)
-    reference_fact = await _accepted_fact_at(
+    reference_fact = await current_accepted_fact_at(
         session, subject_id=instrument.id, metric_id=METRIC_GILT_REFERENCE_TERMS, at=now
     )
     if reference_fact is None:
         return _default_reply("gilt reference facts")
+
+    # Only one gilt exists in the platform right now, but the query pattern
+    # matches ANY "gilt" mention - without this check, asking about a
+    # completely different gilt (e.g. "the 2065 gilt") would silently show
+    # this one's facts as if they answered the question. That's worse than
+    # the honest "no data" default: it's actively misleading, not just
+    # unhelpful. A mentioned year that doesn't match this instrument's own
+    # maturity year means the question is about a DIFFERENT instrument.
+    mentioned_year = _mentioned_year(query_text)
+    maturity_year = dt.date.fromisoformat(reference_fact.value["redemption_date"]).year
+    if mentioned_year is not None and mentioned_year != maturity_year:
+        return ResearchAnswer(
+            text=(
+                f"I don't have reconciled data for a gilt maturing in {mentioned_year} yet "
+                f"— currently only {reference_fact.value['instrument_name']} (maturing "
+                f"{maturity_year}) is live on the platform."
+            ),
+            facts=None,
+            citations=[],
+            note=None,
+            allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
+            evidence_bundle_id=None,
+        )
 
     rows: list[tuple[str, str]] = [
         ("Instrument", reference_fact.value["instrument_name"]),
@@ -297,12 +313,16 @@ async def _gilt_facts_reply(session: AsyncSession) -> ResearchAnswer:
         ("Currency", "GBP"),
     ]
     assert reference_fact.knowledge_range.lower is not None  # our own rows always set this
-    knowledge_time = reference_fact.knowledge_range.lower.isoformat()
+    reference_knowledge_time = reference_fact.knowledge_range.lower
     citations = [
         Citation(
             label="UK DMO — Gilts in Issue",
-            meta=f"Accepted fact, knowledge-time {knowledge_time}",
-            pill="CURRENT",
+            meta=f"Accepted fact, knowledge-time {reference_knowledge_time.isoformat()}",
+            pill=compute_freshness(
+                metric_id=METRIC_GILT_REFERENCE_TERMS,
+                knowledge_time=reference_knowledge_time,
+                now=now,
+            ),
             kind="doc",
         ),
     ]
@@ -445,6 +465,12 @@ async def _yield_curve_reply(session: AsyncSession) -> ResearchAnswer:
         )
 
     as_of = latest_date.date().isoformat()
+    # The oldest knowledge-time among the points actually shown, not the
+    # newest: a curve pill must never claim to be fresher than its
+    # least-fresh contributing point.
+    oldest_knowledge_time = min(
+        fact.knowledge_range.lower for fact in used_facts if fact.knowledge_range.lower is not None
+    )
     return ResearchAnswer(
         text=(
             f"Here is the Bank of England's UK nominal gilt spot curve as of {as_of} "
@@ -456,7 +482,10 @@ async def _yield_curve_reply(session: AsyncSession) -> ResearchAnswer:
             Citation(
                 label="Bank of England — daily nominal gilt spot curve",
                 meta=f"Published {as_of} — Open Government Licence v3.0",
-                pill="CURRENT",
+                pill=compute_freshness(
+                    metric_id=METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+                    knowledge_time=oldest_knowledge_time,
+                ),
                 kind="doc",
             )
         ],
@@ -510,7 +539,7 @@ async def assemble_research_answer(
     elif _mentions_yield_curve(query_text):
         answer = await _yield_curve_reply(session)
     elif _mentions_gilt(query_text):
-        answer = await _gilt_facts_reply(session)
+        answer = await _gilt_facts_reply(session, query_text)
     else:
         answer = _default_reply(query_text)
 
@@ -524,3 +553,98 @@ async def assemble_research_answer(
         return _POLICY_BLOCKED_REPLY
 
     return answer
+
+
+# ------------------------------------------------------------------ GET evidence
+
+
+@dataclass(frozen=True)
+class EvidenceItem:
+    kind: str
+    subject_type: str | None
+    metric_id: str | None
+    value: dict[str, object] | None
+    basis: str | None
+    as_of: str | None
+
+
+@dataclass(frozen=True)
+class EvidenceDetail:
+    evidence_bundle_id: uuid.UUID
+    purpose_type: str
+    status: str
+    items: list[EvidenceItem]
+
+
+async def is_message_visible(session: AsyncSession, *, message_id: uuid.UUID) -> bool:
+    """True only if the message exists AND belongs to the caller's own
+    account — RLS (applied per-request by identity.apply_rls_context)
+    already filters out anyone else's rows, so a plain existence check is
+    enough; there is no separate "exists but isn't yours" branch to write.
+    """
+    row = (
+        await session.execute(
+            text("SELECT 1 FROM research.message WHERE id = :id"), {"id": str(message_id)}
+        )
+    ).first()
+    return row is not None
+
+
+async def get_evidence_for_message(
+    session: AsyncSession, *, message_id: uuid.UUID
+) -> EvidenceDetail | None:
+    """None means this message genuinely has no evidence bundle - a normal
+    case (e.g. an advice-redirect reply never assembles one), not an error.
+    Callers must check is_message_visible() separately for the 404 case;
+    this function assumes visibility has already been established.
+    """
+    bundle = (
+        await session.execute(
+            select(EvidenceBundle).where(EvidenceBundle.research_message_id == message_id)
+        )
+    ).scalar_one_or_none()
+    if bundle is None:
+        return None
+
+    members = (
+        await session.execute(
+            select(EvidenceMember).where(EvidenceMember.evidence_bundle_id == bundle.id)
+        )
+    ).scalars().all()
+
+    items: list[EvidenceItem] = []
+    for member in members:
+        if member.kind == "FACT" and member.accepted_fact_id is not None:
+            fact = await session.get(AcceptedFact, member.accepted_fact_id)
+            if fact is not None:
+                assert fact.knowledge_range.lower is not None  # our own rows always set this
+                items.append(
+                    EvidenceItem(
+                        kind="FACT",
+                        subject_type=fact.subject_type,
+                        metric_id=fact.metric_id,
+                        value=fact.value,
+                        basis=None,
+                        as_of=fact.knowledge_range.lower.isoformat(),
+                    )
+                )
+        elif member.kind == "CALCULATION" and member.calculation_result_id is not None:
+            result = await session.get(CalculationResult, member.calculation_result_id)
+            if result is not None:
+                items.append(
+                    EvidenceItem(
+                        kind="CALCULATION",
+                        subject_type=result.subject_type,
+                        metric_id=result.metric_id,
+                        value=result.value,
+                        basis=result.basis,
+                        as_of=result.as_of_date.isoformat(),
+                    )
+                )
+
+    return EvidenceDetail(
+        evidence_bundle_id=bundle.id,
+        purpose_type=bundle.purpose_type,
+        status=bundle.status,
+        items=items,
+    )

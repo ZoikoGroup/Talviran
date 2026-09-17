@@ -175,3 +175,50 @@ export const postResearch = (conversationId: string, query: string): Promise<Res
     })),
     note: r.note,
   }))
+
+// --------------------------------------------------------- research evidence
+
+export interface EvidenceItem {
+  kind: string
+  subjectType: string | null
+  metricId: string | null
+  value: Record<string, unknown> | null
+  basis: string | null
+  asOf: string | null
+}
+
+export interface EvidenceDetail {
+  evidenceBundleId: string | null
+  purposeType: string | null
+  status: string | null
+  items: EvidenceItem[]
+}
+
+interface EvidenceWire {
+  evidence_bundle_id: string | null
+  purpose_type: string | null
+  status: string | null
+  items: {
+    kind: string
+    subject_type: string | null
+    metric_id: string | null
+    value: Record<string, unknown> | null
+    basis: string | null
+    as_of: string | null
+  }[]
+}
+
+export const getResearchEvidence = (messageId: string): Promise<EvidenceDetail> =>
+  apiFetch<EvidenceWire>(`/api/v1/research/${messageId}/evidence`).then((r) => ({
+    evidenceBundleId: r.evidence_bundle_id,
+    purposeType: r.purpose_type,
+    status: r.status,
+    items: r.items.map((i) => ({
+      kind: i.kind,
+      subjectType: i.subject_type,
+      metricId: i.metric_id,
+      value: i.value,
+      basis: i.basis,
+      asOf: i.as_of,
+    })),
+  }))

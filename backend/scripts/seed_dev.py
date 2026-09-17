@@ -24,13 +24,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session_factory
 from app.modules.calculation.models import CalculationSpecification
+from app.modules.calculation.service import CALCULATION_RIGHTS_PROFILE_CODE
 from app.modules.policy.models import ActivationRecord, CapabilityStatus
 from app.modules.reference.models import FiSovereignTerms, Instrument, InstrumentAlias, Issuer
 from app.modules.reference.service import REFERENCE_RIGHTS_PROFILE_CODE
 from app.modules.rights.models import RightsGrant, RightsProfile
 
 _JURISDICTION = "GB"
-_CAPABILITIES = ["reference.issuers.read", "reference.instruments.read", "research.answer"]
+_CAPABILITIES = [
+    "reference.issuers.read",
+    "reference.instruments.read",
+    "research.answer",
+    "calculation.results.read",
+]
 
 UK_DMO_GILTS_RIGHTS_PROFILE_CODE = "uk-dmo.gilts"
 BOE_YIELD_CURVE_RIGHTS_PROFILE_CODE = "boe.yield-curve"
@@ -177,6 +183,7 @@ async def seed() -> None:
         await _seed_capability_statuses(session)
         await _seed_activation_record(session)
         await _seed_rights_profile(session, REFERENCE_RIGHTS_PROFILE_CODE, ["retrieve"])
+        await _seed_rights_profile(session, CALCULATION_RIGHTS_PROFILE_CODE, ["retrieve"])
         await _seed_rights_profile(
             session, UK_DMO_GILTS_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
         )
