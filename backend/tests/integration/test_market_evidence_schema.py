@@ -12,11 +12,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.evidence.models import (
+    QUALITY_PASS,
     CitationLocator,
     Document,
     DocumentChunk,
+    DocumentVersion,
     EvidenceBundle,
     EvidenceMember,
+    ParsedDocumentVersion,
 )
 from app.modules.market.models import Dataset, Source, SourceArtifact, SourceObservation
 from app.modules.rights.models import RightsProfile
@@ -96,11 +99,39 @@ async def test_semantic_observation_key_is_unique_for_idempotent_writes(
 
 
 async def test_evidence_bundle_chain_round_trips(db_session: AsyncSession) -> None:
+    artifact = await _seed_source_artifact(db_session)
+    profile = await _seed_rights_profile(db_session)
+
     document = Document(title="UK DMO Gilt Formulae", media_type="application/pdf")
     db_session.add(document)
     await db_session.flush()
 
-    chunk = DocumentChunk(document_id=document.id, chunk_index=0, text_content="Section 1...")
+    version = DocumentVersion(
+        document_id=document.id,
+        source_artifact_id=artifact.id,
+        rights_profile_id=profile.id,
+        retrieved_at=dt.datetime.now(dt.UTC),
+    )
+    db_session.add(version)
+    await db_session.flush()
+
+    parsed = ParsedDocumentVersion(
+        document_version_id=version.id,
+        parser_name="test-parser",
+        parser_version="1",
+        parse_started_at=dt.datetime.now(dt.UTC),
+        extraction_quality=QUALITY_PASS,
+    )
+    db_session.add(parsed)
+    await db_session.flush()
+
+    chunk = DocumentChunk(
+        parsed_document_version_id=parsed.id,
+        chunker_version="1",
+        ordinal=0,
+        text_content="Section 1...",
+        content_hash="b" * 64,
+    )
     db_session.add(chunk)
     await db_session.flush()
 

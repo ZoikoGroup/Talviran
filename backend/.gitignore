@@ -6,3 +6,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+# Local dev backend for market.SourceArtifact.storage_ref (app/modules/
+# market/artifact_storage.py) - never the real object-storage backend,
+# never committed.
+var/artifacts/

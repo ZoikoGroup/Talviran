@@ -20,6 +20,13 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6380/0"
     dmo_base_url: str = "https://www.dmo.gov.uk"
+
+    # Local-filesystem backend for market.SourceArtifact.storage_ref
+    # (ENG-ARCH-003 names S3-compatible object storage as the eventual
+    # target - not wired up yet, same gap SourceArtifact's own docstring
+    # flags). Content-addressed by sha256, so this default is safe to
+    # share across dev/test runs on one machine.
+    artifact_storage_root: str = "var/artifacts"
     secret_key: str = "dev-only-change-me"
     cors_allow_origins: list[str] = ["http://localhost:5173"]
 
