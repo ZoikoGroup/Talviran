@@ -8,9 +8,16 @@ anyway — see rule_engine.py's docstring):
   - threshold_unit, comparison_basis, evaluation_window (needed for
     CHANGES_BY/ENTERS_STATE/DOCUMENT_PUBLISHED/EVENT_SCHEDULED — only
     CROSSES_ABOVE/CROSSES_BELOW are implemented so far)
-  - hysteresis, debounce_seconds, market_hours_mode, user_timezone,
-    quiet_hours_policy_id (crossing/debounce hardening, §8, is a later
-    slice — every raw crossing is currently treated as real)
+  - market_hours_mode, user_timezone, quiet_hours_policy_id. Both §8
+    concepts ARE modelled now: rearm_threshold (hysteresis, with a
+    concrete worked example, §8.1) and debounce_seconds (defined only
+    conceptually in §8's own table - "minimum interval between qualifying
+    business fires for the same rule version" - with no field name, no
+    worked example, and no default duration anywhere in the spec; 0 is the
+    only sensible non-configured default, meaning "no debounce", since a
+    positive default would silently change a rule's economic meaning,
+    which §8.2 explicitly forbids doing without the user's explicit
+    choice).
   - schedule_id, delivery_profile_id (no scheduler or notification/alert
     delivery module exists yet — those are separate later slices)
   - SUSPENDED as a RuleVersion.status value: resolved, not just deferred,
@@ -77,11 +84,12 @@ design: who/what lapsed, when, and when (if ever) it recovered.
 
 The dead-man watcher itself (§12.3 - an independently-deployed process
 watching the evaluator's own heartbeat, a different failure mode than
-"is a specific rule stale") is NOT built here. It needs a genuinely
-separate process/deployment by MON-001's own explicit doctrine
-("An evaluator process cannot be trusted to report that it has died") -
-faking that inside the same codebase without a second real deployment
-would just be theater. See CronCreate/a real second process, later.
+"is a specific rule stale") is a genuinely separate script
+(scripts.run_deadman_watcher), not a function called from inside the
+evaluator - MON-001's own explicit doctrine ("An evaluator process cannot
+be trusted to report that it has died") rules out anything less: it must
+be a second real process, run and deployed independently of
+scripts.run_monitoring_worker.
 """
 
 import datetime as dt
@@ -94,10 +102,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, CreatedAtMixin, UUIDPrimaryKeyMixin
 
-# rule_evaluation_input.accepted_fact_id and alert.evidence_bundle_id below
-# declare cross-schema FKs by string - same import-resolution requirement
-# as calculation/models.py and policy/models.py before it: the module
-# declaring the FK must guarantee its target is imported.
+# rule_evaluation_input.accepted_fact_id/calculation_result_id and
+# alert.evidence_bundle_id below declare cross-schema FKs by string - same
+# import-resolution requirement as calculation/models.py and
+# policy/models.py before it: the module declaring the FK must guarantee
+# its target is imported.
+from app.modules.calculation import models as _calculation_models  # noqa: F401
 from app.modules.evidence import models as _evidence_models  # noqa: F401
 from app.modules.market import models as _market_models  # noqa: F401
 
@@ -113,12 +123,18 @@ PREDICATE_CROSSES_BELOW = "CROSSES_BELOW"
 
 TRIGGER_TYPE_FACT_PUBLISHED = "FACT_PUBLISHED"
 
+RULE_INPUT_KIND_FACT = "FACT"
+RULE_INPUT_KIND_CALCULATION = "CALCULATION"
+
 ALERT_TYPE_CROSSING = "CROSSING"
 ALERT_TYPE_INITIAL_STATE = "INITIAL_STATE"
 
 STATUS_ALERT_CREATED = "CREATED"
+STATUS_ALERT_SUPPRESSED = "SUPPRESSED"
 STATUS_ALERT_DELIVERED = "DELIVERED"
 STATUS_ALERT_DELIVERY_FAILED = "DELIVERY_FAILED"
+
+SUPPRESSION_REASON_DEBOUNCE = "DEBOUNCE"
 
 TRANSPORT_IN_APP = "IN_APP"
 
@@ -129,7 +145,15 @@ OUTCOME_INITIAL_STATE = "INITIAL_STATE"
 OUTCOME_MATCH = "MATCH"
 OUTCOME_STILL_MATCHED = "STILL_MATCHED"
 OUTCOME_NO_MATCH = "NO_MATCH"
+OUTCOME_REARMED = "REARMED"
 OUTCOME_ERROR = "ERROR"
+
+# Outcomes that mean "the rule is currently disarmed - it has fired and not
+# yet passed back through its rearm_threshold" (MON-001 §8's own worked
+# example: STILL_MATCHED persists through a wobble in the dead zone: only
+# dropping past rearm_threshold produces REARMED, and only a *subsequent*
+# re-crossing of the primary threshold after that produces a fresh MATCH).
+DISARMED_OUTCOMES = (OUTCOME_MATCH, OUTCOME_STILL_MATCHED)
 
 COVERAGE_STATE_HEALTHY = "HEALTHY"
 COVERAGE_STATE_AT_RISK = "AT_RISK"
@@ -172,6 +196,22 @@ class MonitoringRuleVersion(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     metric_id: Mapped[str] = mapped_column(String(64))
     predicate: Mapped[str] = mapped_column(String(32))
     threshold_value: Mapped[Decimal] = mapped_column(Numeric(20, 8))
+    # MON-001 §8: hysteresis is modelled as a second absolute threshold, not
+    # a percentage/margin field - `rearm_below` in the spec's own worked
+    # example, generalized here to rearm_threshold since the same field
+    # means "rearm above" for CROSSES_BELOW. Optional: unset means no
+    # hysteresis at all, and the rule fires on every raw crossing exactly
+    # as it did before this feature existed - §8.2 itself gives no default
+    # margin ("must not encode an investment view... the user must
+    # explicitly choose it"), so there is no sensible non-None default.
+    rearm_threshold: Mapped[Decimal | None] = mapped_column(Numeric(20, 8), default=None)
+    # MON-001 §8: "minimum interval between qualifying business fires for
+    # the same rule version" - measured against knowledge_time (when each
+    # fact became known), not wall-clock processing time, for the same
+    # bitemporal-consistency reason every other time comparison in this
+    # module uses knowledge_time. 0 means no debounce (the only sensible
+    # default - see module docstring).
+    debounce_seconds: Mapped[int] = mapped_column(default=0)
     effective_from: Mapped[dt.datetime]
     effective_to: Mapped[dt.datetime | None] = mapped_column(default=None)
     created_by_principal_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True))
@@ -201,9 +241,12 @@ class RuleEvaluation(UUIDPrimaryKeyMixin, Base):
 
 
 class RuleEvaluationInput(UUIDPrimaryKeyMixin, Base):
-    """Which accepted_fact row(s) fed a given evaluation — NEVER a direct
-    reference to a raw source_observation, same evidence-traceability rule
-    as calculation_input.
+    """Which fact or calculation result fed a given evaluation — a
+    discriminated union via `kind` + nullable FKs, exactly one populated
+    per row, mirroring evidence.EvidenceMember's identical pattern for the
+    identical problem ("could be one of several truth-bearing tables").
+    NEVER a direct reference to a raw source_observation, same
+    evidence-traceability rule as calculation_input.
     """
 
     __tablename__ = "rule_evaluation_input"
@@ -213,8 +256,13 @@ class RuleEvaluationInput(UUIDPrimaryKeyMixin, Base):
     rule_evaluation_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("monitoring.rule_evaluation.id"), index=True
     )
-    accepted_fact_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("market.accepted_fact.id"), index=True
+    kind: Mapped[str] = mapped_column(String(16))  # FACT | CALCULATION
+    accepted_fact_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("market.accepted_fact.id"), index=True, default=None
+    )
+    calculation_result_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("calculation.calculation_result.id"),
+        index=True, default=None,
     )
     role: Mapped[str] = mapped_column(String(32))  # e.g. CURRENT_VALUE, PREVIOUS_VALUE
 
@@ -249,6 +297,35 @@ class Alert(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         PGUUID(as_uuid=True), ForeignKey("evidence.evidence_bundle.id"), default=None
     )
     status: Mapped[str] = mapped_column(String(16), default=STATUS_ALERT_CREATED)
+
+
+class AlertSuppression(UUIDPrimaryKeyMixin, Base):
+    """MON-001 §15.2's alert_suppression, only the DEBOUNCE reason
+    implemented this slice (QUIET_HOURS/RATE_LIMIT/FLAPPING/DIGEST all need
+    features that don't exist yet - quiet-hours policies, per-account rate
+    limits, flap detection, digests).
+
+    A debounced alert is still created (status=SUPPRESSED, not skipped
+    entirely) - the crossing genuinely happened and must stay in the
+    historical record; only its delivery is withheld. Matches DATA-002's
+    own doctrine elsewhere in this codebase: never silently drop a real
+    event, record what happened and why it wasn't surfaced.
+    """
+
+    __tablename__ = "alert_suppression"
+    __table_args__ = {"schema": "monitoring"}
+
+    account_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), index=True)
+    alert_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("monitoring.alert.id"), index=True
+    )
+    reason: Mapped[str] = mapped_column(String(32))
+    policy_version: Mapped[str] = mapped_column(String(32))
+    started_at: Mapped[dt.datetime]
+    expires_at: Mapped[dt.datetime | None] = mapped_column(default=None)
+    released_via_alert_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("monitoring.alert.id"), default=None
+    )
 
 
 class AlertDeliveryAttempt(UUIDPrimaryKeyMixin, Base):

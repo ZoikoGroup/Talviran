@@ -39,10 +39,13 @@ _CAPABILITIES = [
     "calculation.results.read",
     "monitoring.alerts.create",
     "monitoring.alerts.read",
+    "monitoring.rules.create",
+    "monitoring.rules.read",
 ]
 
 UK_DMO_GILTS_RIGHTS_PROFILE_CODE = "uk-dmo.gilts"
 BOE_YIELD_CURVE_RIGHTS_PROFILE_CODE = "boe.yield-curve"
+UK_DMO_METHODOLOGY_RIGHTS_PROFILE_CODE = "uk-dmo.methodology"
 FRANKFURTER_FX_RIGHTS_PROFILE_CODE = "frankfurter.fx"
 DBNOMICS_MACRO_RIGHTS_PROFILE_CODE = "dbnomics.macro"
 TWELVE_DATA_EQUITY_RIGHTS_PROFILE_CODE = "twelve-data.equity"
@@ -255,6 +258,15 @@ async def seed() -> None:
         )
         await _seed_rights_profile(
             session, BOE_YIELD_CURVE_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
+        )
+        # Document rights are evaluated independently of whatever profile
+        # governs price data from the same publisher (EVID-001 doctrine) -
+        # a freely-published UK government methodology PDF, so index/embed/
+        # ai are granted now even though nothing consumes them until P4b.
+        await _seed_rights_profile(
+            session,
+            UK_DMO_METHODOLOGY_RIGHTS_PROFILE_CODE,
+            ["retrieve", "store", "index", "embed", "ai", "display"],
         )
         await _seed_rights_profile(
             session, FRANKFURTER_FX_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]

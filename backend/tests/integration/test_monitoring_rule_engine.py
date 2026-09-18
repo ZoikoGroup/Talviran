@@ -25,6 +25,7 @@ from app.modules.monitoring.models import (
     OUTCOME_INITIAL_STATE,
     OUTCOME_MATCH,
     OUTCOME_NO_MATCH,
+    OUTCOME_REARMED,
     OUTCOME_STILL_MATCHED,
     PREDICATE_CROSSES_ABOVE,
     STATUS_ARMED,
@@ -61,6 +62,7 @@ async def _seed_rule_version(
     threshold_value: Decimal = Decimal("5.0"),
     status: str = STATUS_ARMED,
     predicate: str = PREDICATE_CROSSES_ABOVE,
+    rearm_threshold: Decimal | None = None,
 ) -> uuid.UUID:
     rule = MonitoringRule(account_id=account_id)
     session.add(rule)
@@ -75,6 +77,7 @@ async def _seed_rule_version(
         metric_id=METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
         predicate=predicate,
         threshold_value=threshold_value,
+        rearm_threshold=rearm_threshold,
         effective_from=dt.datetime.now(dt.UTC),
         created_by_principal_id=principal_id,
     )
@@ -300,7 +303,94 @@ async def test_no_current_fact_is_skipped_not_a_crash(db_session: AsyncSession) 
     )
 
     assert isinstance(result, RuleEvaluationSkipped)
-    assert "no accepted_fact at all yet" in result.reason
+    assert "no value at all yet" in result.reason
+
+
+async def test_hysteresis_worked_example_matches_mon_001_section_8_1(
+    db_session: AsyncSession,
+) -> None:
+    """threshold=4.50%, rearm_threshold=4.45% - the exact worked example
+    from MON-001 §8.1, reproduced value-for-value and outcome-for-outcome:
+    a single fire at the first real crossing, no re-fire while wobbling in
+    the dead zone (STILL_MATCHED absorbs it), REARMED only once the value
+    drops below rearm_threshold, and a fresh MATCH only on the next real
+    crossing after that.
+    """
+    account_id, principal_id = uuid.uuid4(), uuid.uuid4()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+    rule_version_id = await _seed_rule_version(
+        db_session,
+        account_id=account_id,
+        principal_id=principal_id,
+        threshold_value=Decimal("4.50"),
+        rearm_threshold=Decimal("4.45"),
+    )
+
+    sequence = [
+        ("4.44", OUTCOME_INITIAL_STATE),
+        ("4.47", OUTCOME_NO_MATCH),
+        ("4.51", OUTCOME_MATCH),
+        ("4.49", OUTCOME_STILL_MATCHED),
+        ("4.44", OUTCOME_REARMED),
+        ("4.53", OUTCOME_MATCH),
+    ]
+
+    for day, (rate, expected_outcome) in enumerate(sequence, start=10):
+        await _seed_curve_point(
+            db_session, spot_rate_pct=rate, valid_on=dt.date(2026, 9, day),
+            knowledge_time=dt.datetime(2026, 9, day, 8, 0, tzinfo=dt.UTC),
+        )
+        await db_session.commit()
+        await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+
+        result = await evaluate_rule_version(
+            db_session, rule_version_id=rule_version_id, trigger_type=_TRIGGER_TYPE,
+            trigger_id=None,
+        )
+        await db_session.commit()
+        await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+
+        assert isinstance(result, RuleEvaluationRecorded), (rate, expected_outcome)
+        assert result.outcome == expected_outcome, (rate, expected_outcome, result.outcome)
+
+
+async def test_without_rearm_threshold_every_crossing_still_fires(
+    db_session: AsyncSession,
+) -> None:
+    """No hysteresis configured (rearm_threshold=None) must behave exactly
+    as it did before this feature existed - a wobble back above the
+    threshold fires MATCH again immediately, no dead zone.
+    """
+    account_id, principal_id = uuid.uuid4(), uuid.uuid4()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+    rule_version_id = await _seed_rule_version(
+        db_session, account_id=account_id, principal_id=principal_id,
+        threshold_value=Decimal("4.50"),
+    )
+
+    sequence = [
+        ("4.44", OUTCOME_INITIAL_STATE),
+        ("4.51", OUTCOME_MATCH),
+        ("4.49", OUTCOME_NO_MATCH),
+        ("4.53", OUTCOME_MATCH),
+    ]
+    for day, (rate, expected_outcome) in enumerate(sequence, start=10):
+        await _seed_curve_point(
+            db_session, spot_rate_pct=rate, valid_on=dt.date(2026, 9, day),
+            knowledge_time=dt.datetime(2026, 9, day, 8, 0, tzinfo=dt.UTC),
+        )
+        await db_session.commit()
+        await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+
+        result = await evaluate_rule_version(
+            db_session, rule_version_id=rule_version_id, trigger_type=_TRIGGER_TYPE,
+            trigger_id=None,
+        )
+        await db_session.commit()
+        await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+
+        assert isinstance(result, RuleEvaluationRecorded), (rate, expected_outcome)
+        assert result.outcome == expected_outcome, (rate, expected_outcome, result.outcome)
 
 
 async def test_insert_without_rls_context_is_rejected(db_session: AsyncSession) -> None:

@@ -18,6 +18,7 @@ from app.modules.monitoring.models import (
     PREDICATE_CROSSES_ABOVE,
     STATUS_ALERT_CREATED,
     STATUS_ALERT_DELIVERED,
+    STATUS_ALERT_SUPPRESSED,
     STATUS_ARMED,
     SUBJECT_TYPE_INSTRUMENT,
     TRANSPORT_IN_APP,
@@ -38,7 +39,11 @@ async def _act_as(
 
 
 async def _seed_alert(
-    session: AsyncSession, *, account_id: uuid.UUID, principal_id: uuid.UUID
+    session: AsyncSession,
+    *,
+    account_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    status: str = STATUS_ALERT_CREATED,
 ) -> uuid.UUID:
     rule = MonitoringRule(account_id=account_id)
     session.add(rule)
@@ -66,7 +71,7 @@ async def _seed_alert(
         evaluation_id=evaluation.id, alert_type=ALERT_TYPE_INITIAL_STATE, subject_id=uuid.uuid4(),
         metric_id="UK_GILT_NOMINAL_SPOT_CURVE", observed_value=Decimal("4.5"),
         threshold_value=Decimal("5.0"), knowledge_time=dt.datetime.now(dt.UTC),
-        status=STATUS_ALERT_CREATED,
+        status=status,
     )
     session.add(alert)
     await session.flush()
@@ -126,3 +131,22 @@ async def test_redelivering_an_already_delivered_alert_does_not_add_a_second_att
 async def test_nonexistent_alert_is_skipped_not_a_crash(db_session: AsyncSession) -> None:
     result = await deliver_alert(db_session, alert_id=uuid.uuid4())
     assert isinstance(result, DeliverySkipped)
+
+
+async def test_a_suppressed_alert_is_never_delivered(db_session: AsyncSession) -> None:
+    account_id, principal_id = uuid.uuid4(), uuid.uuid4()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+    alert_id = await _seed_alert(
+        db_session, account_id=account_id, principal_id=principal_id,
+        status=STATUS_ALERT_SUPPRESSED,
+    )
+    await db_session.commit()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+
+    result = await deliver_alert(db_session, alert_id=alert_id)
+
+    assert isinstance(result, DeliverySkipped)
+    assert "suppressed" in result.reason
+    alert = await db_session.get(Alert, alert_id)
+    assert alert is not None
+    assert alert.status == STATUS_ALERT_SUPPRESSED, "must not silently move a suppressed alert on"
