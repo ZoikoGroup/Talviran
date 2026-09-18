@@ -1,0 +1,8 @@
+# Golden fixture corpora are checksum-pinned (see
+# backend/app/modules/calculation/golden_manifest.py): their exact bytes are
+# the contract that manifest.json's sha256 checks on every test run. Line
+# ending normalization on checkout must never touch them — confirmed on this
+# Windows machine (core.autocrlf=true) turning an LF-committed corpus.json
+# into CRLF on checkout, which then failed its own recorded checksum despite
+# the JSON content being byte-for-byte unchanged otherwise.
+backend/app/modules/calculation/specs/**/golden/**/*.json -text

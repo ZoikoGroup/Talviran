@@ -47,7 +47,9 @@ export default function ModelSwitcher({
         )}
       >
         <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', active.dot)} />
-        <span className="font-medium">{active.id}</span>
+        {/* The dot plus chevron read as "a model picker" on their own; the
+            name costs width the composer's textarea needs more on a phone. */}
+        <span className="hidden font-medium sm:inline">{active.id}</span>
         <ChevronDown
           className={cn('h-3.5 w-3.5 transition-transform', at && 'rotate-180')}
         />

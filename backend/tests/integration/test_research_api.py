@@ -39,13 +39,17 @@ ClientFactory = Callable[[], AbstractAsyncContextManager[AsyncClient]]
 
 
 @pytest_asyncio.fixture
-async def make_client() -> AsyncIterator[ClientFactory]:
+async def make_client(supabase_http: AsyncClient) -> AsyncIterator[ClientFactory]:
     """Hands out independent clients, each with its own cookie jar.
 
     Same per-test engine reasoning as the auth suite: the process-level
     singletons in app.core.db belong to uvicorn's single loop, not to
-    pytest-asyncio's per-test loops.
+    pytest-asyncio's per-test loops. Every client made by the returned
+    factory shares one FakeSupabaseAuth-backed `_http` override, since they
+    all belong to the same test regardless of how many separate "users"
+    (alice, bob, ...) sign up through it.
     """
+    from app.modules.api.v1 import auth as auth_module
     from app.modules.api.v1 import deps
 
     settings = get_settings()
@@ -58,6 +62,7 @@ async def make_client() -> AsyncIterator[ClientFactory]:
 
     app.dependency_overrides[get_session] = _session_override
     app.dependency_overrides[deps.key_wrapper] = lambda: TEST_WRAPPER
+    app.dependency_overrides[auth_module._http] = lambda: supabase_http
 
     @asynccontextmanager
     async def _client() -> AsyncIterator[AsyncClient]:

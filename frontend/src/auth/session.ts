@@ -1,14 +1,13 @@
 /**
  * Client-side session helpers.
  *
- * Identity itself now comes from the backend (P1 week 14: real signup/
- * login/me calls in @/lib/api) — the session cookie is HttpOnly and this
- * file never touches it (SEC-001 §41). What lives here is purely cosmetic
- * and client-only: deriving a display name from an email, and a local
- * override for it, since there is no backend profile/display-name endpoint
- * yet. Losing this override (private browsing, a different device) just
- * means the name falls back to being derived from the email again — never
- * a loss of the actual account.
+ * Every auth flow — sign-up, sign-in, sign-out, forgot/reset password — now
+ * calls the real /api/v1/auth/* surface (Supabase-backed) via @/lib/api,
+ * wired through AuthContext. Identity itself comes from the backend — the
+ * session cookie is HttpOnly and this file never touches it (SEC-001 §41).
+ * What lives here is purely cosmetic and client-only: deriving a display
+ * name from an email, and a local override for it, since there is no
+ * backend profile/display-name endpoint yet.
  */
 
 const DISPLAY_NAME_KEY = 'talvrin-display-name'

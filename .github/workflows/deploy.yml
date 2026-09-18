@@ -1,0 +1,38 @@
+name: Deploy Talvrin
+
+concurrency:
+  group: deploy-talvrin
+  cancel-in-progress: false
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.GCP_SSH_HOST }}
+          username: ${{ secrets.GCP_SSH_USER }}
+          key: ${{ secrets.GCP_SSH_KEY }}
+          script: |
+            set -e
+
+            cd /var/www/talvrin-backend/app
+            git pull origin main
+            cd backend
+            /home/lennox/.local/bin/uv sync
+            /home/lennox/.local/bin/uv run alembic upgrade head
+            sudo systemctl restart talvrin-backend
+
+            cd /var/www/talvrin-frontend/app
+            git pull origin main
+            cd frontend
+            npm install
+            npm run build
+            sudo rm -rf /var/www/talvrin-frontend/html/*
+            sudo cp -r dist/* /var/www/talvrin-frontend/html/
+            sudo chown -R www-data:www-data /var/www/talvrin-frontend/html

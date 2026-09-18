@@ -31,6 +31,12 @@ class Principal(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
     email: Mapped[str] = mapped_column(String(320), unique=True)
     status: Mapped[str] = mapped_column(String(32), default="ACTIVE")
+    # The join key to whichever Supabase Auth (GoTrue) user this principal
+    # corresponds to — see migration 0012 and identity/supabase_auth.py.
+    # Not a secret like a password or session-token hash would be, so unlike
+    # those (see migration 0009's docstring) it is mapped here rather than
+    # only ever touched via raw SQL.
+    supabase_user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), unique=True)
 
 
 class Session(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

@@ -9,6 +9,7 @@ import datetime as dt
 import uuid
 from decimal import Decimal
 
+import httpx
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,13 +60,17 @@ async def _act_as(
     )
 
 
-async def _register_tenant(session: AsyncSession) -> tuple[uuid.UUID, uuid.UUID]:
+async def _register_tenant(
+    session: AsyncSession, http: httpx.AsyncClient
+) -> tuple[uuid.UUID, uuid.UUID]:
     """A real identity.account/principal pair - governance.policy_decision
     (written by every PDP evaluate() call) has a hard FK to identity.account,
     so a bare synthetic uuid4() satisfies monitoring's own RLS-scoped tables
     but not the PDP's own audit log.
     """
-    login = await identity_service.register(session, email=_email(), password=_PASSWORD)
+    login = await identity_service.register(
+        session, email=_email(), password=_PASSWORD, http=http
+    )
     await session.commit()
     await _act_as(
         session, account_id=login.identity.account_id, principal_id=login.identity.principal_id
@@ -156,9 +161,9 @@ async def _seed_curve_point(
 
 
 async def test_initial_state_evaluation_creates_an_initial_state_alert(
-    db_session: AsyncSession,
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient,
 ) -> None:
-    account_id, principal_id = await _register_tenant(db_session)
+    account_id, principal_id = await _register_tenant(db_session, supabase_http)
     await _seed_governance(db_session)
     await _seed_boe_rights(db_session)
     rule_version_id = await _seed_rule_version(
@@ -198,8 +203,10 @@ async def test_initial_state_evaluation_creates_an_initial_state_alert(
     assert len(members) == 1
 
 
-async def test_crossing_match_creates_a_crossing_alert(db_session: AsyncSession) -> None:
-    account_id, principal_id = await _register_tenant(db_session)
+async def test_crossing_match_creates_a_crossing_alert(
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient
+) -> None:
+    account_id, principal_id = await _register_tenant(db_session, supabase_http)
     await _seed_governance(db_session)
     await _seed_boe_rights(db_session)
     rule_version_id = await _seed_rule_version(
@@ -237,9 +244,9 @@ async def test_crossing_match_creates_a_crossing_alert(db_session: AsyncSession)
 
 
 async def test_calling_twice_for_the_same_evaluation_returns_the_same_alert(
-    db_session: AsyncSession,
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient,
 ) -> None:
-    account_id, principal_id = await _register_tenant(db_session)
+    account_id, principal_id = await _register_tenant(db_session, supabase_http)
     await _seed_governance(db_session)
     await _seed_boe_rights(db_session)
     rule_version_id = await _seed_rule_version(
@@ -267,8 +274,10 @@ async def test_calling_twice_for_the_same_evaluation_returns_the_same_alert(
     assert first.alert_id == second.alert_id
 
 
-async def test_without_display_rights_no_alert_is_created(db_session: AsyncSession) -> None:
-    account_id, principal_id = await _register_tenant(db_session)
+async def test_without_display_rights_no_alert_is_created(
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient
+) -> None:
+    account_id, principal_id = await _register_tenant(db_session, supabase_http)
     await _seed_governance(db_session)
     await _seed_boe_rights(db_session, granted=False)
     rule_version_id = await _seed_rule_version(
@@ -292,8 +301,10 @@ async def test_without_display_rights_no_alert_is_created(db_session: AsyncSessi
     assert "display not permitted" in result.reason
 
 
-async def test_pdp_denies_when_capability_is_unregistered(db_session: AsyncSession) -> None:
-    account_id, principal_id = await _register_tenant(db_session)
+async def test_pdp_denies_when_capability_is_unregistered(
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient
+) -> None:
+    account_id, principal_id = await _register_tenant(db_session, supabase_http)
     # Deliberately skip _seed_governance - fail-closed DENY.
     await _seed_boe_rights(db_session)
     rule_version_id = await _seed_rule_version(
@@ -317,8 +328,10 @@ async def test_pdp_denies_when_capability_is_unregistered(db_session: AsyncSessi
     assert "policy denied" in result.reason
 
 
-async def test_still_matched_outcome_never_creates_a_second_alert(db_session: AsyncSession) -> None:
-    account_id, principal_id = await _register_tenant(db_session)
+async def test_still_matched_outcome_never_creates_a_second_alert(
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient
+) -> None:
+    account_id, principal_id = await _register_tenant(db_session, supabase_http)
     await _seed_governance(db_session)
     await _seed_boe_rights(db_session)
     rule_version_id = await _seed_rule_version(

@@ -16,7 +16,8 @@ plaintext access". Three consequences drive the design here:
 
 2. **Wrapping is pluggable.** Production wraps with Cloud KMS; local
    development and CI cannot reach it and must not require it. `KeyWrapper` is
-   the seam, mirroring the `BreachScreen` protocol in identity.passwords.
+   the seam, mirroring the caller-supplied `httpx.AsyncClient` pattern
+   identity/supabase_auth.py uses for the same reason.
 
 3. **The plaintext DEK is never persisted.** Only the wrapped form goes to the
    database, so a database dump alone yields nothing.

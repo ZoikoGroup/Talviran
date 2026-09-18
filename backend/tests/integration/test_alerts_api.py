@@ -54,7 +54,9 @@ ClientFactory = Callable[[], AbstractAsyncContextManager[AsyncClient]]
 
 
 @pytest_asyncio.fixture
-async def make_client() -> AsyncIterator[ClientFactory]:
+async def make_client(supabase_http: AsyncClient) -> AsyncIterator[ClientFactory]:
+    from app.modules.api.v1 import auth as auth_module
+
     settings = get_settings()
     engine = create_async_engine(settings.database_url)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -64,6 +66,7 @@ async def make_client() -> AsyncIterator[ClientFactory]:
             yield session
 
     app.dependency_overrides[get_session] = _session_override
+    app.dependency_overrides[auth_module._http] = lambda: supabase_http
 
     @asynccontextmanager
     async def _client() -> AsyncIterator[AsyncClient]:

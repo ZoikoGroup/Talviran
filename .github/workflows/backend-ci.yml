@@ -41,6 +41,12 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://talvrin_app:talvrin_app@localhost:5433/talvrin
       ADMIN_DATABASE_URL: postgresql+asyncpg://talvrin:talvrin@localhost:5433/talvrin
       REDIS_URL: redis://localhost:6380/0
+      # Auth tests never make a real Supabase call — they inject a fake
+      # httpx transport (tests/integration/conftest.py) — but Settings()
+      # requires these to be present just to construct, so a placeholder is
+      # enough here.
+      SUPABASE_URL: https://ci-placeholder.supabase.co
+      SUPABASE_ANON_KEY: ci-placeholder-anon-key
 
     steps:
       - uses: actions/checkout@v4

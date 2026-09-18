@@ -99,12 +99,56 @@ MODEL_IMPLIED_CLEAN_PRICE_FRESHNESS = FreshnessProfile(
     unavailable_after=dt.timedelta(days=30),
 )
 
+FX_SPOT_RATE_FRESHNESS = FreshnessProfile(
+    metric_id="FX_SPOT_RATE",
+    # Frankfurter (ECB reference rates) publishes once per EU business day,
+    # not intraday - same cadence/thresholds as the BoE curve.
+    freshness_slo=dt.timedelta(days=1),
+    delayed_after=dt.timedelta(days=3),
+    stale_after=dt.timedelta(days=7),
+    unavailable_after=dt.timedelta(days=14),
+)
+
+MACRO_GDP_FRESHNESS = FreshnessProfile(
+    metric_id="MACRO_GDP",
+    # Quarterly national-accounts data with real publication lag; revisions
+    # arrive on their own schedule, so this should never flip to
+    # UNAVAILABLE just because a new quarter hasn't printed yet.
+    freshness_slo=dt.timedelta(days=100),
+    delayed_after=dt.timedelta(days=150),
+    stale_after=dt.timedelta(days=400),
+    unavailable_after=None,
+)
+
+MACRO_CPI_FRESHNESS = FreshnessProfile(
+    metric_id="MACRO_CPI",
+    # Monthly cadence - a much shorter SLO than GDP.
+    freshness_slo=dt.timedelta(days=35),
+    delayed_after=dt.timedelta(days=60),
+    stale_after=dt.timedelta(days=120),
+    unavailable_after=None,
+)
+
+EQUITY_EOD_PRICE_FRESHNESS = FreshnessProfile(
+    metric_id="EQUITY_EOD_PRICE",
+    # Free-tier Twelve Data is end-of-day only - "one trading day old" is
+    # CURRENT, mirroring the curve profile rather than a live-tick SLO.
+    freshness_slo=dt.timedelta(days=1),
+    delayed_after=dt.timedelta(days=3),
+    stale_after=dt.timedelta(days=7),
+    unavailable_after=dt.timedelta(days=30),
+)
+
 DEFAULT_PROFILES: dict[str, FreshnessProfile] = {
     profile.metric_id: profile
     for profile in (
         GILT_REFERENCE_TERMS_FRESHNESS,
         UK_GILT_NOMINAL_SPOT_CURVE_FRESHNESS,
         MODEL_IMPLIED_CLEAN_PRICE_FRESHNESS,
+        FX_SPOT_RATE_FRESHNESS,
+        MACRO_GDP_FRESHNESS,
+        MACRO_CPI_FRESHNESS,
+        EQUITY_EOD_PRICE_FRESHNESS,
     )
 }
 
