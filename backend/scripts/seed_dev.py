@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session_factory
 from app.modules.calculation.models import CalculationSpecification
 from app.modules.calculation.service import CALCULATION_RIGHTS_PROFILE_CODE
+from app.modules.market.pipeline.equity_ingest import equity_alias_value
 from app.modules.policy.models import ActivationRecord, CapabilityStatus
 from app.modules.reference.models import FiSovereignTerms, Instrument, InstrumentAlias, Issuer
 from app.modules.reference.service import REFERENCE_RIGHTS_PROFILE_CODE
@@ -42,7 +43,23 @@ _CAPABILITIES = [
 
 UK_DMO_GILTS_RIGHTS_PROFILE_CODE = "uk-dmo.gilts"
 BOE_YIELD_CURVE_RIGHTS_PROFILE_CODE = "boe.yield-curve"
+FRANKFURTER_FX_RIGHTS_PROFILE_CODE = "frankfurter.fx"
+DBNOMICS_MACRO_RIGHTS_PROFILE_CODE = "dbnomics.macro"
+TWELVE_DATA_EQUITY_RIGHTS_PROFILE_CODE = "twelve-data.equity"
 SEED_GILT_ISIN = "GB0032452392"
+
+#: (issuer name, NSE trading symbol) — the pilot equity list for the
+#: Twelve Data connector. Twelve Data's own symbol/exchange format was
+#: confirmed live via its key-free /symbol_search endpoint (2026-09-18):
+#: each resolves to symbol=<SYMBOL>, exchange="NSE", not a dotted suffix.
+NSE_EXCHANGE_CODE = "NSE"
+PILOT_EQUITIES: tuple[tuple[str, str], ...] = (
+    ("Tata Motors Limited", "TATAMOTORS"),
+    ("Tata Consultancy Services Limited", "TCS"),
+    ("Reliance Industries Limited", "RELIANCE"),
+    ("Infosys Limited", "INFY"),
+    ("HDFC Bank Limited", "HDFCBANK"),
+)
 
 
 async def _seed_capability_statuses(session: AsyncSession) -> None:
@@ -160,6 +177,53 @@ async def _seed_gilt_reference_data(session: AsyncSession) -> None:
     print(f"  + fi_sovereign_terms for {instrument.name}")
 
 
+async def _seed_equity_reference_data(session: AsyncSession) -> None:
+    """One Instrument/Issuer/InstrumentAlias per pilot stock — no adapter
+    table (unlike FiSovereignTerms), since only the price fact is needed
+    right now; static attributes (sector, etc.) are a later addition if
+    the similarity/recommendation work ever needs them.
+    """
+    for issuer_name, symbol in PILOT_EQUITIES:
+        alias_value = equity_alias_value(NSE_EXCHANGE_CODE, symbol)
+        existing_alias = (
+            await session.execute(
+                select(InstrumentAlias).where(
+                    InstrumentAlias.alias_type == "TICKER",
+                    InstrumentAlias.alias_value == alias_value,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing_alias is not None:
+            continue
+
+        issuer = (
+            await session.execute(select(Issuer).where(Issuer.name == issuer_name))
+        ).scalar_one_or_none()
+        if issuer is None:
+            issuer = Issuer(name=issuer_name, country_code="IN", status="ACTIVE")
+            session.add(issuer)
+            await session.flush()
+            print(f"  + issuer {issuer_name} (IN)")
+
+        instrument = Instrument(
+            issuer_id=issuer.id,
+            instrument_type="EQUITY_COMMON",
+            name=issuer_name,
+            currency_code="INR",
+            status="ACTIVE",
+        )
+        session.add(instrument)
+        await session.flush()
+        print(f"  + instrument {instrument.name} ({instrument.id})")
+
+        session.add(
+            InstrumentAlias(
+                instrument_id=instrument.id, alias_type="TICKER", alias_value=alias_value
+            )
+        )
+        print(f"  + instrument_alias TICKER {alias_value}")
+
+
 async def _seed_calculation_specification(
     session: AsyncSession, *, code: str, version: str, description: str
 ) -> None:
@@ -192,7 +256,17 @@ async def seed() -> None:
         await _seed_rights_profile(
             session, BOE_YIELD_CURVE_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
         )
+        await _seed_rights_profile(
+            session, FRANKFURTER_FX_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
+        )
+        await _seed_rights_profile(
+            session, DBNOMICS_MACRO_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
+        )
+        await _seed_rights_profile(
+            session, TWELVE_DATA_EQUITY_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
+        )
         await _seed_gilt_reference_data(session)
+        await _seed_equity_reference_data(session)
         await _seed_calculation_specification(
             session,
             code="gilt_price_yield_v1",

@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     #: need it. Optional so its absence doesn't block everything else.
     supabase_service_role_key: str | None = None
 
+    #: Twelve Data equities connector (free tier, ~8 requests/minute).
+    #: Optional, not required at boot: only the equity connector itself
+    #: needs it, and only when it actually runs.
+    twelve_data_api_key: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:
