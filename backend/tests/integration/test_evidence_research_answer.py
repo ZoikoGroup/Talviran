@@ -90,12 +90,16 @@ async def _seed_gilt(session: AsyncSession) -> Instrument:
     return instrument
 
 
-async def _seed_reference_fact(session: AsyncSession, instrument_id: uuid.UUID) -> None:
+async def _seed_reference_fact(
+    session: AsyncSession, instrument_id: uuid.UUID, *, knowledge_time: dt.datetime | None = None
+) -> None:
     session.add(
         AcceptedFact(
             subject_type="INSTRUMENT", subject_id=instrument_id,
             metric_id=METRIC_GILT_REFERENCE_TERMS, valid_range=_OPEN_RANGE,
-            knowledge_range=Range(lower=dt.datetime.now(dt.UTC), upper=None, bounds="[)"),
+            knowledge_range=Range(
+                lower=knowledge_time or dt.datetime.now(dt.UTC), upper=None, bounds="[)"
+            ),
             value={
                 "instrument_name": "4 1/4% Treasury Stock 2036",
                 "gilt_type": "CONVENTIONAL", "coupon_rate": "4.25",
@@ -108,7 +112,12 @@ async def _seed_reference_fact(session: AsyncSession, instrument_id: uuid.UUID) 
     await session.flush()
 
 
-async def _seed_curve_points(session: AsyncSession, tenor_to_rate: dict[str, str]) -> None:
+async def _seed_curve_points(
+    session: AsyncSession,
+    tenor_to_rate: dict[str, str],
+    *,
+    knowledge_time: dt.datetime | None = None,
+) -> None:
     for tenor, rate in tenor_to_rate.items():
         session.add(
             AcceptedFact(
@@ -116,7 +125,9 @@ async def _seed_curve_points(session: AsyncSession, tenor_to_rate: dict[str, str
                 subject_id=curve_point_subject_id(Decimal(tenor)),
                 metric_id=METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
                 valid_range=_CURVE_DAY_RANGE,
-                knowledge_range=Range(lower=dt.datetime.now(dt.UTC), upper=None, bounds="[)"),
+                knowledge_range=Range(
+                    lower=knowledge_time or dt.datetime.now(dt.UTC), upper=None, bounds="[)"
+                ),
                 value={"tenor_years": tenor, "spot_rate_pct": rate},
                 status="ACTIVE",
             )
@@ -209,6 +220,72 @@ async def test_gilt_query_returns_real_facts_and_model_price(db_session: AsyncSe
     assert bundle.status == "ASSEMBLING"  # not READY until the caller links a message
 
 
+async def test_gilt_query_pill_reflects_real_fact_age_not_hardcoded_current(
+    db_session: AsyncSession,
+) -> None:
+    # Before compute_freshness existed, every citation's pill was hardcoded
+    # to "CURRENT" regardless of how old the underlying accepted_fact
+    # actually was - a fail-loud (D-15) violation. A reference-terms fact
+    # 60 days old is beyond GILT_REFERENCE_TERMS_FRESHNESS's 30-day SLO but
+    # within its 90-day delay tolerance, so it must show DELAYED, not
+    # CURRENT.
+    await _seed_capability_and_jurisdiction(db_session)
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(
+        db_session, instrument.id,
+        knowledge_time=dt.datetime.now(dt.UTC) - dt.timedelta(days=60),
+    )
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="tell me about the 2036 gilt",
+        principal_id=None, account_id=None,
+    )
+
+    dmo_citation = next(c for c in answer.citations if "UK DMO" in c.label)
+    assert dmo_citation.pill == "DELAYED"
+
+
+async def test_gilt_query_about_a_different_gilt_does_not_show_the_wrong_one(
+    db_session: AsyncSession,
+) -> None:
+    # Only one gilt exists in the platform, but the query pattern matches
+    # ANY "gilt" mention - a query about a completely different maturity
+    # year must NOT silently show this instrument's facts as the answer.
+    await _seed_capability_and_jurisdiction(db_session)
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="tell me about the 2065 gilt",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None, "must never show the 2036 gilt's facts for a 2065 question"
+    assert answer.evidence_bundle_id is None
+    assert "2065" in answer.text
+    assert "2036" in answer.text  # says what IS available, doesn't just say "no"
+
+
+async def test_gilt_query_with_no_year_mentioned_shows_the_one_seeded_gilt(
+    db_session: AsyncSession,
+) -> None:
+    # A generic gilt question (no specific year) is fine to answer with the
+    # one gilt that exists - there's no ambiguity to guard against here.
+    await _seed_capability_and_jurisdiction(db_session)
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what are the terms of the treasury gilt",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+
+
 async def test_gilt_query_without_display_rights_falls_back(db_session: AsyncSession) -> None:
     await _seed_capability_and_jurisdiction(db_session)
     instrument = await _seed_gilt(db_session)
@@ -258,6 +335,27 @@ async def test_yield_curve_query_returns_real_curve_points(db_session: AsyncSess
     assert answer.citations[0].label == "Bank of England — daily nominal gilt spot curve"
     assert answer.citations[0].pill == "CURRENT", "these are real published facts, not an estimate"
     assert answer.evidence_bundle_id is not None
+
+
+async def test_yield_curve_query_pill_reflects_oldest_contributing_point(
+    db_session: AsyncSession,
+) -> None:
+    # UK_GILT_NOMINAL_SPOT_CURVE_FRESHNESS: 1-day SLO, 7-day stale threshold.
+    # 10 days old is beyond both, so the curve citation must say STALE, not
+    # the old hardcoded "CURRENT".
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_curve_points(
+        db_session, _CURVE_FIXTURE,
+        knowledge_time=dt.datetime.now(dt.UTC) - dt.timedelta(days=10),
+    )
+    await _seed_rights_profile(db_session, code="boe.yield-curve", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what's the current UK yield curve?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.citations[0].pill == "STALE"
 
 
 async def test_yield_curve_query_takes_priority_over_gilt_facts(db_session: AsyncSession) -> None:

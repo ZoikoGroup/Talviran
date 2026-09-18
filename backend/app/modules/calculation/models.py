@@ -100,6 +100,37 @@ class CalculationInput(UUIDPrimaryKeyMixin, Base):
     role: Mapped[str] = mapped_column(String(32))  # e.g. CURVE_POINT, REFERENCE_TERMS
 
 
+STATUS_JOB_PENDING = "PENDING"
+STATUS_JOB_CLAIMED = "CLAIMED"
+STATUS_JOB_DONE = "DONE"
+STATUS_JOB_FAILED = "FAILED"
+
+
+class CalculationJob(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """The out-of-process handoff P2's plan calls for: a request/ingest path
+    enqueues a row here instead of calling
+    curve_pricing.compute_and_persist_model_implied_price synchronously in
+    its own transaction — see pipeline/job_queue.py for the claim/run
+    worker loop this feeds. Plain Postgres queue (`FOR UPDATE SKIP LOCKED`),
+    not a broker: nowhere near the volume that would justify one.
+    """
+
+    __tablename__ = "calculation_job"
+    __table_args__ = {"schema": "calculation"}
+
+    calculation_specification_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("calculation.calculation_specification.id")
+    )
+    subject_type: Mapped[str] = mapped_column(String(32))
+    subject_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), index=True)
+    as_of_date: Mapped[dt.date]
+    status: Mapped[str] = mapped_column(String(16), default=STATUS_JOB_PENDING, index=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    last_error: Mapped[str | None] = mapped_column(String(1000), default=None)
+    claimed_at: Mapped[dt.datetime | None] = mapped_column(default=None)
+    completed_at: Mapped[dt.datetime | None] = mapped_column(default=None)
+
+
 class CalculationSupersession(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     """One row per recalculation that replaces a prior result — the
     calculation-side analogue of market.reconciliation_decision: why a new

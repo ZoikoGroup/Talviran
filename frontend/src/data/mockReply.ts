@@ -11,7 +11,13 @@
  *    (EVID-001), where every material number carries a source.
  */
 
-export type Freshness = 'CURRENT' | 'DELAYED' | 'STALE' | 'SOURCE'
+// UNAVAILABLE added alongside the backend's real freshness computation
+// (app/modules/market/freshness.py) - extending this union, not collapsing
+// UNAVAILABLE into STALE at the API boundary, per D-15's fail-loud-on-
+// staleness doctrine. SUSPENDED (DATA-002's fifth state) is deliberately
+// NOT added yet: it's a monitoring-coverage concept (PLT-MON-001) with no
+// monitoring module to back it, so the backend can never actually send it.
+export type Freshness = 'CURRENT' | 'DELAYED' | 'STALE' | 'UNAVAILABLE' | 'SOURCE'
 export type CiteKind = 'doc' | 'book' | 'link'
 
 export interface Citation {
@@ -38,6 +44,10 @@ export interface ChatMessage extends Partial<Reply> {
   text: string
   /** Which model answered — stamped at send time, shown in the transcript. */
   model?: string
+  /** The real backend message id, when this reply came from POST /research
+   * rather than the offline mock — lets the Evidence panel fetch the full
+   * resolved evidence (GET /research/{id}/evidence) on demand. */
+  messageId?: string
 }
 
 const ADVICE_PATTERNS = [

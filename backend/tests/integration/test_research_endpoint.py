@@ -17,14 +17,20 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from redis.asyncio import from_url as redis_from_url
+from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.redis_client import get_redis
 from app.main import app
+from app.modules.evidence.service import SEED_GILT_ISIN
+from app.modules.market.models import AcceptedFact
+from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
 from app.modules.policy.models import ActivationRecord, CapabilityStatus
+from app.modules.reference.models import Instrument, InstrumentAlias, Issuer
 from app.modules.research.crypto import DEK_BYTES, LocalKeyWrapper
+from app.modules.rights.models import RightsGrant, RightsProfile
 
 PASSWORD = "correct-horse-9"
 TEST_WRAPPER = LocalKeyWrapper(b"\x33" * DEK_BYTES, key_name="test/research-endpoint")
@@ -207,3 +213,130 @@ async def test_unknown_conversation_is_not_found(
             headers={"Idempotency-Key": str(uuid.uuid4())},
         )
         assert r.status_code == 404
+
+
+# ---------------------------------------------------------------- GET evidence
+
+
+async def _seed_gilt_evidence_data(session: AsyncSession) -> None:
+    issuer = Issuer(name="HM Treasury", country_code="GB", status="ACTIVE")
+    session.add(issuer)
+    await session.flush()
+    instrument = Instrument(
+        issuer_id=issuer.id, instrument_type="FI_SOVEREIGN",
+        name="4 1/4% Treasury Stock 2036", currency_code="GBP", status="ACTIVE",
+    )
+    session.add(instrument)
+    await session.flush()
+    session.add(
+        InstrumentAlias(instrument_id=instrument.id, alias_type="ISIN", alias_value=SEED_GILT_ISIN)
+    )
+    session.add(
+        AcceptedFact(
+            subject_type="INSTRUMENT", subject_id=instrument.id,
+            metric_id=METRIC_GILT_REFERENCE_TERMS,
+            valid_range=Range(
+                lower=dt.datetime(2003, 2, 27, tzinfo=dt.UTC), upper=None, bounds="[)"
+            ),
+            knowledge_range=Range(lower=dt.datetime.now(dt.UTC), upper=None, bounds="[)"),
+            value={
+                "instrument_name": "4 1/4% Treasury Stock 2036", "gilt_type": "CONVENTIONAL",
+                "coupon_rate": "4.25", "redemption_date": "2036-03-07",
+                "first_issue_date": "2003-02-27", "dividend_dates": "07-Mar and 07-Sep",
+            },
+            status="ACTIVE",
+        )
+    )
+    profile = RightsProfile(code="uk-dmo.gilts", status="ACTIVE")
+    session.add(profile)
+    await session.flush()
+    session.add(
+        RightsGrant(rights_profile_id=profile.id, action="display", permission_state="ALLOW")
+    )
+    await session.commit()
+
+
+async def test_evidence_is_retrievable_for_a_facts_backed_reply(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    await _seed_pdp_prerequisites(db_session)
+    await _seed_gilt_evidence_data(db_session)
+    async with make_client() as client:
+        await _signed_in(client)
+        chat_id = await _new_chat(client)
+
+        posted = await client.post(
+            "/api/v1/research",
+            json={"conversation_id": chat_id, "query": "tell me about the 2036 gilt"},
+            headers={"Idempotency-Key": str(uuid.uuid4())},
+        )
+        assert posted.status_code == 201, posted.text
+        message_id = posted.json()["message_id"]
+        assert posted.json()["evidence_bundle_id"] is not None
+
+        got = await client.get(f"/api/v1/research/{message_id}/evidence")
+        assert got.status_code == 200
+        body = got.json()
+        assert body["evidence_bundle_id"] == posted.json()["evidence_bundle_id"]
+        assert body["status"] == "READY"
+        assert len(body["items"]) >= 1
+        assert any(item["metric_id"] == METRIC_GILT_REFERENCE_TERMS for item in body["items"])
+
+
+async def test_evidence_is_empty_not_404_for_a_reply_with_no_bundle(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    await _seed_pdp_prerequisites(db_session)
+    async with make_client() as client:
+        await _signed_in(client)
+        chat_id = await _new_chat(client)
+
+        posted = await client.post(
+            "/api/v1/research",
+            json={"conversation_id": chat_id, "query": "should I buy this gilt?"},
+            headers={"Idempotency-Key": str(uuid.uuid4())},
+        )
+        assert posted.status_code == 201
+        message_id = posted.json()["message_id"]
+
+        got = await client.get(f"/api/v1/research/{message_id}/evidence")
+        assert got.status_code == 200
+        assert got.json() == {
+            "evidence_bundle_id": None, "purpose_type": None, "status": None, "items": [],
+        }
+
+
+async def test_evidence_for_unknown_message_is_not_found(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    await _seed_pdp_prerequisites(db_session)
+    async with make_client() as client:
+        await _signed_in(client)
+        got = await client.get(f"/api/v1/research/{uuid.uuid4()}/evidence")
+        assert got.status_code == 404
+
+
+async def test_evidence_requires_a_session(make_client: ClientFactory) -> None:
+    async with make_client() as client:
+        got = await client.get(f"/api/v1/research/{uuid.uuid4()}/evidence")
+        assert got.status_code == 401
+
+
+async def test_another_signed_in_user_cannot_read_someone_elses_evidence(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    await _seed_pdp_prerequisites(db_session)
+    await _seed_gilt_evidence_data(db_session)
+    async with make_client() as alice, make_client() as bob:
+        await _signed_in(alice)
+        chat_id = await _new_chat(alice)
+        posted = await alice.post(
+            "/api/v1/research",
+            json={"conversation_id": chat_id, "query": "tell me about the 2036 gilt"},
+            headers={"Idempotency-Key": str(uuid.uuid4())},
+        )
+        message_id = posted.json()["message_id"]
+
+        await _signed_in(bob)
+        got = await bob.get(f"/api/v1/research/{message_id}/evidence")
+        assert got.status_code == 404

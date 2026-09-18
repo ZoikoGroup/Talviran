@@ -44,6 +44,7 @@
     --fresh: 158 64% 52%;
     --delayed: 43 96% 56%;
     --stale: 0 84% 68%;
+    --unavailable: 240 5% 55%;
 
     --radius: 0.75rem;
   }
@@ -87,6 +88,7 @@
     --fresh: 158 70% 38%;
     --delayed: 35 92% 42%;
     --stale: 0 72% 51%;
+    --unavailable: 240 5% 40%;
   }
 
   * {

@@ -3,14 +3,6 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 
-class PageOut[T](BaseModel):
-    """API-001's cursor-pagination envelope, shared by every list endpoint."""
-
-    items: list[T]
-    next_cursor: str | None
-    has_more: bool
-
-
 class IssuerOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

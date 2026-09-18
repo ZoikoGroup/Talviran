@@ -28,8 +28,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.calculation.models import (
     BASIS_MODEL_IMPLIED,
+    STATUS_APPROVED,
     CalculationInput,
     CalculationResult,
+    CalculationSpecification,
     CalculationSupersession,
 )
 from app.modules.calculation.specs.gilt_price_from_curve_v1.implementation import (
@@ -42,6 +44,7 @@ from app.modules.market.pipeline.curve_ingest import (
     SUBJECT_TYPE_YIELD_CURVE_POINT,
 )
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
+from app.modules.market.queries import current_accepted_fact_at
 
 METRIC_MODEL_IMPLIED_CLEAN_PRICE = "MODEL_IMPLIED_CLEAN_PRICE"
 
@@ -58,21 +61,6 @@ class ModelImpliedPriceComputed:
     dirty_price: Decimal
     accrued_interest: Decimal
     clean_price: Decimal
-
-
-async def _accepted_fact_at(
-    session: AsyncSession, *, subject_id: uuid.UUID, metric_id: str, at: dt.datetime
-) -> AcceptedFact | None:
-    return (
-        await session.execute(
-            select(AcceptedFact).where(
-                AcceptedFact.subject_id == subject_id,
-                AcceptedFact.metric_id == metric_id,
-                AcceptedFact.status == "ACTIVE",
-                AcceptedFact.valid_range.contains(at),
-            )
-        )
-    ).scalar_one_or_none()
 
 
 async def _all_curve_point_facts_at(
@@ -122,9 +110,27 @@ async def compute_and_persist_model_implied_price(
     as_of_date: dt.date,
     calculation_specification_id: uuid.UUID,
 ) -> ModelImpliedPriceComputed | ModelImpliedPriceSkipped:
+    # The whole point of FIN-001's golden-test approval gate
+    # (scripts/approve_calculation_spec.py) is that a DRAFT spec has not
+    # been verified against DMO's worked examples or a shadow
+    # implementation - persisting a real, user-visible result under one
+    # would let an unvetted methodology through the exact door the gate
+    # exists to close. This check must run before any computation, not
+    # just before persistence, so a DRAFT spec never even gets to price
+    # anything.
+    spec = await session.get(CalculationSpecification, calculation_specification_id)
+    if spec is None or spec.status != STATUS_APPROVED:
+        return ModelImpliedPriceSkipped(
+            reason=(
+                f"calculation_specification {calculation_specification_id} is not "
+                f"APPROVED (status={spec.status if spec is not None else 'MISSING'}) - "
+                "refusing to compute or persist a result under an unvetted methodology"
+            )
+        )
+
     at = dt.datetime.combine(as_of_date, dt.time.min, tzinfo=dt.UTC)
 
-    reference_fact = await _accepted_fact_at(
+    reference_fact = await current_accepted_fact_at(
         session, subject_id=instrument_id, metric_id=METRIC_GILT_REFERENCE_TERMS, at=at
     )
     if reference_fact is None:

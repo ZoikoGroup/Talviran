@@ -219,6 +219,7 @@ export default function App() {
           facts: answer.facts,
           citations: answer.citations,
           note: answer.note,
+          messageId: answer.messageId,
         })
       } catch (err) {
         if (err instanceof ApiError && err.code === 'UNAUTHENTICATED') {

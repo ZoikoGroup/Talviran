@@ -44,11 +44,16 @@ _CURVE_DAY_RANGE: Range[dt.datetime] = Range(
 )
 
 
-async def _seed_spec(session: AsyncSession) -> uuid.UUID:
+async def _seed_spec(session: AsyncSession, *, status: str = "APPROVED") -> uuid.UUID:
+    # APPROVED by default: this file's other tests exercise compute/persist
+    # behavior, which now correctly refuses to run at all for a DRAFT spec
+    # (see test_draft_spec_is_refused_before_any_computation) - matching
+    # how this function is actually called in production, always with an
+    # already-approved spec id.
     spec = CalculationSpecification(
         code=f"gilt_price_from_curve_v1.test.{uuid.uuid4().hex[:8]}",
         version="1",
-        status="DRAFT",
+        status=status,
         description="test spec",
     )
     session.add(spec)
@@ -240,3 +245,57 @@ async def test_missing_curve_points_is_skipped(db_session: AsyncSession) -> None
 
     assert isinstance(result, ModelImpliedPriceSkipped)
     assert "curve points" in result.reason
+
+
+async def test_draft_spec_is_refused_before_any_computation(db_session: AsyncSession) -> None:
+    # The whole point of the golden-test approval gate is worthless if
+    # compute/persist doesn't actually check it - a DRAFT spec (never
+    # verified against DMO's worked examples) must never be usable to
+    # produce a real, persisted, user-visible result.
+    instrument_id = uuid.uuid4()
+    spec_id = await _seed_spec(db_session, status="DRAFT")
+    await _seed_reference_terms(db_session, instrument_id=instrument_id)
+    await _seed_curve_points(db_session, _FLAT_CURVE)
+
+    result = await compute_and_persist_model_implied_price(
+        db_session, instrument_id=instrument_id, as_of_date=_AS_OF,
+        calculation_specification_id=spec_id,
+    )
+
+    assert isinstance(result, ModelImpliedPriceSkipped)
+    assert "not APPROVED" in result.reason
+
+    persisted = (
+        await db_session.execute(
+            select(CalculationResult).where(CalculationResult.subject_id == instrument_id)
+        )
+    ).scalars().all()
+    assert persisted == [], "a DRAFT spec must never produce a persisted result"
+
+
+async def test_deprecated_spec_is_also_refused(db_session: AsyncSession) -> None:
+    instrument_id = uuid.uuid4()
+    spec_id = await _seed_spec(db_session, status="DEPRECATED")
+    await _seed_reference_terms(db_session, instrument_id=instrument_id)
+    await _seed_curve_points(db_session, _FLAT_CURVE)
+
+    result = await compute_and_persist_model_implied_price(
+        db_session, instrument_id=instrument_id, as_of_date=_AS_OF,
+        calculation_specification_id=spec_id,
+    )
+
+    assert isinstance(result, ModelImpliedPriceSkipped)
+
+
+async def test_nonexistent_spec_is_refused_not_a_crash(db_session: AsyncSession) -> None:
+    instrument_id = uuid.uuid4()
+    await _seed_reference_terms(db_session, instrument_id=instrument_id)
+    await _seed_curve_points(db_session, _FLAT_CURVE)
+
+    result = await compute_and_persist_model_implied_price(
+        db_session, instrument_id=instrument_id, as_of_date=_AS_OF,
+        calculation_specification_id=uuid.uuid4(),
+    )
+
+    assert isinstance(result, ModelImpliedPriceSkipped)
+    assert "MISSING" in result.reason
