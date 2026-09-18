@@ -7,10 +7,22 @@ import Composer from '@/components/Composer'
 import SettingsPage from '@/components/SettingsPage'
 import TalvrinMoonChat from '@/components/ui/talvrin-moon-chat'
 import { buildReply, type ChatMessage } from '@/data/mockReply'
-import { mockChats, mockProjects } from '@/data/mockWorkspace'
 import { DEFAULT_MODEL, type ModelId } from '@/data/models'
 import { useTheme } from '@/theme/ThemeContext'
-import { ApiError, createChat, postResearch } from '@/lib/api'
+import {
+  ApiError,
+  createChat,
+  createProject as apiCreateProject,
+  deleteChat as apiDeleteChat,
+  deleteProject as apiDeleteProject,
+  getChat,
+  listChats,
+  listProjects,
+  patchChat,
+  patchProject,
+  postResearch,
+  type ChatMessageWire,
+} from '@/lib/api'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
 import wordmarkOnDark from '@/assets/brand/talvrin-wordmark-on-dark.svg'
 import wordmarkOnLight from '@/assets/brand/talvrin-wordmark-on-light.svg'
@@ -21,6 +33,10 @@ interface ChatRecord extends Chat {
    * it exists. Created lazily on the first message sent in a given chat -
    * a brand-new chat the user never types in never needs a backend row. */
   backendId?: string
+  /** True once `messages` reflects this chat's real backend content (or the
+   * chat has none yet, e.g. a fresh draft). A row fetched from `listChats()`
+   * starts false — its history is only pulled down when it's opened. */
+  messagesLoaded: boolean
 }
 
 // Set VITE_USE_MOCK=true for an offline dev fallback; never true in a
@@ -47,77 +63,28 @@ const uid = () =>
 const newChat = (projectId: string | null = null): ChatRecord => ({
   id: uid(),
   title: 'New chat',
+  hasMessages: false,
   messages: [],
+  messagesLoaded: true,
   createdAt: Date.now(),
   projectId,
 })
 
-// No backend yet, so the history and projects live in localStorage — a chat
-// history that empties on reload isn't a history.
-const STORE = 'talvrin-workspace'
-
-interface Stored {
-  chats: ChatRecord[]
-  projects: Project[]
-  /** Set once the demo history has been planted, so it never returns. */
-  seeded: boolean
-}
-
-const loadWorkspace = (): Stored => {
-  let chats: ChatRecord[] = []
-  let projects: Project[] = []
-  let seeded = false
-
-  try {
-    const raw = localStorage.getItem(STORE)
-    if (raw) {
-      // `threads` is the pre-rename key — read it so an existing workspace
-      // isn't wiped by the rename.
-      const parsed = JSON.parse(raw) as Partial<Stored> & {
-        threads?: ChatRecord[]
-      }
-      const found = parsed.chats ?? parsed.threads
-      if (Array.isArray(found)) chats = found
-      if (Array.isArray(parsed.projects)) projects = parsed.projects
-      seeded = parsed.seeded === true
-    }
-  } catch {
-    // Corrupt or unavailable storage just means a fresh workspace.
-  }
-
-  // Plant the demo history exactly once per browser. It sits alongside
-  // anything already here rather than replacing it — and because the flag is
-  // then persisted, it never comes back, so it can't resurrect after a
-  // workspace is genuinely in use.
-  if (!seeded) {
-    return {
-      // Seeds sit *behind* a fresh empty chat, so the app opens on the hero
-      // rather than mid-conversation.
-      chats: [
-        newChat(),
-        ...mockChats(),
-        ...chats.filter((c) => c.messages.length > 0),
-      ],
-      projects: [...projects, ...mockProjects()],
-      seeded: true,
-    }
-  }
-
-  return {
-    chats: chats.length > 0 ? chats : [newChat()],
-    projects,
-    seeded: true,
-  }
-}
+/** A stored message only ever carries a role and plain text — the rich
+ * facts table / citations a fresh answer renders with are computed at
+ * request time and never written back, so a reloaded history necessarily
+ * shows past assistant turns as plain text. */
+const toDisplayMessage = (m: ChatMessageWire): ChatMessage => ({
+  role: m.role.toLowerCase() === 'user' ? 'user' : 'assistant',
+  text: m.content,
+})
 
 export default function App() {
   const navigate = useNavigate()
-  const [stored] = useState(loadWorkspace)
-  const [chats, setChats] = useState<ChatRecord[]>(stored.chats)
-  const [projects, setProjects] = useState<Project[]>(stored.projects)
-  // Derived from the chats actually in state — never a hardcoded id, which
-  // would drift from them under StrictMode's double-invoked initialiser.
-  const [activeId, setActiveId] = useState<string>(() => chats[0].id)
+  const [draftChat] = useState(() => newChat())
+  const [chats, setChats] = useState<ChatRecord[]>([draftChat])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [activeId, setActiveId] = useState<string>(draftChat.id)
   const [draft, setDraft] = useState('')
   const [attachments, setAttachments] = useState<File[]>([])
   const [model, setModel] = useState<ModelId>(
@@ -135,16 +102,46 @@ export default function App() {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const active = chats.find((c) => c.id === activeId) ?? chats[0]
-  const isEmpty = active.messages.length === 0
+  const isLoadingActive = Boolean(active.backendId) && !active.messagesLoaded
+  const isEmpty = !isLoadingActive && active.messages.length === 0
 
-  // Persist the workspace so history and projects survive a reload.
+  // Load this account's real chats and projects once, on mount. There is no
+  // account-keying logic here — the session cookie already scopes every one
+  // of these requests server-side (RLS), so whoever is signed in only ever
+  // sees their own rows. The app always opens on a fresh draft chat (the
+  // hero screen) rather than resuming whatever was last open, so the sidebar
+  // history is the only place a previous conversation reappears.
   useEffect(() => {
-    try {
-      localStorage.setItem(STORE, JSON.stringify({ chats, projects, seeded: true }))
-    } catch {
-      // Quota or private mode — the session still works, it just won't persist.
+    let cancelled = false
+    void (async () => {
+      try {
+        const [chatRows, projectRows] = await Promise.all([listChats(), listProjects()])
+        if (cancelled) return
+        const loaded: ChatRecord[] = chatRows.map((c) => ({
+          id: c.id,
+          backendId: c.id,
+          title: c.title ?? 'New chat',
+          hasMessages: true,
+          messages: [],
+          messagesLoaded: false,
+          createdAt: new Date(c.createdAt).getTime(),
+          projectId: c.projectId,
+        }))
+        setChats((prev) => [...prev, ...loaded])
+        setProjects(projectRows.map((p) => ({ id: p.id, name: p.name })))
+      } catch (err) {
+        if (!cancelled && err instanceof ApiError && err.code === 'UNAUTHENTICATED') {
+          navigate('/login', { replace: true })
+        }
+        // Any other failure (network hiccup) just leaves history empty for
+        // this load — the composer still works, and reloading retries.
+      }
+    })()
+    return () => {
+      cancelled = true
     }
-  }, [chats, projects])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     localStorage.setItem('talvrin-model', model)
@@ -171,6 +168,40 @@ export default function App() {
       prev.map((c) => (c.id === chatId ? { ...c, messages: [...c.messages, message] } : c))
     )
 
+  /** Opens a chat, pulling down its real transcript the first time — a
+   * sidebar row only ever carries metadata until it's actually opened. */
+  const selectChat = (id: string) => {
+    setActiveId(id)
+    setShowSettings(false)
+
+    const target = chats.find((c) => c.id === id)
+    if (!target?.backendId || target.messagesLoaded) return
+
+    void (async () => {
+      try {
+        const detail = await getChat(target.backendId!)
+        setChats((prev) =>
+          prev.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  messagesLoaded: true,
+                  title: detail.title ?? c.title,
+                  messages: detail.messages.map(toDisplayMessage),
+                }
+              : c
+          )
+        )
+      } catch (err) {
+        if (err instanceof ApiError && err.code === 'UNAUTHENTICATED') {
+          navigate('/login', { replace: true })
+          return
+        }
+        // Leave messagesLoaded false so reselecting the chat retries.
+      }
+    })()
+  }
+
   const send = (text?: string) => {
     const content = (text ?? draft).trim()
     if (!content || thinking) return
@@ -187,6 +218,7 @@ export default function App() {
       ...c,
       // First message becomes the chat title in the sidebar.
       title: c.messages.length === 0 ? content.slice(0, 40) : c.title,
+      hasMessages: true,
       messages: [...c.messages, { role: 'user', text: content }],
     }))
 
@@ -205,7 +237,8 @@ export default function App() {
         if (!backendId) {
           const created = await createChat(
             model,
-            isFirstMessage ? content.slice(0, 40) : before?.title
+            isFirstMessage ? content.slice(0, 40) : before?.title,
+            before?.projectId ?? null
           )
           backendId = created.id
           setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, backendId } : c)))
@@ -248,50 +281,102 @@ export default function App() {
     setAttachments([])
   }
 
-  // Creating a project drops you straight into an empty chat inside it.
-  const addProject = (name: string) => {
-    const project: Project = { id: uid(), name }
-    setProjects((prev) => [...prev, project])
+  // Creating a project drops you straight into an empty chat inside it. The
+  // project itself — unlike a chat — is created on the backend immediately,
+  // since an empty project is still meaningful and needs to survive a reload.
+  const addProject = async (name: string): Promise<string> => {
+    const project = await apiCreateProject(name)
+    setProjects((prev) => [...prev, { id: project.id, name: project.name }])
     startChat(project.id)
     return project.id
   }
 
-  /** Wipes the workspace and starts a single empty chat. */
+  /** Deletes every real chat and project this account has, then starts a
+   * single empty draft. Genuinely permanent now that chats and projects are
+   * backend-persisted rather than a local cache. */
   const clearWorkspace = () => {
+    const chatIds = chats.filter((c) => c.backendId).map((c) => c.backendId!)
+    const projectIds = projects.map((p) => p.id)
     const fresh = newChat()
     setChats([fresh])
     setProjects([])
     setActiveId(fresh.id)
     setDraft('')
     setAttachments([])
+    void Promise.all([
+      ...chatIds.map((id) => apiDeleteChat(id).catch(() => {})),
+      ...projectIds.map((id) => apiDeleteProject(id).catch(() => {})),
+    ])
+  }
+
+  /** Downloads everything this account has, pulling down any chat whose
+   * transcript hasn't been opened (and so isn't loaded) yet. */
+  const exportWorkspace = async () => {
+    const started = chats.filter((c) => c.hasMessages)
+    const full = await Promise.all(
+      started.map(async (c) => {
+        if (c.messagesLoaded || !c.backendId) return c
+        try {
+          const detail = await getChat(c.backendId)
+          return { ...c, messages: detail.messages.map(toDisplayMessage) }
+        } catch {
+          return c
+        }
+      })
+    )
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      projects,
+      chats: full.map((c) => ({
+        id: c.backendId ?? c.id,
+        title: c.title,
+        projectId: c.projectId,
+        messages: c.messages,
+      })),
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `talvrin-workspace-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   /** Move a chat into a project, or back out to the flat history (`null`). */
-  const moveChat = (chatId: string, projectId: string | null) =>
-    setChats((prev) =>
-      prev.map((c) => (c.id === chatId ? { ...c, projectId } : c))
-    )
+  const moveChat = (chatId: string, projectId: string | null) => {
+    setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, projectId } : c)))
+    const target = chats.find((c) => c.id === chatId)
+    if (target?.backendId) void patchChat(target.backendId, { projectId }).catch(() => {})
+  }
 
-  const renameChat = (chatId: string, title: string) =>
+  const renameChat = (chatId: string, title: string) => {
     setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, title } : c)))
+    const target = chats.find((c) => c.id === chatId)
+    if (target?.backendId) void patchChat(target.backendId, { title }).catch(() => {})
+  }
 
   const deleteChat = (chatId: string) => {
+    const target = chats.find((c) => c.id === chatId)
     const next = chats.filter((c) => c.id !== chatId)
     // The app always needs somewhere to type, so never leave zero chats.
     if (next.length === 0) {
       const fresh = newChat()
       setChats([fresh])
       setActiveId(fresh.id)
-      return
+    } else {
+      setChats(next)
+      if (chatId === activeId) setActiveId(next[0].id)
     }
-    setChats(next)
-    if (chatId === activeId) setActiveId(next[0].id)
+    if (target?.backendId) void apiDeleteChat(target.backendId).catch(() => {})
   }
 
-  const renameProject = (projectId: string, name: string) =>
-    setProjects((prev) =>
-      prev.map((p) => (p.id === projectId ? { ...p, name } : p))
-    )
+  const renameProject = (projectId: string, name: string) => {
+    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, name } : p)))
+    void patchProject(projectId, name).catch(() => {})
+  }
 
   /** Deleting a project keeps its chats — they fall back to the flat history. */
   const deleteProject = (projectId: string) => {
@@ -299,6 +384,7 @@ export default function App() {
     setChats((prev) =>
       prev.map((c) => (c.projectId === projectId ? { ...c, projectId: null } : c))
     )
+    void apiDeleteProject(projectId).catch(() => {})
   }
 
   return (
@@ -311,10 +397,7 @@ export default function App() {
         chats={chats}
         projects={projects}
         activeId={activeId}
-        onSelect={(id) => {
-          setActiveId(id)
-          setShowSettings(false)
-        }}
+        onSelect={selectChat}
         onNew={(projectId) => {
           startChat(projectId ?? null)
           setShowSettings(false)
@@ -360,12 +443,17 @@ export default function App() {
             theme={theme}
             onThemeChange={setTheme}
             stats={{
-              chats: chats.filter((c) => c.messages.length > 0).length,
+              chats: chats.filter((c) => c.hasMessages).length,
               projects: projects.length,
               messages: chats.reduce((n, c) => n + c.messages.length, 0),
             }}
             onClearWorkspace={clearWorkspace}
+            onExportWorkspace={exportWorkspace}
           />
+        ) : isLoadingActive ? (
+          <div className="flex flex-1 items-center justify-center text-[13.5px] text-muted-foreground">
+            Loading conversation…
+          </div>
         ) : isEmpty ? (
           <TalvrinMoonChat
             value={draft}

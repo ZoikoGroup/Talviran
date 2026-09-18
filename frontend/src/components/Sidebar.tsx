@@ -26,7 +26,11 @@ import wordmarkOnLight from '@/assets/brand/talvrin-wordmark-on-light.svg'
 export interface Chat {
   id: string
   title: string
-  messages: unknown[]
+  /** Whether this chat has ever had anything sent in it. Kept as an
+   * explicit flag rather than checking message content, since a chat's
+   * transcript is now loaded from the backend lazily (only once opened) and
+   * often isn't in memory at all while it just sits in this list. */
+  hasMessages: boolean
   createdAt: number
   projectId: string | null
 }
@@ -43,8 +47,9 @@ interface SidebarProps {
   activeId: string
   onSelect: (id: string) => void
   onNew: (projectId?: string | null) => void
-  /** Returns the new project's id so it can be expanded straight away. */
-  onNewProject: (name: string) => string
+  /** Creates the project on the backend and resolves with its real id, so
+   * it can be expanded straight away once it exists. */
+  onNewProject: (name: string) => Promise<string>
   /** `null` moves the chat back out to the flat history. */
   onMoveChat: (chatId: string, projectId: string | null) => void
   onRenameChat: (chatId: string, title: string) => void
@@ -113,7 +118,7 @@ export default function Sidebar({
 
   // A chat only enters the history once it has actually been asked something,
   // so an untouched "New chat" never litters the list.
-  const started = chats.filter((c) => c.messages.length > 0)
+  const started = chats.filter((c) => c.hasMessages)
   const history = groupByRecency(started.filter((c) => c.projectId === null))
 
   const [openProjects, setOpenProjects] = useState<string[]>([])
@@ -165,12 +170,14 @@ export default function Sidebar({
 
   const commitProject = () => {
     const name = draftName.trim()
-    if (name) {
-      const id = onNewProject(name)
-      setOpenProjects((prev) => [...prev, id])
-      setDraftName('')
-    }
+    setDraftName('')
     setNaming(false)
+    if (!name) return
+    void onNewProject(name)
+      .then((id) => setOpenProjects((prev) => [...prev, id]))
+      .catch(() => {
+        // Creation failed server-side — nothing to expand.
+      })
   }
 
   const toggleProject = (id: string) =>

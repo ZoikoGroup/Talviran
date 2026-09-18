@@ -125,11 +125,130 @@ interface ChatWire {
   last_message_at: string
 }
 
-export const createChat = (model: string, title?: string): Promise<ChatWire> =>
+export interface ChatSummary {
+  id: string
+  title: string | null
+  model: string
+  projectId: string | null
+  createdAt: string
+  lastMessageAt: string
+}
+
+const toChatSummary = (c: ChatWire): ChatSummary => ({
+  id: c.id,
+  title: c.title,
+  model: c.model,
+  projectId: c.project_id,
+  createdAt: c.created_at,
+  lastMessageAt: c.last_message_at,
+})
+
+export const createChat = (
+  model: string,
+  title?: string,
+  projectId?: string | null
+): Promise<ChatSummary> =>
   apiFetch<ChatWire>('/api/v1/chats', {
     method: 'POST',
-    body: JSON.stringify({ model, title }),
+    body: JSON.stringify({ model, title, project_id: projectId ?? undefined }),
+  }).then(toChatSummary)
+
+/** Every real conversation the signed-in account owns — scoped server-side
+ * by the session cookie and RLS, so this never needs an account id. */
+export const listChats = (): Promise<ChatSummary[]> =>
+  apiFetch<ChatWire[]>('/api/v1/chats').then((rows) => rows.map(toChatSummary))
+
+export interface ChatMessageWire {
+  id: string
+  seq: number
+  role: string
+  content: string
+  createdAt: string
+}
+
+export interface ChatDetail extends ChatSummary {
+  messages: ChatMessageWire[]
+}
+
+interface ChatDetailWire extends ChatWire {
+  messages: {
+    id: string
+    seq: number
+    role: string
+    content: string
+    created_at: string
+  }[]
+}
+
+/** Full message history for one chat. Fetched lazily — only when a chat is
+ * actually opened, not for every row the sidebar lists. */
+export const getChat = (chatId: string): Promise<ChatDetail> =>
+  apiFetch<ChatDetailWire>(`/api/v1/chats/${chatId}`).then((c) => ({
+    ...toChatSummary(c),
+    messages: c.messages.map((m) => ({
+      id: m.id,
+      seq: m.seq,
+      role: m.role,
+      content: m.content,
+      createdAt: m.created_at,
+    })),
+  }))
+
+export const patchChat = (
+  chatId: string,
+  patch: { title?: string; projectId?: string | null }
+): Promise<void> =>
+  apiFetch<void>(`/api/v1/chats/${chatId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ...(patch.title !== undefined ? { title: patch.title } : {}),
+      // `undefined` (omitted) means "leave the project alone"; `null` means
+      // "remove from its project" — the backend distinguishes the two by
+      // whether the key is present at all, not by its value.
+      ...(patch.projectId !== undefined ? { project_id: patch.projectId } : {}),
+    }),
   })
+
+export const deleteChat = (chatId: string): Promise<void> =>
+  apiFetch<void>(`/api/v1/chats/${chatId}`, { method: 'DELETE' })
+
+// ----------------------------------------------------------------- projects
+
+interface ProjectWire {
+  id: string
+  name: string
+  created_at: string
+}
+
+export interface ProjectSummary {
+  id: string
+  name: string
+  createdAt: string
+}
+
+const toProjectSummary = (p: ProjectWire): ProjectSummary => ({
+  id: p.id,
+  name: p.name,
+  createdAt: p.created_at,
+})
+
+export const listProjects = (): Promise<ProjectSummary[]> =>
+  apiFetch<ProjectWire[]>('/api/v1/projects').then((rows) => rows.map(toProjectSummary))
+
+export const createProject = (name: string): Promise<ProjectSummary> =>
+  apiFetch<ProjectWire>('/api/v1/projects', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  }).then(toProjectSummary)
+
+export const patchProject = (projectId: string, name: string): Promise<void> =>
+  apiFetch<void>(`/api/v1/projects/${projectId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  })
+
+export const deleteProject = (projectId: string): Promise<void> =>
+  apiFetch<void>(`/api/v1/projects/${projectId}`, { method: 'DELETE' })
 
 // ---------------------------------------------------------------- research
 

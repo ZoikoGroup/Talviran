@@ -27,6 +27,7 @@ interface SettingsPageProps {
   onThemeChange: (theme: 'dark' | 'light') => void
   stats: { chats: number; projects: number; messages: number }
   onClearWorkspace: () => void
+  onExportWorkspace: () => void
 }
 
 const SECTIONS = [
@@ -381,7 +382,7 @@ function UsageSection({ stats }: Pick<SettingsPageProps, 'stats'>) {
   return (
     <Panel
       title="Usage"
-      description="What is in your workspace on this device. Server-side metering arrives with the backend."
+      description="What is in your account. Server-side metering arrives with the backend."
     >
       <div className="grid gap-2.5 sm:grid-cols-3">
         {tiles.map(([label, value]) => (
@@ -412,24 +413,9 @@ function UsageSection({ stats }: Pick<SettingsPageProps, 'stats'>) {
 function DataSection({
   stats,
   onClearWorkspace,
-}: Pick<SettingsPageProps, 'stats' | 'onClearWorkspace'>) {
+  onExportWorkspace,
+}: Pick<SettingsPageProps, 'stats' | 'onClearWorkspace' | 'onExportWorkspace'>) {
   const [confirming, setConfirming] = useState(false)
-
-  const exportWorkspace = () => {
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      workspace: JSON.parse(localStorage.getItem('talvrin-workspace') ?? 'null'),
-    }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: 'application/json',
-    })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `talvrin-workspace-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
 
   return (
     <Panel
@@ -442,7 +428,7 @@ function DataSection({
           hint={`Downloads ${stats.chats} chats and ${stats.projects} projects as JSON.`}
         >
           <button
-            onClick={exportWorkspace}
+            onClick={() => void onExportWorkspace()}
             className="rounded-full border border-border px-3.5 py-1.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             Export
@@ -451,7 +437,7 @@ function DataSection({
 
         <Row
           label="Delete all chats and projects"
-          hint="Removes everything from this device. This cannot be undone."
+          hint="Permanently deletes them from your account. This cannot be undone."
         >
           {confirming ? (
             <div className="flex items-center gap-2">
@@ -517,7 +503,7 @@ function StorageSection({ stats }: Pick<SettingsPageProps, 'stats'>) {
   return (
     <Panel
       title="Storage"
-      description="Talvrin currently keeps your workspace in this browser. Nothing is uploaded."
+      description="Chats and projects are stored on Talvrin's servers, tied to your account — this browser only keeps small local preferences, listed below."
     >
       <Card>
         <div className="px-4 py-4">
@@ -566,6 +552,7 @@ export default function SettingsPage({
   onThemeChange,
   stats,
   onClearWorkspace,
+  onExportWorkspace,
 }: SettingsPageProps) {
   const [active, setActive] = useState<SectionId>('account')
 
@@ -623,7 +610,11 @@ export default function SettingsPage({
             {active === 'billing' && <BillingSection />}
             {active === 'usage' && <UsageSection stats={stats} />}
             {active === 'data' && (
-              <DataSection stats={stats} onClearWorkspace={onClearWorkspace} />
+              <DataSection
+                stats={stats}
+                onClearWorkspace={onClearWorkspace}
+                onExportWorkspace={onExportWorkspace}
+              />
             )}
             {active === 'storage' && <StorageSection stats={stats} />}
           </div>
