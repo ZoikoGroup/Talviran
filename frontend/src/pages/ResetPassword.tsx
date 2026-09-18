@@ -5,7 +5,7 @@ import AuthLayout from '@/components/layouts/AuthLayout'
 import { Field, SubmitButton } from '@/components/ui/field'
 import { passwordProblem } from '@/auth/session'
 import { useAuth } from '@/auth/AuthContext'
-import { ApiError, resetPassword } from '@/auth/api'
+import { ApiError, resetPassword } from '@/lib/api'
 
 /**
  * Where a Supabase recovery link lands. Confirmed live against the real
@@ -41,7 +41,7 @@ function useRecoveryToken(): { token: string | null; invalid: boolean } {
 
 export default function ResetPassword() {
   const { token, invalid } = useRecoveryToken()
-  const { signIn } = useAuth()
+  const { refresh } = useAuth()
   const navigate = useNavigate()
 
   const [password, setPassword] = useState('')
@@ -65,12 +65,12 @@ export default function ResetPassword() {
     setFormError(null)
     setBusy(true)
     try {
-      const result = await resetPassword(token, password)
-      // The backend already set a real, HttpOnly session cookie — this just
-      // brings the UI's own (still localStorage-backed, see auth/session.ts)
-      // notion of "signed in" into agreement with it, the same bridge every
-      // other page in this app already reads from.
-      signIn(result.email)
+      await resetPassword(token, password)
+      // The backend already set a real, HttpOnly session cookie — refresh()
+      // re-checks /me so AuthContext's own state agrees with it, rather than
+      // calling signIn() again and making the backend verify a password it
+      // just finished verifying.
+      await refresh()
       navigate('/', { replace: true })
     } catch (err) {
       setFormError(

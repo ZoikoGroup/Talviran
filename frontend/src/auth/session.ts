@@ -1,16 +1,13 @@
 /**
  * Client-side session helpers.
  *
- * The backend now has a real /api/v1/auth/* surface (Supabase-backed sign-up,
- * sign-in, sign-out, forgot/reset password — see auth/api.ts), but Login and
- * Signup below still authenticate against nothing but the DEMO_ID constant.
- * Only the forgot/reset-password pages call the real backend so far.
- *
- * Identity itself comes from the backend — the session cookie is HttpOnly
- * and this file never touches it (SEC-001 §41). What lives here is purely
- * cosmetic and client-only: deriving a display name from an email, and a
- * local override for it, since there is no backend profile/display-name
- * endpoint yet.
+ * Every auth flow — sign-up, sign-in, sign-out, forgot/reset password — now
+ * calls the real /api/v1/auth/* surface (Supabase-backed) via @/lib/api,
+ * wired through AuthContext. Identity itself comes from the backend — the
+ * session cookie is HttpOnly and this file never touches it (SEC-001 §41).
+ * What lives here is purely cosmetic and client-only: deriving a display
+ * name from an email, and a local override for it, since there is no
+ * backend profile/display-name endpoint yet.
  */
 
 const DISPLAY_NAME_KEY = 'talvrin-display-name'

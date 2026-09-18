@@ -4,7 +4,7 @@ import { MailCheck } from 'lucide-react'
 import AuthLayout from '@/components/layouts/AuthLayout'
 import { Field, SubmitButton } from '@/components/ui/field'
 import { isEmail } from '@/auth/session'
-import { requestPasswordReset } from '@/auth/api'
+import { requestPasswordReset } from '@/lib/api'
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('')

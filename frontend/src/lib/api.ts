@@ -95,6 +95,25 @@ export const logout = (): Promise<void> =>
 export const me = (): Promise<Principal> =>
   apiFetch<PrincipalWire>('/api/v1/auth/me').then(toPrincipal)
 
+/** Always resolves — the backend itself never reveals whether the address
+ * has an account (SEC-001 §7.1). A thrown ApiError means the request itself
+ * failed, not that the email was rejected. */
+export const requestPasswordReset = (email: string): Promise<void> =>
+  apiFetch<void>('/api/v1/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+
+/** Throws ApiError('UNAUTHENTICATED') for an invalid/expired/already-used
+ * link, or ApiError('VALIDATION_ERROR') for a password Supabase rejects.
+ * On success the backend has already set the new HttpOnly session cookie —
+ * callers still need AuthContext.refresh() to pick that up client-side. */
+export const resetPassword = (accessToken: string, newPassword: string): Promise<Principal> =>
+  apiFetch<PrincipalWire>('/api/v1/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ access_token: accessToken, new_password: newPassword }),
+  }).then(toPrincipal)
+
 // ------------------------------------------------------------------- chats
 
 interface ChatWire {

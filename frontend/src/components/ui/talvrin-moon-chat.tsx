@@ -187,8 +187,7 @@ export default function TalvrinMoonChat({
             Source-linked facts and reproducible calculations.{' '}
             <span className="font-medium text-foreground/80">
               Talvrin does not give investment advice.
-            </span>{' '}
-            Prototype — no backend connected.
+            </span>
           </p>
         </div>
       </div>
