@@ -47,7 +47,39 @@ UK_GILT_NOMINAL_SPOT_CURVE_POLICY = ReconciliationPolicy(
     conflict_action=CONFLICT_ACTION_FLAG,
 )
 
+FX_SPOT_RATE_POLICY = ReconciliationPolicy(
+    metric_id="FX_SPOT_RATE",
+    ordered_source_codes=("frankfurter",),
+    tolerance=None,
+    conflict_action=CONFLICT_ACTION_FLAG,
+)
+
+MACRO_GDP_POLICY = ReconciliationPolicy(
+    metric_id="MACRO_GDP",
+    ordered_source_codes=("dbnomics",),
+    tolerance=None,
+    conflict_action=CONFLICT_ACTION_FLAG,
+)
+
+MACRO_CPI_POLICY = ReconciliationPolicy(
+    metric_id="MACRO_CPI",
+    ordered_source_codes=("dbnomics",),
+    tolerance=None,
+    conflict_action=CONFLICT_ACTION_FLAG,
+)
+
+EQUITY_EOD_PRICE_POLICY = ReconciliationPolicy(
+    metric_id="EQUITY_EOD_PRICE",
+    ordered_source_codes=("twelve-data",),
+    tolerance=None,
+    conflict_action=CONFLICT_ACTION_FLAG,
+)
+
 DEFAULT_POLICIES: dict[str, ReconciliationPolicy] = {
     GILT_REFERENCE_TERMS_POLICY.metric_id: GILT_REFERENCE_TERMS_POLICY,
     UK_GILT_NOMINAL_SPOT_CURVE_POLICY.metric_id: UK_GILT_NOMINAL_SPOT_CURVE_POLICY,
+    FX_SPOT_RATE_POLICY.metric_id: FX_SPOT_RATE_POLICY,
+    MACRO_GDP_POLICY.metric_id: MACRO_GDP_POLICY,
+    MACRO_CPI_POLICY.metric_id: MACRO_CPI_POLICY,
+    EQUITY_EOD_PRICE_POLICY.metric_id: EQUITY_EOD_PRICE_POLICY,
 }

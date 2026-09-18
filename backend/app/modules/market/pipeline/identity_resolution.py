@@ -34,29 +34,37 @@ class UnresolvedIdentity:
     reason: str
 
 
-async def resolve_instrument_by_isin(
-    session: AsyncSession, isin: str
+async def resolve_instrument_by_alias(
+    session: AsyncSession, *, alias_type: str, alias_value: str
 ) -> ResolvedIdentity | UnresolvedIdentity:
     instrument_id = (
         await session.execute(
             select(InstrumentAlias.instrument_id).where(
-                InstrumentAlias.alias_type == "ISIN",
-                InstrumentAlias.alias_value == isin,
+                InstrumentAlias.alias_type == alias_type,
+                InstrumentAlias.alias_value == alias_value,
             )
         )
     ).scalar_one_or_none()
 
     if instrument_id is None:
         unresolved = UnresolvedIdentity(
-            alias_type="ISIN", alias_value=isin, reason="no matching instrument_alias row"
+            alias_type=alias_type,
+            alias_value=alias_value,
+            reason="no matching instrument_alias row",
         )
         await record_event(
             session,
             event_type="identity_resolution.unresolved",
-            subject_type="ISIN",
-            subject_id=isin,
+            subject_type=alias_type,
+            subject_id=alias_value,
             payload={"reason": unresolved.reason},
         )
         return unresolved
 
     return ResolvedIdentity(instrument_id=instrument_id)
+
+
+async def resolve_instrument_by_isin(
+    session: AsyncSession, isin: str
+) -> ResolvedIdentity | UnresolvedIdentity:
+    return await resolve_instrument_by_alias(session, alias_type="ISIN", alias_value=isin)

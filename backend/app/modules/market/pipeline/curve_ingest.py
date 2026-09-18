@@ -20,17 +20,12 @@ import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.market.connectors.boe_yield_curve.mapping import CurvePointCandidate
-from app.modules.market.models import SourceObservation
-from app.modules.market.pipeline.reconcile import (
-    CandidateObservation,
-    ReconciliationOutcome,
-    reconcile_and_publish,
-)
+from app.modules.market.pipeline.ingest_tail import ingest_and_reconcile
+from app.modules.market.pipeline.reconcile import ReconciliationOutcome
 from app.modules.market.pipeline.reconciliation_policy import (
     UK_GILT_NOMINAL_SPOT_CURVE_POLICY,
 )
@@ -101,30 +96,6 @@ async def ingest_curve_point_candidate(
     )
     value = curve_point_value(candidate)
 
-    existing = (
-        await session.execute(
-            select(SourceObservation).where(SourceObservation.semantic_observation_key == key)
-        )
-    ).scalar_one_or_none()
-
-    if existing is not None:
-        observation_id = existing.id
-    else:
-        observation = SourceObservation(
-            source_artifact_id=source_artifact_id,
-            rights_profile_id=rights_profile_id,
-            subject_type=SUBJECT_TYPE_YIELD_CURVE_POINT,
-            subject_id=subject_id,
-            metric_id=METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
-            semantic_observation_key=key,
-            raw_value=value,
-            valid_from=candidate.curve_date,
-            observed_at=fetched_at,
-        )
-        session.add(observation)
-        await session.flush()
-        observation_id = observation.id
-
     # A curve point is valid for exactly its own calendar day — unlike gilt
     # reference terms, which are valid indefinitely from issuance. Today's
     # rate does not "correct" yesterday's; it's a different real-world fact.
@@ -133,19 +104,22 @@ async def ingest_curve_point_candidate(
         lower=day_start, upper=day_start + dt.timedelta(days=1), bounds="[)"
     )
 
-    reconciliation = await reconcile_and_publish(
+    outcome = await ingest_and_reconcile(
         session,
+        source_artifact_id=source_artifact_id,
+        source_code=source_code,
+        rights_profile_id=rights_profile_id,
         subject_type=SUBJECT_TYPE_YIELD_CURVE_POINT,
         subject_id=subject_id,
         metric_id=METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
-        candidates=[
-            CandidateObservation(
-                observation_id=observation_id, source_code=source_code, value=value
-            )
-        ],
-        policy=UK_GILT_NOMINAL_SPOT_CURVE_POLICY,
+        semantic_observation_key=key,
+        value=value,
+        valid_from=candidate.curve_date,
         valid_range=valid_range,
-        knowledge_time=fetched_at,
+        fetched_at=fetched_at,
+        policy=UK_GILT_NOMINAL_SPOT_CURVE_POLICY,
     )
 
-    return CurveIngestResult(observation_id=observation_id, reconciliation=reconciliation)
+    return CurveIngestResult(
+        observation_id=outcome.observation_id, reconciliation=outcome.reconciliation
+    )
