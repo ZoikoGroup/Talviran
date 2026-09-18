@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.main import app
+from app.modules.api.v1 import auth as auth_module
 from app.modules.calculation.pipeline.curve_pricing import METRIC_MODEL_IMPLIED_CLEAN_PRICE
 from app.modules.market.pipeline.curve_ingest import (
     METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
@@ -40,7 +41,7 @@ ClientFactory = Callable[[], AbstractAsyncContextManager[AsyncClient]]
 
 
 @pytest_asyncio.fixture
-async def make_client() -> AsyncIterator[ClientFactory]:
+async def make_client(supabase_http: AsyncClient) -> AsyncIterator[ClientFactory]:
     settings = get_settings()
     engine = create_async_engine(settings.database_url)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -50,6 +51,7 @@ async def make_client() -> AsyncIterator[ClientFactory]:
             yield session
 
     app.dependency_overrides[get_session] = _session_override
+    app.dependency_overrides[auth_module._http] = lambda: supabase_http
 
     @asynccontextmanager
     async def _client() -> AsyncIterator[AsyncClient]:

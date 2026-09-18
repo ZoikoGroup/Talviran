@@ -10,6 +10,7 @@ import datetime as dt
 import uuid
 from decimal import Decimal
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.calculation.models import (
@@ -52,8 +53,12 @@ async def _act_as(
     )
 
 
-async def _register_tenant(session: AsyncSession) -> tuple[uuid.UUID, uuid.UUID]:
-    login = await identity_service.register(session, email=_email(), password=_PASSWORD)
+async def _register_tenant(
+    session: AsyncSession, http: httpx.AsyncClient
+) -> tuple[uuid.UUID, uuid.UUID]:
+    login = await identity_service.register(
+        session, email=_email(), password=_PASSWORD, http=http
+    )
     await session.commit()
     await _act_as(
         session, account_id=login.identity.account_id, principal_id=login.identity.principal_id
@@ -137,9 +142,9 @@ async def _seed_calculation_result(
 
 
 async def test_initial_state_evaluation_records_a_calculation_kind_input(
-    db_session: AsyncSession,
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient,
 ) -> None:
-    account_id, principal_id = await _register_tenant(db_session)
+    account_id, principal_id = await _register_tenant(db_session, supabase_http)
     rule_version_id = await _seed_rule_version(
         db_session, account_id=account_id, principal_id=principal_id
     )
@@ -168,9 +173,9 @@ async def test_initial_state_evaluation_records_a_calculation_kind_input(
 
 
 async def test_crossing_a_model_implied_price_threshold_fires_match(
-    db_session: AsyncSession,
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient,
 ) -> None:
-    account_id, principal_id = await _register_tenant(db_session)
+    account_id, principal_id = await _register_tenant(db_session, supabase_http)
     rule_version_id = await _seed_rule_version(
         db_session, account_id=account_id, principal_id=principal_id
     )
@@ -202,9 +207,9 @@ async def test_crossing_a_model_implied_price_threshold_fires_match(
 
 
 async def test_alert_for_a_calculation_backed_evaluation_has_calculation_evidence(
-    db_session: AsyncSession,
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient,
 ) -> None:
-    account_id, principal_id = await _register_tenant(db_session)
+    account_id, principal_id = await _register_tenant(db_session, supabase_http)
     await _seed_governance(db_session)
     await _seed_calculation_rights(db_session)
     rule_version_id = await _seed_rule_version(
@@ -242,8 +247,10 @@ async def test_alert_for_a_calculation_backed_evaluation_has_calculation_evidenc
     assert member.calculation_result_id == calc_result_id
 
 
-async def test_without_calculation_rights_no_alert_is_created(db_session: AsyncSession) -> None:
-    account_id, principal_id = await _register_tenant(db_session)
+async def test_without_calculation_rights_no_alert_is_created(
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient,
+) -> None:
+    account_id, principal_id = await _register_tenant(db_session, supabase_http)
     await _seed_governance(db_session)
     # Deliberately skip _seed_calculation_rights - fail-closed DENY.
     rule_version_id = await _seed_rule_version(

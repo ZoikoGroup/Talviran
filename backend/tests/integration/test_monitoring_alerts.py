@@ -359,9 +359,9 @@ async def test_still_matched_outcome_never_creates_a_second_alert(
 
 
 async def test_debounce_suppresses_a_match_too_soon_after_the_last_alert(
-    db_session: AsyncSession,
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient,
 ) -> None:
-    account_id, principal_id = await _register_tenant(db_session)
+    account_id, principal_id = await _register_tenant(db_session, supabase_http)
     await _seed_governance(db_session)
     await _seed_boe_rights(db_session)
     # Longer than the 1-day gap between the two seeded facts below, so the
@@ -412,9 +412,9 @@ async def test_debounce_suppresses_a_match_too_soon_after_the_last_alert(
 
 
 async def test_debounce_does_not_suppress_after_the_window_elapses(
-    db_session: AsyncSession,
+    db_session: AsyncSession, supabase_http: httpx.AsyncClient,
 ) -> None:
-    account_id, principal_id = await _register_tenant(db_session)
+    account_id, principal_id = await _register_tenant(db_session, supabase_http)
     await _seed_governance(db_session)
     await _seed_boe_rights(db_session)
     # Shorter than the 1-day gap between the two seeded facts below.
