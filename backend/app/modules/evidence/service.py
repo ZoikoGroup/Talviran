@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.calculation.models import CalculationResult
 from app.modules.calculation.pipeline.curve_pricing import METRIC_MODEL_IMPLIED_CLEAN_PRICE
+from app.modules.calculation.queries import latest_calculation_result
 from app.modules.evidence.models import EvidenceBundle, EvidenceMember
 from app.modules.market.freshness import compute_freshness
 from app.modules.market.models import AcceptedFact
@@ -233,23 +234,6 @@ def _default_reply(query: str) -> ResearchAnswer:
     )
 
 
-async def _latest_calculation_result(
-    session: AsyncSession, *, subject_id: uuid.UUID, metric_id: str
-) -> CalculationResult | None:
-    return (
-        await session.execute(
-            select(CalculationResult)
-            .where(
-                CalculationResult.subject_id == subject_id,
-                CalculationResult.metric_id == metric_id,
-                CalculationResult.status == "ACTIVE",
-            )
-            .order_by(CalculationResult.as_of_date.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-
-
 async def _display_allowed(session: AsyncSession, rights_profile_code: str) -> bool:
     profile_id = (
         await session.execute(
@@ -339,7 +323,7 @@ async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchA
     )
 
     if await _display_allowed(session, "boe.yield-curve"):
-        model_price = await _latest_calculation_result(
+        model_price = await latest_calculation_result(
             session, subject_id=instrument.id, metric_id=METRIC_MODEL_IMPLIED_CLEAN_PRICE
         )
         if model_price is not None:

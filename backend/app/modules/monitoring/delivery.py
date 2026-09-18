@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.monitoring.models import (
     DELIVERY_ATTEMPT_DELIVERED,
     STATUS_ALERT_DELIVERED,
+    STATUS_ALERT_SUPPRESSED,
     TRANSPORT_IN_APP,
     Alert,
     AlertDeliveryAttempt,
@@ -44,6 +45,8 @@ async def deliver_alert(
 
     if alert.status == STATUS_ALERT_DELIVERED:
         return Delivered(alert_id=alert.id)
+    if alert.status == STATUS_ALERT_SUPPRESSED:
+        return DeliverySkipped(reason=f"alert {alert_id} is suppressed, not deliverable")
 
     session.add(
         AlertDeliveryAttempt(

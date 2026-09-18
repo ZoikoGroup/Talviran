@@ -25,9 +25,13 @@ from app.modules.monitoring.models import (
     ALERT_TYPE_CROSSING,
     ALERT_TYPE_INITIAL_STATE,
     PREDICATE_CROSSES_ABOVE,
+    STATUS_ALERT_CREATED,
+    STATUS_ALERT_SUPPRESSED,
     STATUS_ARMED,
     SUBJECT_TYPE_INSTRUMENT,
+    SUPPRESSION_REASON_DEBOUNCE,
     Alert,
+    AlertSuppression,
     MonitoringRule,
     MonitoringRuleVersion,
 )
@@ -96,7 +100,11 @@ async def _seed_boe_rights(session: AsyncSession, *, granted: bool = True) -> No
 
 
 async def _seed_rule_version(
-    session: AsyncSession, *, account_id: uuid.UUID, principal_id: uuid.UUID
+    session: AsyncSession,
+    *,
+    account_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    debounce_seconds: int = 0,
 ) -> uuid.UUID:
     rule = MonitoringRule(account_id=account_id)
     session.add(rule)
@@ -111,6 +119,7 @@ async def _seed_rule_version(
         metric_id=METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
         predicate=PREDICATE_CROSSES_ABOVE,
         threshold_value=Decimal("5.0"),
+        debounce_seconds=debounce_seconds,
         effective_from=dt.datetime.now(dt.UTC),
         created_by_principal_id=principal_id,
     )
@@ -334,3 +343,99 @@ async def test_still_matched_outcome_never_creates_a_second_alert(db_session: As
 
     assert isinstance(result, AlertSkipped)
     assert "does not warrant a new alert" in result.reason
+
+
+async def test_debounce_suppresses_a_match_too_soon_after_the_last_alert(
+    db_session: AsyncSession,
+) -> None:
+    account_id, principal_id = await _register_tenant(db_session)
+    await _seed_governance(db_session)
+    await _seed_boe_rights(db_session)
+    # Longer than the 1-day gap between the two seeded facts below, so the
+    # second (crossing) alert falls inside the debounce window.
+    rule_version_id = await _seed_rule_version(
+        db_session, account_id=account_id, principal_id=principal_id,
+        debounce_seconds=100_000,
+    )
+    await _seed_curve_point(db_session, spot_rate_pct="4.5", valid_on=dt.date(2026, 9, 10))
+    await db_session.commit()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+    first_eval = await evaluate_rule_version(
+        db_session, rule_version_id=rule_version_id, trigger_type=_TRIGGER_TYPE, trigger_id=None,
+    )
+    assert isinstance(first_eval, RuleEvaluationRecorded)
+    first_alert = await create_alert_for_evaluation(
+        db_session, rule_evaluation_id=first_eval.rule_evaluation_id
+    )
+    assert isinstance(first_alert, AlertCreated)
+    await db_session.commit()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+
+    await _seed_curve_point(db_session, spot_rate_pct="5.5", valid_on=dt.date(2026, 9, 11))
+    await db_session.commit()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+    second_eval = await evaluate_rule_version(
+        db_session, rule_version_id=rule_version_id, trigger_type=_TRIGGER_TYPE, trigger_id=None,
+    )
+    assert isinstance(second_eval, RuleEvaluationRecorded)
+
+    result = await create_alert_for_evaluation(
+        db_session, rule_evaluation_id=second_eval.rule_evaluation_id
+    )
+
+    assert isinstance(result, AlertCreated)
+    alert = await db_session.get(Alert, result.alert_id)
+    assert alert is not None
+    assert alert.status == STATUS_ALERT_SUPPRESSED, (
+        "a MATCH inside the debounce window must still be recorded, just not deliverable"
+    )
+
+    suppression = (
+        await db_session.execute(
+            AlertSuppression.__table__.select().where(AlertSuppression.alert_id == alert.id)
+        )
+    ).one()
+    assert suppression.reason == SUPPRESSION_REASON_DEBOUNCE
+
+
+async def test_debounce_does_not_suppress_after_the_window_elapses(
+    db_session: AsyncSession,
+) -> None:
+    account_id, principal_id = await _register_tenant(db_session)
+    await _seed_governance(db_session)
+    await _seed_boe_rights(db_session)
+    # Shorter than the 1-day gap between the two seeded facts below.
+    rule_version_id = await _seed_rule_version(
+        db_session, account_id=account_id, principal_id=principal_id,
+        debounce_seconds=60,
+    )
+    await _seed_curve_point(db_session, spot_rate_pct="4.5", valid_on=dt.date(2026, 9, 10))
+    await db_session.commit()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+    first_eval = await evaluate_rule_version(
+        db_session, rule_version_id=rule_version_id, trigger_type=_TRIGGER_TYPE, trigger_id=None,
+    )
+    assert isinstance(first_eval, RuleEvaluationRecorded)
+    first_alert = await create_alert_for_evaluation(
+        db_session, rule_evaluation_id=first_eval.rule_evaluation_id
+    )
+    assert isinstance(first_alert, AlertCreated)
+    await db_session.commit()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+
+    await _seed_curve_point(db_session, spot_rate_pct="5.5", valid_on=dt.date(2026, 9, 11))
+    await db_session.commit()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+    second_eval = await evaluate_rule_version(
+        db_session, rule_version_id=rule_version_id, trigger_type=_TRIGGER_TYPE, trigger_id=None,
+    )
+    assert isinstance(second_eval, RuleEvaluationRecorded)
+
+    result = await create_alert_for_evaluation(
+        db_session, rule_evaluation_id=second_eval.rule_evaluation_id
+    )
+
+    assert isinstance(result, AlertCreated)
+    alert = await db_session.get(Alert, result.alert_id)
+    assert alert is not None
+    assert alert.status == STATUS_ALERT_CREATED

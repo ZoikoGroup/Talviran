@@ -57,9 +57,24 @@ _TRUNCATE_TABLES = text(
         market.outbox_event,
         calculation.calculation_specification,
         calculation.calculation_result,
+        evidence.document_chunk,
+        evidence.parsed_document_version,
+        evidence.document_processing_job,
+        evidence.document_version,
+        evidence.citation_locator,
         evidence.document,
         evidence.evidence_bundle,
-        audit.event_log
+        audit.event_log,
+        monitoring.alert_delivery_attempt,
+        monitoring.alert_suppression,
+        monitoring.alert,
+        monitoring.rule_evaluation_input,
+        monitoring.rule_evaluation,
+        monitoring.monitoring_coverage_incident,
+        monitoring.monitoring_coverage,
+        monitoring.monitoring_rule_version,
+        monitoring.monitoring_rule,
+        monitoring.evaluator_heartbeat
     CASCADE
     """
 )
