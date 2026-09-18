@@ -44,7 +44,8 @@ ClientFactory = Callable[[], AbstractAsyncContextManager[AsyncClient]]
 
 
 @pytest_asyncio.fixture
-async def make_client() -> AsyncIterator[ClientFactory]:
+async def make_client(supabase_http: AsyncClient) -> AsyncIterator[ClientFactory]:
+    from app.modules.api.v1 import auth as auth_module
     from app.modules.api.v1 import deps
 
     settings = get_settings()
@@ -63,6 +64,7 @@ async def make_client() -> AsyncIterator[ClientFactory]:
     app.dependency_overrides[get_session] = _session_override
     app.dependency_overrides[deps.key_wrapper] = lambda: TEST_WRAPPER
     app.dependency_overrides[get_redis] = lambda: redis_client
+    app.dependency_overrides[auth_module._http] = lambda: supabase_http
 
     @asynccontextmanager
     async def _client() -> AsyncIterator[AsyncClient]:
