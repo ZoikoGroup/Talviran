@@ -18,3 +18,4 @@ Planned modules (see `docs/`):
 - `api` — the public REST/JSON contract (API-001)
 
 > Stack (Python / Node / other) to be decided.
+# CI/CD verification 2026-09-18T08:15:26Z
