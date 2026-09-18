@@ -97,13 +97,19 @@ export function Field({
 export function SubmitButton({
   children,
   busy,
+  disabled,
   className,
   ...rest
 }: React.ComponentProps<'button'> & { busy?: boolean }) {
   return (
     <button
       type="submit"
-      disabled={busy || rest.disabled}
+      // `disabled` is destructured out (not left in `rest`) specifically so
+      // this computed value can't be clobbered by a caller-supplied one —
+      // {...rest} spread after a same-named prop wins, which used to mean a
+      // busy submit stayed clickable the moment any caller passed its own
+      // `disabled` too (see ResetPassword.tsx, the first one that did).
+      disabled={busy || disabled}
       aria-busy={busy}
       {...rest}
       className={cn(

@@ -22,6 +22,11 @@ interface AuthValue {
   signUp: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   rename: (name: string) => void
+  /** Re-checks /me and updates `session` to match. Needed after anything
+   * that establishes a session cookie without going through signIn/signUp
+   * — currently just password reset, which authenticates via a recovery
+   * token rather than a login call. */
+  refresh: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthValue | null>(null)
@@ -63,6 +68,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(toSession(principal))
   }, [])
 
+  const refresh = useCallback(async () => {
+    try {
+      setSession(toSession(await api.me()))
+    } catch {
+      setSession(null)
+    }
+  }, [])
+
   const signOut = useCallback(async () => {
     try {
       await api.logout()
@@ -84,8 +97,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ session, loading, signIn, signUp, signOut, rename }),
-    [session, loading, signIn, signUp, signOut, rename]
+    () => ({ session, loading, signIn, signUp, signOut, rename, refresh }),
+    [session, loading, signIn, signUp, signOut, rename, refresh]
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

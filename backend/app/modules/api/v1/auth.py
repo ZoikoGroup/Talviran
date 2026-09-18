@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from redis.asyncio import Redis
@@ -17,8 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.errors import ErrorCode, TalvrinAPIError
+from app.core.http_client import get_http_client
 from app.core.redis_client import get_redis
-from app.modules.identity import rate_limit, service
+from app.modules.identity import rate_limit, reset_tokens, service
 from app.modules.identity.cookies import (
     SESSION_COOKIE_NAME,
     CookiePolicy,
@@ -36,6 +38,13 @@ def _redis() -> Redis:
 
 
 RedisDep = Annotated[Redis, Depends(_redis)]
+
+
+def _http() -> httpx.AsyncClient:
+    return get_http_client()
+
+
+HttpDep = Annotated[httpx.AsyncClient, Depends(_http)]
 
 
 def _cookie_policy() -> CookiePolicy:
@@ -82,9 +91,12 @@ async def signup(
     body: Credentials,
     response: Response,
     db: SessionDep,
+    http: HttpDep,
 ) -> PrincipalOut:
     try:
-        login = await service.register(db, email=body.email, password=body.password)
+        login = await service.register(
+            db, email=body.email, password=body.password, http=http
+        )
     except service.WeakPassword as exc:
         raise TalvrinAPIError(
             code=ErrorCode.VALIDATION_ERROR, message=exc.reason
@@ -114,6 +126,7 @@ async def login(
     response: Response,
     db: SessionDep,
     redis: RedisDep,
+    http: HttpDep,
 ) -> PrincipalOut:
     ip = _client_ip(request)
     decision = await rate_limit.check_and_count(
@@ -128,13 +141,19 @@ async def login(
 
     try:
         issued = await service.authenticate(
-            db, email=body.email, password=body.password
+            db, email=body.email, password=body.password, http=http
         )
     except service.InvalidCredentials as exc:
         await db.rollback()
         raise TalvrinAPIError(
             code=ErrorCode.UNAUTHENTICATED,
             message="Incorrect email or password.",
+        ) from exc
+    except service.EmailNotConfirmed as exc:
+        await db.rollback()
+        raise TalvrinAPIError(
+            code=ErrorCode.UNAUTHENTICATED,
+            message="Please confirm your email address before signing in.",
         ) from exc
 
     await db.commit()
@@ -157,6 +176,84 @@ async def logout(request: Request, response: Response, db: SessionDep) -> None:
     # The cookie is cleared either way: a caller holding a stale token should
     # still end up signed out rather than stuck.
     clear_session_cookie(response, policy=_cookie_policy())
+
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
+async def forgot_password(body: ForgotPasswordIn, http: HttpDep) -> None:
+    """Always 202, whether or not the address has an account.
+
+    Matching /login's enumeration resistance (SEC-001 §7.1): Supabase's own
+    `/auth/v1/recover` already answers identically for a known and an
+    unknown address, so there is nothing here to branch on that wouldn't
+    reopen the thing that endpoint already closed.
+    """
+    settings = get_settings()
+    await service.request_password_reset(
+        email=body.email,
+        http=http,
+        settings=settings,
+        redirect_to=f"{settings.frontend_url}/reset-password",
+    )
+
+
+class ResetPasswordIn(BaseModel):
+    #: The `access_token` from the recovery link's `#access_token=...`
+    #: fragment — see identity.service.complete_password_reset.
+    access_token: str = Field(min_length=1)
+    new_password: str = Field(min_length=1, max_length=4096)
+
+
+_EXPIRED_LINK_MESSAGE = "This reset link is invalid or has expired. Request a new one."
+
+
+@router.post("/reset-password")
+async def reset_password(
+    body: ResetPasswordIn,
+    response: Response,
+    db: SessionDep,
+    http: HttpDep,
+    redis: RedisDep,
+) -> PrincipalOut:
+    # Checked before Supabase is even called: Supabase's own token stays
+    # valid for its full lifetime and would happily accept a second call —
+    # see identity/reset_tokens.py for why this app enforces single-use
+    # itself rather than relying on that.
+    if await reset_tokens.is_spent(redis, access_token=body.access_token):
+        raise TalvrinAPIError(
+            code=ErrorCode.UNAUTHENTICATED, message=_EXPIRED_LINK_MESSAGE
+        )
+
+    try:
+        issued = await service.complete_password_reset(
+            db, access_token=body.access_token, new_password=body.new_password, http=http
+        )
+    except service.InvalidResetToken as exc:
+        await db.rollback()
+        raise TalvrinAPIError(
+            code=ErrorCode.UNAUTHENTICATED, message=_EXPIRED_LINK_MESSAGE
+        ) from exc
+    except service.WeakPassword as exc:
+        await db.rollback()
+        raise TalvrinAPIError(
+            code=ErrorCode.VALIDATION_ERROR, message=exc.reason
+        ) from exc
+
+    await db.commit()
+    # Marked spent only now that the password has actually changed — a
+    # request rejected for a weak password leaves the link usable for a
+    # retry rather than burning it on a mistake.
+    await reset_tokens.mark_spent(redis, access_token=body.access_token)
+    set_session_cookie(
+        response,
+        token=issued.token,
+        expires_at=issued.absolute_expiry,
+        policy=_cookie_policy(),
+    )
+    return _principal_out(issued.identity)
 
 
 @router.get("/me")

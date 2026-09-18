@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     secret_key: str = "dev-only-change-me"
     cors_allow_origins: list[str] = ["http://localhost:5173"]
 
+    # Where a Supabase password-reset email should send the user back to —
+    # the frontend's own origin, not one of (possibly several)
+    # cors_allow_origins, which answers a different question (who may call
+    # this API from a browser) and shouldn't be overloaded to answer this one.
+    frontend_url: str = "http://localhost:5173"
+
     # Wraps the per-account data keys that encrypt research content
     # (SEC-001 §15.1). Base64 of 32 bytes. The default is a fixed development
     # value and is useless as a secret — `CookiePolicy.for_environment` style
@@ -34,6 +40,25 @@ class Settings(BaseSettings):
     # Set in production to wrap DEKs with Cloud KMS rather than a local key:
     # "projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k>".
     kms_key_name: str | None = None
+
+    # Supabase Auth (GoTrue) is the credential and session engine — see
+    # identity/supabase_auth.py. Required, not defaulted: an app that started
+    # with no way to reach its own auth provider should fail at boot, not on
+    # the first user's sign-in attempt.
+    supabase_url: str
+    #: The public anon key. Safe to ship to a browser by Supabase's own
+    #: design; used here from the backend only, which is a strictly smaller
+    #: exposure than that.
+    supabase_anon_key: str
+    #: Not used by anything yet — reserved for a future admin operation
+    #: (e.g. force-deleting a Supabase user on account deletion) that would
+    #: need it. Optional so its absence doesn't block everything else.
+    supabase_service_role_key: str | None = None
+
+    #: Twelve Data equities connector (free tier, ~8 requests/minute).
+    #: Optional, not required at boot: only the equity connector itself
+    #: needs it, and only when it actually runs.
+    twelve_data_api_key: str | None = None
 
 
 @lru_cache

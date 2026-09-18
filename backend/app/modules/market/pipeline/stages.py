@@ -11,21 +11,16 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.market.connectors.dmo_gilts.mapping import GiltReferenceCandidate
-from app.modules.market.models import SourceObservation
 from app.modules.market.pipeline.identity_resolution import (
     ResolvedIdentity,
     resolve_instrument_by_isin,
 )
-from app.modules.market.pipeline.reconcile import (
-    CandidateObservation,
-    ReconciliationOutcome,
-    reconcile_and_publish,
-)
+from app.modules.market.pipeline.ingest_tail import ingest_and_reconcile
+from app.modules.market.pipeline.reconcile import ReconciliationOutcome
 from app.modules.market.pipeline.reconciliation_policy import GILT_REFERENCE_TERMS_POLICY
 from app.modules.rights.engine import RightsDecision, evaluate_action
 
@@ -92,48 +87,27 @@ async def ingest_gilt_reference_candidate(
     )
     value = candidate_value(candidate)
 
-    existing = (
-        await session.execute(
-            select(SourceObservation).where(SourceObservation.semantic_observation_key == key)
-        )
-    ).scalar_one_or_none()
-
-    if existing is not None:
-        observation_id = existing.id
-    else:
-        observation = SourceObservation(
-            source_artifact_id=source_artifact_id,
-            rights_profile_id=rights_profile_id,
-            subject_type="INSTRUMENT",
-            subject_id=identity.instrument_id,
-            metric_id=METRIC_GILT_REFERENCE_TERMS,
-            semantic_observation_key=key,
-            raw_value=value,
-            valid_from=candidate.first_issue_date,
-            observed_at=fetched_at,
-        )
-        session.add(observation)
-        await session.flush()
-        observation_id = observation.id
-
     # Reference terms are valid from issuance onward, indefinitely — not
     # from "when we happened to observe them." A future correction to this
     # same fact reuses this same valid_range; only knowledge_range changes.
-    valid_from = dt.datetime.combine(candidate.first_issue_date, dt.time.min, tzinfo=dt.UTC)
+    valid_from_dt = dt.datetime.combine(candidate.first_issue_date, dt.time.min, tzinfo=dt.UTC)
 
-    reconciliation = await reconcile_and_publish(
+    outcome = await ingest_and_reconcile(
         session,
+        source_artifact_id=source_artifact_id,
+        source_code=source_code,
+        rights_profile_id=rights_profile_id,
         subject_type="INSTRUMENT",
         subject_id=identity.instrument_id,
         metric_id=METRIC_GILT_REFERENCE_TERMS,
-        candidates=[
-            CandidateObservation(
-                observation_id=observation_id, source_code=source_code, value=value
-            )
-        ],
+        semantic_observation_key=key,
+        value=value,
+        valid_from=candidate.first_issue_date,
+        valid_range=Range(lower=valid_from_dt, upper=None, bounds="[)"),
+        fetched_at=fetched_at,
         policy=GILT_REFERENCE_TERMS_POLICY,
-        valid_range=Range(lower=valid_from, upper=None, bounds="[)"),
-        knowledge_time=fetched_at,
     )
 
-    return IngestResult(observation_id=observation_id, reconciliation=reconciliation)
+    return IngestResult(
+        observation_id=outcome.observation_id, reconciliation=outcome.reconciliation
+    )

@@ -43,6 +43,7 @@ from app.modules.market.pipeline.curve_ingest import ingest_curve_point_candidat
 from app.modules.market.pipeline.stages import ingest_gilt_reference_candidate
 from app.modules.reference.models import InstrumentAlias
 from app.modules.rights.models import RightsProfile
+from scripts._connector_registry import ingest_all as ingest_new_connectors
 from scripts.seed_dev import SEED_GILT_ISIN
 
 _GILT_PRICE_FROM_CURVE_SPEC_CODE = "gilt_price_from_curve_v1"
@@ -191,6 +192,12 @@ async def main() -> None:
         result = await run_next_job(session)
         if result is not None:
             print(f"Pricing job: {result.outcome}")
+
+        # The three new connectors (Frankfurter FX, DBnomics macro, Twelve
+        # Data equities) - no pricing job to enqueue for any of them, so
+        # they're a separate, simpler pass rather than folded into the
+        # gilt/curve block above.
+        await ingest_new_connectors(session)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import { MailCheck } from 'lucide-react'
 import AuthLayout from '@/components/layouts/AuthLayout'
 import { Field, SubmitButton } from '@/components/ui/field'
 import { isEmail } from '@/auth/session'
+import { requestPasswordReset } from '@/lib/api'
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('')
@@ -11,16 +12,24 @@ export default function ForgotPassword() {
   const [busy, setBusy] = useState(false)
   const [sent, setSent] = useState(false)
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email.trim()) return setError('Enter your email address.')
     if (!isEmail(email)) return setError('That does not look like an email address.')
     setError(null)
     setBusy(true)
-    setTimeout(() => {
-      setBusy(false)
+    try {
+      await requestPasswordReset(email)
+      // Shown whether or not the address has an account — the backend
+      // itself never says (SEC-001 §7.1), so the UI can't either.
       setSent(true)
-    }, 450)
+    } catch {
+      // The request itself failed (network/server) — genuinely worth
+      // telling them, since it's not the same as "we don't say".
+      setError('Could not reach Talvrin. Check your connection and try again.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   if (sent) {
