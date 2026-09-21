@@ -39,8 +39,8 @@ import datetime as dt
 import uuid
 from typing import Any
 
-from sqlalchemy import ForeignKey, Integer, String
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Computed, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -187,6 +187,15 @@ class DocumentChunk(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     page_end: Mapped[int | None] = mapped_column(default=None)
     token_estimate: Mapped[int | None] = mapped_column(default=None)
     content_hash: Mapped[str] = mapped_column(String(64))
+    # EVID-001 §12.1's launch retrieval stack: Postgres FTS + pgvector, no
+    # separate vector database. This is the FTS half - a STORED generated
+    # column (not maintained in application code) so it can never drift
+    # from text_content, and a GIN index over it (migration 0024) is what
+    # actually makes search_chunks_by_text fast. Semantic (pgvector) search
+    # is a separate column, added once an embedding provider is chosen.
+    search_vector: Mapped[Any] = mapped_column(
+        TSVECTOR, Computed("to_tsvector('english', text_content)", persisted=True)
+    )
 
 
 class CitationLocator(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
