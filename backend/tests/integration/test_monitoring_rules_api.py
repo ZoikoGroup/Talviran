@@ -43,7 +43,7 @@ ClientFactory = Callable[[], AbstractAsyncContextManager[AsyncClient]]
 @pytest_asyncio.fixture
 async def make_client(supabase_http: AsyncClient) -> AsyncIterator[ClientFactory]:
     settings = get_settings()
-    engine = create_async_engine(settings.database_url)
+    engine = create_async_engine(settings.test_database_url)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async def _session_override() -> AsyncIterator[AsyncSession]:

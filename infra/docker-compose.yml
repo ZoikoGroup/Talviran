@@ -1,6 +1,12 @@
 services:
   postgres:
-    image: postgres:16
+    # pgvector/pgvector:pg16 - the pgvector project's own official image,
+    # a drop-in replacement for postgres:16 (same Postgres major version,
+    # so the existing pgdata volume attaches unchanged) with the `vector`
+    # extension available to CREATE EXTENSION - not enabled by default.
+    # EVID-001 §12.1's launch retrieval stack needs this for semantic
+    # search (P4 E3).
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: talvrin
       POSTGRES_PASSWORD: talvrin

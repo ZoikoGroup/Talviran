@@ -15,20 +15,27 @@ overwrite.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import uuid
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Header, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.errors import ErrorCode, TalvrinAPIError
 from app.core.idempotency import IdempotencyConflictError, run_idempotent
 from app.core.request_context import get_request_id
+from app.modules.ai_gateway.gateway import InvokeResult, invoke_model
+from app.modules.api.v1.auth import HttpDep
 from app.modules.api.v1.deps import DekDep, IdentityDep, RedisDep, SessionDep
 from app.modules.evidence import service as evidence_service
 from app.modules.evidence.models import EvidenceBundle
+from app.modules.evidence.service import DEV_JURISDICTION
 from app.modules.research import service as research_service
 
 router = APIRouter(tags=["research"])
@@ -89,6 +96,58 @@ def _too_long(exc: research_service.ContentTooLong) -> TalvrinAPIError:
     return TalvrinAPIError(code=ErrorCode.VALIDATION_ERROR, message=str(exc))
 
 
+async def _try_ai_composed_text(
+    db: AsyncSession,
+    *,
+    answer: evidence_service.ResearchAnswer,
+    query_text: str,
+    conversation_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    account_id: uuid.UUID,
+    dek: bytes,
+    http: httpx.AsyncClient,
+) -> evidence_service.ResearchAnswer:
+    """Best-effort AI Gateway composition on top of the rule-based answer
+    evidence_service already produced - AI-001 A0+A1+A2 wired into the
+    real product path for the first time. Only attempted when a real
+    EvidenceBundle exists (an advice-redirect/greeting/no-data reply has
+    nothing for the model to explain - A1's own empty-bundle rule would
+    reject it anyway, this just skips the wasted call). Any rejection
+    (no PRODUCTION model, PDP deny, validation failed twice, provider
+    down) silently keeps the original rule-based text - "AI is fully
+    removable" is a real product invariant, not aspirational: the
+    platform must keep answering correctly with the Gateway turned off.
+    """
+    if answer.evidence_bundle_id is None:
+        return answer
+
+    conversation = await research_service.get_conversation(
+        db, conversation_id=conversation_id, dek=dek
+    )
+    settings = get_settings()
+    api_keys = {
+        code: key
+        for code, key in {"gemini": settings.gemini_api_key, "groq": settings.groq_api_key}.items()
+        if key
+    }
+
+    outcome = await invoke_model(
+        db,
+        task_type=conversation.model,
+        evidence_bundle_id=answer.evidence_bundle_id,
+        instruction=query_text,
+        http=http,
+        api_keys=api_keys,
+        principal_id=principal_id,
+        account_id=account_id,
+        jurisdiction_code=DEV_JURISDICTION,
+        requested_output_type=answer.allowed_output_type,
+    )
+    if isinstance(outcome, InvokeResult):
+        return dataclasses.replace(answer, text=outcome.text)
+    return answer
+
+
 @router.post("/research", status_code=status.HTTP_201_CREATED, response_model=ResearchOut)
 async def create_research_answer(
     request: Request,
@@ -97,6 +156,7 @@ async def create_research_answer(
     identity: IdentityDep,
     dek: DekDep,
     redis: RedisDep,
+    http: HttpDep,
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> JSONResponse:
     raw_body = await request.body()
@@ -121,6 +181,17 @@ async def create_research_answer(
             query_text=body.query,
             principal_id=identity.principal_id,
             account_id=identity.account_id,
+            http=http,
+        )
+        answer = await _try_ai_composed_text(
+            db,
+            answer=answer,
+            query_text=body.query,
+            conversation_id=body.conversation_id,
+            principal_id=identity.principal_id,
+            account_id=identity.account_id,
+            dek=dek,
+            http=http,
         )
 
         assistant_message = await research_service.append_message(

@@ -38,7 +38,7 @@ async def client(supabase_http: AsyncClient) -> AsyncIterator[AsyncClient]:
     from app.modules.api.v1 import auth as auth_module
     from app.modules.api.v1 import deps
 
-    engine = create_async_engine(get_settings().database_url)
+    engine = create_async_engine(get_settings().test_database_url)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async def _session_override() -> AsyncIterator[AsyncSession]:

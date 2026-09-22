@@ -28,13 +28,17 @@ from dataclasses import dataclass, field
 import pypdf
 from pypdf import PdfReader
 from pypdf.errors import PyPdfError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.evidence.models import (
     QUALITY_FAILED,
     QUALITY_PARTIAL,
     QUALITY_PASS,
+    STAGE_PARSE,
+    STATUS_JOB_DONE,
     DocumentChunk,
+    DocumentProcessingJob,
     DocumentVersion,
     ParsedDocumentVersion,
 )
@@ -65,9 +69,42 @@ class ParseResult:
 async def parse_document_version(
     session: AsyncSession, *, document_version_id: uuid.UUID
 ) -> ParseResult | ParseRejected:
+    """Idempotent on (document_version_id, parser_name, parser_version):
+    re-running with an unchanged parser reuses the existing
+    ParsedDocumentVersion rather than creating a duplicate (found live,
+    2026-09-22 - an untracked re-parse left two ParsedDocumentVersions
+    and a doubled chunk count with no audit trail to explain why, since
+    this function - unlike acquire_document - never logged a
+    DocumentProcessingJob row). A genuinely new parser_version is still a
+    new row, per EVID-001's own versioning doctrine.
+    """
     version = await session.get(DocumentVersion, document_version_id)
     if version is None:
         return ParseRejected(reason=f"no document_version {document_version_id}")
+
+    existing = (
+        await session.execute(
+            select(ParsedDocumentVersion).where(
+                ParsedDocumentVersion.document_version_id == document_version_id,
+                ParsedDocumentVersion.parser_name == PARSER_NAME,
+                ParsedDocumentVersion.parser_version == _parser_version(),
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        chunk_count = (
+            await session.execute(
+                select(DocumentChunk).where(
+                    DocumentChunk.parsed_document_version_id == existing.id
+                )
+            )
+        ).scalars().all()
+        return ParseResult(
+            parsed_document_version_id=existing.id,
+            chunk_count=len(chunk_count),
+            extraction_quality=existing.extraction_quality,
+            warnings=existing.warnings,
+        )
 
     artifact = await session.get(SourceArtifact, version.source_artifact_id)
     if artifact is None:
@@ -97,6 +134,11 @@ async def parse_document_version(
             warnings=[f"pypdf could not read this file: {exc}"],
         )
         session.add(parsed)
+        session.add(
+            DocumentProcessingJob(
+                document_id=version.document_id, stage=STAGE_PARSE, status=STATUS_JOB_DONE
+            )
+        )
         await session.flush()
         return ParseResult(
             parsed_document_version_id=parsed.id,
@@ -134,6 +176,11 @@ async def parse_document_version(
         warnings=warnings,
     )
     session.add(parsed)
+    session.add(
+        DocumentProcessingJob(
+            document_id=version.document_id, stage=STAGE_PARSE, status=STATUS_JOB_DONE
+        )
+    )
     await session.flush()
 
     if quality != QUALITY_FAILED:

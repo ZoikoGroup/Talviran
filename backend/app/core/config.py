@@ -18,6 +18,18 @@ class Settings(BaseSettings):
     # role deliberately doesn't have.
     admin_database_url: str = "postgresql+asyncpg://talvrin:talvrin@localhost:5433/talvrin"
 
+    # A genuinely separate database for tests/integration (infra/init-db/
+    # 02-test-database.sql creates it) - conftest.py's db_session/
+    # _truncate_test_tables point here, never at database_url/
+    # admin_database_url. Before this existed, running the integration
+    # suite while also testing through the browser silently wiped the
+    # signed-in account/conversation and all seeded governance/reference
+    # data mid-session - a real incident, not a hypothetical one.
+    test_database_url: str = (
+        "postgresql+asyncpg://talvrin_app:talvrin_app@localhost:5433/talvrin_test"
+    )
+    test_admin_database_url: str = "postgresql+asyncpg://talvrin:talvrin@localhost:5433/talvrin_test"
+
     redis_url: str = "redis://localhost:6380/0"
     dmo_base_url: str = "https://www.dmo.gov.uk"
 
@@ -66,6 +78,19 @@ class Settings(BaseSettings):
     #: Optional, not required at boot: only the equity connector itself
     #: needs it, and only when it actually runs.
     twelve_data_api_key: str | None = None
+
+    #: Gemini embeddings (P4 EVID-001 E3 semantic retrieval) and generation
+    #: (P4b ai_gateway - talvrin-pro's registered provider, though the
+    #: "pro" model line has zero free-tier quota on this key as of
+    #: 2026-09-22; see ai_gateway/providers/gemini_client.py). Optional,
+    #: not required at boot: only the pipelines that use it need it.
+    gemini_api_key: str | None = None
+
+    #: Groq (P4b ai_gateway - talvrin-go's registered provider, PRODUCTION
+    #: since live-verified 2026-09-22; see ai_gateway/providers/
+    #: groq_client.py). Optional, not required at boot: only the ai_gateway
+    #: pipelines that use it need it.
+    groq_api_key: str | None = None
 
 
 @lru_cache
