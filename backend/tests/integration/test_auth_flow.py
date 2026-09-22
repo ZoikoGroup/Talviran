@@ -65,7 +65,7 @@ async def client(supabase_http: AsyncClient) -> AsyncIterator[AsyncClient]:
     so signup/login reach FakeSupabaseAuth instead of the real project.
     """
     settings = get_settings()
-    engine = create_async_engine(settings.database_url)
+    engine = create_async_engine(settings.test_database_url)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     redis: Redis = from_url(settings.redis_url, decode_responses=True)
 

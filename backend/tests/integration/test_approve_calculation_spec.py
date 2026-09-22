@@ -13,6 +13,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import db as core_db
+from app.core.config import get_settings
 from app.modules.calculation.models import (
     STATUS_APPROVED,
     STATUS_DEPRECATED,
@@ -31,6 +32,18 @@ async def _fresh_process_engine_per_test() -> AsyncIterator[None]:
     # (the same lesson conftest.py's db_session fixture exists for). Reset
     # the singleton around each test so approve()'s internal engine is
     # created fresh in THIS test's loop, not reused from a torn-down one.
+    #
+    # get_engine() reads settings.database_url (the dev database), but this
+    # test's own db_session fixture points at test_database_url - the
+    # separate talvrin_test database. Without this swap, _seed_spec's row
+    # (written via db_session) and approve()'s own lookup (via
+    # get_session_factory()) would silently be looking at two different
+    # databases - exactly the class of bug the test-database split was
+    # built to prevent elsewhere, just relocated to this one script's
+    # direct get_session_factory() usage.
+    settings = get_settings()
+    original_database_url = settings.database_url
+    settings.database_url = settings.test_database_url
     core_db._engine = None
     core_db._session_factory = None
     yield
@@ -38,6 +51,7 @@ async def _fresh_process_engine_per_test() -> AsyncIterator[None]:
         await core_db._engine.dispose()
     core_db._engine = None
     core_db._session_factory = None
+    settings.database_url = original_database_url
 
 
 async def _seed_spec(session: AsyncSession, *, status: str) -> str:

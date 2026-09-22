@@ -21,7 +21,7 @@ async def db_session() -> AsyncIterator[AsyncSession]:
     # and an engine created in test A's loop breaks in test B's ("Event loop
     # is closed" / asyncpg AttributeError) once A's loop is torn down. Each
     # test gets its own engine, created and disposed inside its own loop.
-    engine = create_async_engine(get_settings().database_url)
+    engine = create_async_engine(get_settings().test_database_url)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         yield session
@@ -31,8 +31,11 @@ async def db_session() -> AsyncIterator[AsyncSession]:
 @pytest.fixture(autouse=True, scope="session")
 def _requires_postgres() -> None:
     """Integration tests assume `docker compose -f infra/docker-compose.yml
-    up -d` is already running and migrated to head — they are not run as
-    part of the default `pytest` unit-only loop.
+    up -d` is already running, and BOTH databases migrated to head - the
+    dev database (`uv run alembic upgrade head`) and talvrin_test
+    (`ADMIN_DATABASE_URL=$TEST_ADMIN_DATABASE_URL uv run alembic upgrade
+    head`, or the equivalent on Windows). Not run as part of the default
+    `pytest` unit-only loop.
     """
 
 
@@ -80,7 +83,10 @@ _TRUNCATE_TABLES = text(
         monitoring.monitoring_coverage,
         monitoring.monitoring_rule_version,
         monitoring.monitoring_rule,
-        monitoring.evaluator_heartbeat
+        monitoring.evaluator_heartbeat,
+        ai_gateway.ai_model_execution,
+        ai_gateway.ai_model,
+        ai_gateway.ai_provider
     CASCADE
     """
 )
@@ -94,7 +100,7 @@ async def _truncate_test_tables() -> None:
     # this list — add new ones here as new test modules land, or the next
     # test file rediscovers the same "leftover data across runs" bug that
     # test_rls_identity.py found the hard way.
-    admin_engine = create_async_engine(get_settings().admin_database_url)
+    admin_engine = create_async_engine(get_settings().test_admin_database_url)
     async with admin_engine.begin() as conn:
         await conn.execute(_TRUNCATE_TABLES)
     await admin_engine.dispose()
@@ -103,11 +109,13 @@ async def _truncate_test_tables() -> None:
 @pytest_asyncio.fixture(autouse=True)
 async def _clean_test_tables() -> AsyncIterator[None]:
     """Truncates every table integration tests write to, before AND after
-    each test. Runs against a persistent dev database (not a fresh-per-run
-    CI DB), so idempotency here isn't optional — the first run of
-    test_rls_identity.py without this fixture failed on its second run with
-    a UniqueViolationError on identity.principal.email, exactly because of
-    this.
+    each test. Runs against talvrin_test, a genuinely separate, persistent
+    database (not a fresh-per-run CI DB and not the same database the dev
+    server points at — see Settings.test_database_url's docstring for the
+    real incident that fix resolved), so idempotency here isn't optional —
+    the first run of test_rls_identity.py without this fixture failed on
+    its second run with a UniqueViolationError on identity.principal.email,
+    exactly because of this.
     """
     await _truncate_test_tables()
     yield
