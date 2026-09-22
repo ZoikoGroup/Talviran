@@ -39,6 +39,7 @@ import datetime as dt
 import uuid
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import Computed, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -191,11 +192,18 @@ class DocumentChunk(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     # separate vector database. This is the FTS half - a STORED generated
     # column (not maintained in application code) so it can never drift
     # from text_content, and a GIN index over it (migration 0024) is what
-    # actually makes search_chunks_by_text fast. Semantic (pgvector) search
-    # is a separate column, added once an embedding provider is chosen.
+    # actually makes search_chunks_by_text fast.
     search_vector: Mapped[Any] = mapped_column(
         TSVECTOR, Computed("to_tsvector('english', text_content)", persisted=True)
     )
+    # The pgvector half (migration 0025) - Gemini's gemini-embedding-001,
+    # truncated to 768 dims via the API's own outputDimensionality
+    # parameter (see that migration's docstring). Nullable: embedding
+    # happens as a separate pipeline step (evidence/pipeline/embed.py),
+    # not synchronously at chunk-insert time, since it requires an
+    # external API call - a NULL embedding simply isn't in semantic
+    # search results yet, not an error.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(768), default=None)
 
 
 class CitationLocator(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

@@ -7,19 +7,29 @@ calculation_result rows (never fabricated ones) with correct labeling.
 import datetime as dt
 import uuid
 from decimal import Decimal
+from unittest.mock import patch
 
+import httpx
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.modules.calculation.models import (
     BASIS_MODEL_IMPLIED,
     CalculationResult,
     CalculationSpecification,
 )
 from app.modules.calculation.pipeline.curve_pricing import METRIC_MODEL_IMPLIED_CLEAN_PRICE
-from app.modules.evidence.models import EvidenceBundle
+from app.modules.evidence.models import (
+    QUALITY_PASS,
+    Document,
+    DocumentChunk,
+    DocumentVersion,
+    EvidenceBundle,
+    ParsedDocumentVersion,
+)
 from app.modules.evidence.service import SEED_GILT_ISIN, assemble_research_answer
-from app.modules.market.models import AcceptedFact
+from app.modules.market.models import AcceptedFact, Dataset, Source, SourceArtifact
 from app.modules.market.pipeline.curve_ingest import (
     METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
     SUBJECT_TYPE_YIELD_CURVE_POINT,
@@ -71,6 +81,56 @@ async def _seed_rights_profile(
         )
     await session.flush()
     return profile.id
+
+
+async def _seed_accrued_document_chunk(
+    session: AsyncSession,
+    *,
+    rights_profile_id: uuid.UUID,
+    text_content: str = (
+        "Calculating accrued interest for conventional gilts: the "
+        "ex-dividend convention means accrued interest can go negative inside the "
+        "ex-dividend window."
+    ),
+) -> Document:
+    source = Source(code=f"test-source-{uuid.uuid4().hex[:8]}", name="Test Source")
+    session.add(source)
+    await session.flush()
+    dataset = Dataset(source_id=source.id, code="methodology-docs", name="Methodology Docs")
+    session.add(dataset)
+    await session.flush()
+    artifact = SourceArtifact(
+        dataset_id=dataset.id, sha256=uuid.uuid4().hex + uuid.uuid4().hex,
+        storage_ref="test://fixture", media_type="application/pdf", byte_length=1,
+        retrieved_at=dt.datetime.now(dt.UTC),
+    )
+    session.add(artifact)
+    await session.flush()
+
+    document = Document(title="UK DMO Worked Examples (test)", media_type="application/pdf")
+    session.add(document)
+    await session.flush()
+    version = DocumentVersion(
+        document_id=document.id, source_artifact_id=artifact.id,
+        rights_profile_id=rights_profile_id, retrieved_at=dt.datetime.now(dt.UTC),
+    )
+    session.add(version)
+    await session.flush()
+    parsed = ParsedDocumentVersion(
+        document_version_id=version.id, parser_name="test", parser_version="1",
+        parse_started_at=dt.datetime.now(dt.UTC), extraction_quality=QUALITY_PASS,
+    )
+    session.add(parsed)
+    await session.flush()
+    session.add(
+        DocumentChunk(
+            parsed_document_version_id=parsed.id, chunker_version="1", ordinal=0,
+            page_start=5, text_content=text_content,
+            content_hash=uuid.uuid4().hex + uuid.uuid4().hex,
+        )
+    )
+    await session.flush()
+    return document
 
 
 async def _seed_gilt(session: AsyncSession) -> Instrument:
@@ -176,6 +236,129 @@ async def test_accrued_query_returns_explanation(db_session: AsyncSession) -> No
     assert "Accrued interest" in answer.text
     assert len(answer.citations) == 1
     assert answer.citations[0].pill == "SOURCE"
+    # No real document acquired/parsed in this test's DB - the static
+    # fallback citation, not a real evidence bundle.
+    assert answer.evidence_bundle_id is None
+
+
+async def test_accrued_query_with_real_document_cites_real_evidence(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    profile_id = await _seed_rights_profile(
+        db_session, code="test.doc-display", actions=["display"]
+    )
+    document = await _seed_accrued_document_chunk(db_session, rights_profile_id=profile_id)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is accrued interest?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.DOCUMENT_EXPLANATION
+    assert answer.evidence_bundle_id is not None
+    assert len(answer.citations) == 1
+    assert answer.citations[0].label == document.title
+    assert answer.citations[0].meta == "Page 5"
+
+    bundle = await db_session.get(EvidenceBundle, answer.evidence_bundle_id)
+    assert bundle is not None
+
+
+async def test_accrued_query_without_display_rights_falls_back_to_static(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    # Deliberately no "display" grant - rights denial, fail-closed.
+    profile_id = await _seed_rights_profile(
+        db_session, code="test.doc-no-display", actions=["store"]
+    )
+    await _seed_accrued_document_chunk(db_session, rights_profile_id=profile_id)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is accrued interest?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.evidence_bundle_id is None
+    assert answer.citations[0].label == "UK DMO — Gilt Formulae and Examples, 4th ed. Section Three"
+
+
+async def test_catch_all_query_finds_real_document_evidence_via_lexical_fallback(
+    db_session: AsyncSession,
+) -> None:
+    """No http client passed (http=None, the default) - the catch-all
+    branch must still work via lexical-only search, never require Gemini.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    profile_id = await _seed_rights_profile(
+        db_session, code="test.doc-display-2", actions=["display"]
+    )
+    document = await _seed_accrued_document_chunk(
+        db_session, rights_profile_id=profile_id,
+        text_content="The quasi-coupon schedule for a conventional gilt is built by "
+        "counting back in exact half-year steps from the redemption date.",
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="how is the quasi-coupon schedule built?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.DOCUMENT_EXPLANATION
+    assert answer.evidence_bundle_id is not None
+    assert answer.citations[0].label == document.title
+
+
+async def test_catch_all_query_with_no_document_match_falls_back_to_default(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what's the weather like in London?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.evidence_bundle_id is None
+    assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
+
+
+async def test_catch_all_query_degrades_to_lexical_when_gemini_call_fails(
+    db_session: AsyncSession,
+) -> None:
+    """A broken/erroring Gemini call must never fail the whole request -
+    it degrades to lexical search, same as if no http client were passed
+    at all (GeminiEmbeddingError is caught, not propagated).
+
+    Forces gemini_api_key to a fake truthy value via a patched Settings so
+    the semantic attempt is always exercised regardless of whether the
+    real environment happens to have GEMINI_API_KEY configured - this
+    test's whole point is the failure-handling path, not the real key.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    profile_id = await _seed_rights_profile(
+        db_session, code="test.doc-display-3", actions=["display"]
+    )
+    document = await _seed_accrued_document_chunk(
+        db_session, rights_profile_id=profile_id,
+        text_content="Long first dividend periods require a separate quasi-coupon "
+        "schedule anchored to the irregular first coupon date.",
+    )
+
+    async def _broken_gemini(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="internal error")
+
+    fake_settings = get_settings().model_copy(update={"gemini_api_key": "fake-test-key"})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_broken_gemini)) as http:
+        with patch("app.modules.evidence.service.get_settings", return_value=fake_settings):
+            answer = await assemble_research_answer(
+                db_session, query_text="what is a long first dividend schedule?",
+                principal_id=None, account_id=None, http=http,
+            )
+
+    assert answer.evidence_bundle_id is not None
+    assert answer.citations[0].label == document.title
 
 
 async def test_default_query_has_no_facts(db_session: AsyncSession) -> None:
@@ -420,3 +603,42 @@ async def test_help_query_lists_real_current_topics(db_session: AsyncSession) ->
     assert "accrued" in answer.text.lower()
     assert answer.facts is None
     assert answer.evidence_bundle_id is None
+
+
+async def test_bare_greeting_gets_the_capability_reply_not_the_cold_default(
+    db_session: AsyncSession,
+) -> None:
+    """A real bug found via live UI testing: "hi" used to fall all the way
+    through to the generic "no data" default, identical to a genuinely
+    failed lookup - a poor first impression and not actually "no data",
+    just no *query* to look anything up for.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+
+    for greeting in ("hi", "Hello!", "hey", "good morning"):
+        answer = await assemble_research_answer(
+            db_session, query_text=greeting, principal_id=None, account_id=None,
+        )
+        assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
+        assert "gilt reference terms" in answer.text.lower(), greeting
+        assert not answer.text.startswith('You asked:'), greeting
+
+
+async def test_greeting_pattern_does_not_false_positive_on_real_questions(
+    db_session: AsyncSession,
+) -> None:
+    """Whole-message match only - "hi" as a real word inside an actual
+    question must never be mis-routed to the greeting branch. No gilt
+    data seeded here, so _gilt_facts_reply itself falls back to
+    NEUTRAL_EDUCATION too - the distinguishing signal is *which* fallback
+    text comes back: _gilt_facts_reply's own default("gilt reference
+    facts") label, not the greeting/help branch's capability list.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="hi there, what is the gilt price",
+        principal_id=None, account_id=None,
+    )
+    assert "Right now I can answer" not in answer.text
+    assert 'You asked: "gilt reference facts"' in answer.text

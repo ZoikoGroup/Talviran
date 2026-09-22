@@ -49,3 +49,51 @@ async def search_chunks_by_text(
         .limit(limit)
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+async def search_chunks_by_vector(
+    session: AsyncSession,
+    *,
+    query_embedding: list[float],
+    limit: int = 10,
+    max_distance: float | None = None,
+) -> list[DocumentChunk]:
+    """Semantic retrieval - EVID-001 §12.1's pgvector half, ranked by
+    cosine distance (migration 59e91ab651d2). Takes an already-computed
+    query embedding, not raw text - embedding a query is an external API
+    call, which doesn't belong in a pure-read query function (see
+    evidence/pipeline/embed.py's search_chunks_by_semantic_query for the
+    orchestrating wrapper that does both).
+
+    Only chunks with a non-null embedding can ever match - a chunk that
+    hasn't been through the embedding pipeline yet is absent from semantic
+    results, not an error. Same withdrawn/quarantined exclusion as
+    search_chunks_by_text (§12.2).
+
+    max_distance filters out weak nearest-neighbour matches - vector
+    search always returns *a* closest chunk, even for a query with no
+    real relationship to anything in the corpus (confirmed live: "hi"
+    against the accrued-interest corpus lands at cosine distance ~0.52,
+    while genuinely relevant queries land at ~0.23-0.33 - a real,
+    measured gap, not a guessed number). None (the default) means no
+    filtering, for callers that want raw nearest-neighbour results (e.g.
+    a UI that shows a confidence score itself).
+    """
+    stmt = (
+        select(DocumentChunk)
+        .join(
+            ParsedDocumentVersion,
+            ParsedDocumentVersion.id == DocumentChunk.parsed_document_version_id,
+        )
+        .join(DocumentVersion, DocumentVersion.id == ParsedDocumentVersion.document_version_id)
+        .where(
+            DocumentChunk.embedding.is_not(None),
+            DocumentVersion.status != STATUS_DOCUMENT_VERSION_WITHDRAWN,
+            ParsedDocumentVersion.extraction_quality.not_in([QUALITY_FAILED, QUALITY_QUARANTINED]),
+        )
+        .order_by(DocumentChunk.embedding.cosine_distance(query_embedding))
+        .limit(limit)
+    )
+    if max_distance is not None:
+        stmt = stmt.where(DocumentChunk.embedding.cosine_distance(query_embedding) <= max_distance)
+    return list((await session.execute(stmt)).scalars().all())

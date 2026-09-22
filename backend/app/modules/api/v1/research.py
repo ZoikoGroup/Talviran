@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 from app.core.errors import ErrorCode, TalvrinAPIError
 from app.core.idempotency import IdempotencyConflictError, run_idempotent
 from app.core.request_context import get_request_id
+from app.modules.api.v1.auth import HttpDep
 from app.modules.api.v1.deps import DekDep, IdentityDep, RedisDep, SessionDep
 from app.modules.evidence import service as evidence_service
 from app.modules.evidence.models import EvidenceBundle
@@ -97,6 +98,7 @@ async def create_research_answer(
     identity: IdentityDep,
     dek: DekDep,
     redis: RedisDep,
+    http: HttpDep,
     idempotency_key: str = Header(alias="Idempotency-Key"),
 ) -> JSONResponse:
     raw_body = await request.body()
@@ -121,6 +123,7 @@ async def create_research_answer(
             query_text=body.query,
             principal_id=identity.principal_id,
             account_id=identity.account_id,
+            http=http,
         )
 
         assistant_message = await research_service.append_message(

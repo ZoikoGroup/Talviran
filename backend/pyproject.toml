@@ -19,6 +19,7 @@ dependencies = [
     "openpyxl>=3.1",
     "cryptography>=50.0.1",
     "pypdf>=6.19.0",
+    "pgvector>=0.5.0",
 ]
 
 [dependency-groups]

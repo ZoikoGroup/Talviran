@@ -39,13 +39,26 @@ import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 
+import httpx
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.modules.calculation.models import CalculationResult
 from app.modules.calculation.pipeline.curve_pricing import METRIC_MODEL_IMPLIED_CLEAN_PRICE
 from app.modules.calculation.queries import latest_calculation_result
-from app.modules.evidence.models import EvidenceBundle, EvidenceMember
+from app.modules.evidence.embeddings.gemini_client import GeminiEmbeddingError
+from app.modules.evidence.models import (
+    CitationLocator,
+    Document,
+    DocumentChunk,
+    DocumentVersion,
+    EvidenceBundle,
+    EvidenceMember,
+    ParsedDocumentVersion,
+)
+from app.modules.evidence.pipeline.embed import search_chunks_by_semantic_query
+from app.modules.evidence.queries import search_chunks_by_text
 from app.modules.market.freshness import compute_freshness
 from app.modules.market.models import AcceptedFact
 from app.modules.market.pipeline.curve_ingest import (
@@ -89,6 +102,14 @@ _HELP_PATTERN = re.compile(
     r"which topics|what topics|what (can|do) (you|u) (do|answer|cover|know)|"
     r"help with\b|what (are|is) your capabilit", re.I,
 )
+# Whole-message match only (never a substring search like the other intent
+# patterns) - "hi" as a real word inside an actual question ("this hi-yield
+# bond...") must never be mis-routed here. A bare greeting is treated as an
+# implicit "what can you help with" - the same honest capability list a
+# generic "no data" reply would otherwise cold-open with.
+_GREETING_PATTERN = re.compile(
+    r"^\s*(hi|hello|hey|hiya|yo|greetings|good (morning|afternoon|evening))\s*[!.]?\s*$", re.I
+)
 
 
 def _is_advice(text: str) -> bool:
@@ -97,6 +118,10 @@ def _is_advice(text: str) -> bool:
 
 def _is_help_request(text: str) -> bool:
     return bool(_HELP_PATTERN.search(text))
+
+
+def _is_greeting(text: str) -> bool:
+    return bool(_GREETING_PATTERN.match(text))
 
 
 def _mentions_gilt(text: str) -> bool:
@@ -186,19 +211,119 @@ def _help_reply() -> ResearchAnswer:
     )
 
 
-def _accrued_reply() -> ResearchAnswer:
-    return ResearchAnswer(
-        text=(
-            "Accrued interest is the coupon a bond has earned but not yet paid, from "
-            "the last coupon date up to settlement. The buyer pays it to the seller on "
-            "top of the clean price.\n\n"
-            "Clean price quotes the bond excluding accrued interest — this is how "
-            "gilts and Treasuries are quoted.\n"
-            "Dirty price is what actually settles: clean price + accrued interest.\n\n"
-            "For gilts the accrual uses ACT/ACT (ICMA), and the ex-dividend convention "
-            "means a buyer inside the ex-dividend window is not entitled to the next "
-            "coupon — accrued interest then goes negative."
+_ACCRUED_EXPLANATION_TEXT = (
+    "Accrued interest is the coupon a bond has earned but not yet paid, from "
+    "the last coupon date up to settlement. The buyer pays it to the seller on "
+    "top of the clean price.\n\n"
+    "Clean price quotes the bond excluding accrued interest — this is how "
+    "gilts and Treasuries are quoted.\n"
+    "Dirty price is what actually settles: clean price + accrued interest.\n\n"
+    "For gilts the accrual uses ACT/ACT (ICMA), and the ex-dividend convention "
+    "means a buyer inside the ex-dividend window is not entitled to the next "
+    "coupon — accrued interest then goes negative."
+)
+_ACCRUED_EXPLANATION_NOTE = (
+    "Explanation only — no calculation was performed. Run the calculator for "
+    "a figure tied to a specific settlement date."
+)
+
+
+@dataclass(frozen=True)
+class _ChunkEvidence:
+    document: Document
+    bundle_id: uuid.UUID
+    citation: Citation
+
+
+async def _assemble_chunk_evidence(
+    session: AsyncSession, chunk: DocumentChunk
+) -> _ChunkEvidence | None:
+    """Shared by every document-backed reply branch: rights-checks the
+    chunk's source document, then builds the real EvidenceBundle/
+    EvidenceMember(DOCUMENT_SPAN)/CitationLocator(page) chain a citation
+    needs to be more than a label. Returns None - never a wrong or
+    invented citation - if the document/version can't be resolved or
+    "display" isn't rights-permitted, so callers can fall back to a
+    static/no-citation reply (EVID-001 doctrine: an evidence gap degrades
+    to "no citation", never a guessed one).
+    """
+    parsed = await session.get(ParsedDocumentVersion, chunk.parsed_document_version_id)
+    version = await session.get(DocumentVersion, parsed.document_version_id) if parsed else None
+    if version is None:
+        return None
+    rights_decision = await evaluate_action(session, "display", version.rights_profile_id)
+    if rights_decision is not RightsDecision.ALLOW:
+        return None
+    document = await session.get(Document, version.document_id)
+    if document is None:
+        return None
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION", knowledge_time=dt.datetime.now(dt.UTC),
+        status="ASSEMBLING",
+    )
+    session.add(bundle)
+    await session.flush()
+    locator = CitationLocator(
+        document_chunk_id=chunk.id, locator_type="PAGE",
+        locator_data={"page": chunk.page_start},
+    )
+    session.add(locator)
+    await session.flush()
+    session.add(
+        EvidenceMember(
+            evidence_bundle_id=bundle.id, kind="DOCUMENT_SPAN",
+            document_chunk_id=chunk.id, citation_locator_id=locator.id,
+        )
+    )
+    await session.flush()
+
+    return _ChunkEvidence(
+        document=document,
+        bundle_id=bundle.id,
+        citation=Citation(
+            label=document.title,
+            meta=f"Page {chunk.page_start}" if chunk.page_start else None,
+            pill="SOURCE",
+            kind="book",
         ),
+    )
+
+
+async def _document_backed_accrued_reply(session: AsyncSession) -> ResearchAnswer | None:
+    """A real, evidence-linked version of _accrued_reply(), citing the
+    actual acquired-and-parsed DMO worked-examples document (P4 E1/E2/E3)
+    instead of an unlinked source label.
+    """
+    # "accrued interest" only, not a longer phrase - plainto_tsquery ANDs
+    # every word, and a real source page can cover ex-dividend/day-count
+    # concepts without using those exact words together on the same page
+    # (confirmed against the live-acquired DMO document: "ex-dividend" as
+    # a literal token doesn't appear on the page that covers accrued
+    # interest worked examples, even though the concept does).
+    chunks = await search_chunks_by_text(session, query_text="accrued interest", limit=1)
+    if not chunks:
+        return None
+    evidence = await _assemble_chunk_evidence(session, chunks[0])
+    if evidence is None:
+        return None
+
+    return ResearchAnswer(
+        text=_ACCRUED_EXPLANATION_TEXT,
+        facts=None,
+        citations=[evidence.citation],
+        note=_ACCRUED_EXPLANATION_NOTE,
+        allowed_output_type=AllowedOutputType.DOCUMENT_EXPLANATION,
+        evidence_bundle_id=evidence.bundle_id,
+    )
+
+
+def _accrued_reply() -> ResearchAnswer:
+    """Static fallback - used when no real acquired/parsed/rights-permitted
+    document evidence exists yet (e.g. a fresh dev database before
+    scripts.ingest_methodology_doc/parse_methodology_doc have run)."""
+    return ResearchAnswer(
+        text=_ACCRUED_EXPLANATION_TEXT,
         facts=None,
         citations=[
             Citation(
@@ -208,12 +333,80 @@ def _accrued_reply() -> ResearchAnswer:
                 kind="book",
             )
         ],
-        note=(
-            "Explanation only — no calculation was performed. Run the calculator for "
-            "a figure tied to a specific settlement date."
-        ),
+        note=_ACCRUED_EXPLANATION_NOTE,
         allowed_output_type=AllowedOutputType.DOCUMENT_EXPLANATION,
         evidence_bundle_id=None,
+    )
+
+
+#: Nearest-neighbour vector search always returns *a* closest chunk, even
+#: for a query with no real relationship to anything in the corpus -
+#: without a cutoff, "hi" confidently "answers" from whatever chunk
+#: happens to be least-far-away. Calibrated against real measurements
+#: (2026-09-21, gemini-embedding-001 @ 768 dims): irrelevant queries
+#: ("hi", "hello", "what's the weather", "thank you", "what's your name",
+#: "what stocks should I buy") land at cosine distance 0.49-0.56;
+#: genuinely relevant ones ("accrued interest", "redemption yield
+#: calculation", a full paraphrased question) land at 0.23-0.33. 0.4 sits
+#: in the clear gap between them on every case tested - not a
+#: theoretical/guessed number, but it's calibrated on a five-chunk, one-
+#: document corpus, so revisit once the corpus is bigger and more varied.
+_MAX_SEMANTIC_MATCH_DISTANCE = 0.4
+
+
+async def _document_backed_fallback_reply(
+    session: AsyncSession, query_text: str, http: httpx.AsyncClient | None
+) -> ResearchAnswer | None:
+    """The catch-all branch's last real chance before giving up with
+    _default_reply: tries the actual document corpus against the caller's
+    real query (not a fixed topic phrase like the accrued-interest
+    branch), semantic search first - this is exactly the case semantic
+    retrieval earns its keep for, an open-ended paraphrased question that
+    a fixed intent pattern was never going to match - then lexical if no
+    Gemini key is configured, the embedding call itself fails, or nothing
+    semantic clears the relevance bar. Neither retrieval mode failing is a
+    request failure, just "no answer found", same as any other
+    empty-evidence path in this module.
+    """
+    settings = get_settings()
+    chunks: list[DocumentChunk] = []
+    if http is not None and settings.gemini_api_key:
+        try:
+            chunks = await search_chunks_by_semantic_query(
+                session, query_text=query_text, http=http,
+                api_key=settings.gemini_api_key, limit=1,
+                max_distance=_MAX_SEMANTIC_MATCH_DISTANCE,
+            )
+        except GeminiEmbeddingError:
+            chunks = []
+    if not chunks:
+        # Lexical AND-matching is its own relevance filter (every query
+        # word must be literally present), so no separate distance
+        # threshold is needed here the way vector nearest-neighbour needs
+        # one.
+        chunks = await search_chunks_by_text(session, query_text=query_text, limit=1)
+    if not chunks:
+        return None
+
+    chunk = chunks[0]
+    evidence = await _assemble_chunk_evidence(session, chunk)
+    if evidence is None:
+        return None
+
+    return ResearchAnswer(
+        text=(
+            f'You asked: "{query_text}"\n\n'
+            f"I don't have live reconciled data on this, but {evidence.document.title} "
+            f"covers it:\n\n{chunk.text_content.strip()}"
+        ),
+        facts=None,
+        citations=[evidence.citation],
+        note=(
+            "A raw source excerpt, not a synthesized explanation - "
+            "retrieved from the document corpus, not accepted facts or a calculation."
+        ),
+        allowed_output_type=AllowedOutputType.DOCUMENT_EXPLANATION,
+        evidence_bundle_id=evidence.bundle_id,
     )
 
 
@@ -513,19 +706,28 @@ async def assemble_research_answer(
     query_text: str,
     principal_id: uuid.UUID | None,
     account_id: uuid.UUID | None,
+    http: httpx.AsyncClient | None = None,
 ) -> ResearchAnswer:
+    """`http` is optional and only used by the catch-all document-search
+    fallback (semantic search needs an outbound call to Gemini) - every
+    other branch works identically without it, and passing None just
+    means the fallback degrades to lexical-only search, never an error.
+    """
     if _is_advice(query_text):
         answer = _advice_reply()
-    elif _is_help_request(query_text):
+    elif _is_greeting(query_text) or _is_help_request(query_text):
         answer = _help_reply()
     elif _mentions_accrued(query_text):
-        answer = _accrued_reply()
+        answer = await _document_backed_accrued_reply(session) or _accrued_reply()
     elif _mentions_yield_curve(query_text):
         answer = await _yield_curve_reply(session)
     elif _mentions_gilt(query_text):
         answer = await _gilt_facts_reply(session, query_text)
     else:
-        answer = _default_reply(query_text)
+        answer = (
+            await _document_backed_fallback_reply(session, query_text, http)
+            or _default_reply(query_text)
+        )
 
     permitted = await _pdp_permits(
         session,

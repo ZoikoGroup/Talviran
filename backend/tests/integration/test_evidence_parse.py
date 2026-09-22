@@ -127,3 +127,33 @@ async def test_unparseable_content_is_failed_with_zero_chunks(db_session: AsyncS
 async def test_unknown_document_version_is_rejected(db_session: AsyncSession) -> None:
     result = await parse_document_version(db_session, document_version_id=uuid.uuid4())
     assert isinstance(result, ParseRejected)
+
+
+async def test_reparsing_with_the_same_parser_is_idempotent(db_session: AsyncSession) -> None:
+    """A real bug found live (2026-09-22): re-running parse_document_version
+    against an already-parsed version created a second ParsedDocumentVersion
+    and doubled the chunk count, with no audit trail to explain why. Same
+    parser_name+parser_version must reuse the existing row.
+    """
+    content = _FIXTURE_PATH.read_bytes()
+    document_version_id = await _seed_document_version(db_session, content=content)
+
+    first = await parse_document_version(db_session, document_version_id=document_version_id)
+    assert isinstance(first, ParseResult)
+    await db_session.commit()
+
+    second = await parse_document_version(db_session, document_version_id=document_version_id)
+    assert isinstance(second, ParseResult)
+    await db_session.commit()
+
+    assert second.parsed_document_version_id == first.parsed_document_version_id
+    assert second.chunk_count == first.chunk_count
+
+    all_chunks = (
+        await db_session.execute(
+            DocumentChunk.__table__.select().where(
+                DocumentChunk.parsed_document_version_id == first.parsed_document_version_id
+            )
+        )
+    ).all()
+    assert len(all_chunks) == 5
