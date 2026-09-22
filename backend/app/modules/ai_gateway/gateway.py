@@ -5,25 +5,31 @@ provider credentials"). No other module may import
 ai_gateway/providers/* directly - route every model call through
 invoke_model().
 
-A0 (foundation) + A1 (evidence path) now, per AI-001 §34's own staged
-sequence: resolves task_type -> provider/model via the registry, checks
-kill switches, runs the request through the same PDP every other
-protected capability uses (app.modules.policy.pdp - fixed precedence,
-fail-closed), refuses to call a provider at all unless a real, non-empty
-EvidenceBundle backs the prompt (app.modules.ai_gateway.evidence_path -
-AI-001 §23, "empty evidence bundle -> never generate a speculative
-answer"), calls the provider, records the forensic execution row (§18,
-now including the evidence_bundle_id that grounded it).
+A0 (foundation) + A1 (evidence path) + A2 (validation) now, per AI-001
+§34's own staged sequence: resolves task_type -> provider/model via the
+registry, checks kill switches, runs the request through the same PDP
+every other protected capability uses (app.modules.policy.pdp - fixed
+precedence, fail-closed), refuses to call a provider at all unless a
+real, non-empty EvidenceBundle backs the prompt
+(app.modules.ai_gateway.evidence_path - AI-001 §23, "empty evidence
+bundle -> never generate a speculative answer"), calls the provider,
+validates the response (app.modules.ai_gateway.validation - citation
+indices must exist in the bundle given, no recommendation-shaped
+language), and on a validation failure makes exactly one bounded
+regeneration attempt before giving up (AI-001 §23: "invalid schema/
+grounding/citation failure -> one regeneration then evidence-only" - a
+caller that gets InvokeRejected back after a validation failure is
+expected to fall back to an evidence-only render, never retry itself).
+Every attempt's forensic execution row (§18) records the
+evidence_bundle_id that grounded it; every validated response gets its
+own ai_validation_result row.
 
-Deliberately NOT built yet: structured-output/prompt-template validation
-(A2), multi-route provider failover (A3), and the rest of the full
-14-step pipeline (§11) this is the foundation of. Every caller of
-invoke_model right now is therefore a script/test proving the evidence
-path works, not the real /research path - swapping /research's
-rule-based text assembly for Gateway-composed prose is a later slice's
-job, once A2's output validation exists too (AI-001 §23: one bounded
-regeneration on validation failure, then evidence-only - this module
-doesn't have a validation step to regenerate against yet).
+Deliberately NOT built yet: multi-route provider failover (A3) and the
+rest of the full 14-step pipeline (§11) this is the foundation of. Every
+caller of invoke_model right now is therefore a script/test proving the
+evidence+validation path works, not the real /research path - swapping
+/research's rule-based text assembly for Gateway-composed prose is still
+a later slice's job.
 """
 
 import datetime as dt
@@ -41,12 +47,14 @@ from app.modules.ai_gateway.models import (
     AIModel,
     AIModelExecution,
     AIProvider,
+    AIValidationResult,
     kill_switch_model_code,
     kill_switch_provider_code,
 )
 from app.modules.ai_gateway.providers import gemini_client, groq_client
 from app.modules.ai_gateway.providers.gemini_client import GeminiGenerationError
 from app.modules.ai_gateway.providers.groq_client import GroqGenerationError
+from app.modules.ai_gateway.validation import validate_response
 from app.modules.evidence.service import RESEARCH_CAPABILITY_CODE
 from app.modules.policy.allowed_output_type import AllowedOutputType
 from app.modules.policy.models import KillSwitch
@@ -157,50 +165,106 @@ async def invoke_model(
     if not api_key:
         return InvokeRejected(reason=f"no API key configured for provider {provider.code!r}")
 
-    started_at = dt.datetime.now(dt.UTC)
-    try:
-        if provider.code == "gemini":
-            result = await gemini_client.generate_content(
-                http, model_key=model.model_key, prompt=prompt, api_key=api_key
+    async def _call_provider(
+        call_prompt: str,
+    ) -> tuple[InvokeResult, AIModelExecution] | InvokeRejected:
+        started_at = dt.datetime.now(dt.UTC)
+        try:
+            if provider.code == "gemini":
+                result = await gemini_client.generate_content(
+                    http, model_key=model.model_key, prompt=call_prompt, api_key=api_key
+                )
+                text, finish_reason = result.text, result.finish_reason
+                token_usage = {
+                    "prompt_tokens": result.prompt_token_count,
+                    "completion_tokens": result.candidates_token_count,
+                    "total_tokens": result.total_token_count,
+                }
+            elif provider.code == "groq":
+                groq_result = await groq_client.generate_content(
+                    http, model_key=model.model_key, prompt=call_prompt, api_key=api_key
+                )
+                text, finish_reason = groq_result.text, groq_result.finish_reason
+                token_usage = {
+                    "prompt_tokens": groq_result.prompt_tokens,
+                    "completion_tokens": groq_result.completion_tokens,
+                    "total_tokens": groq_result.total_tokens,
+                }
+            else:
+                return InvokeRejected(
+                    reason=f"no adapter registered for provider {provider.code!r}"
+                )
+        except (GeminiGenerationError, GroqGenerationError) as exc:
+            session.add(
+                AIModelExecution(
+                    task_type=task_type, provider_id=provider.id, model_id=model.id,
+                    evidence_bundle_id=evidence_bundle_id,
+                    request_started_at=started_at,
+                    response_received_at=dt.datetime.now(dt.UTC),
+                    prompt_text=call_prompt, error=str(exc)[:1000],
+                )
             )
-            text, finish_reason = result.text, result.finish_reason
-            token_usage = {
-                "prompt_tokens": result.prompt_token_count,
-                "completion_tokens": result.candidates_token_count,
-                "total_tokens": result.total_token_count,
-            }
-        elif provider.code == "groq":
-            groq_result = await groq_client.generate_content(
-                http, model_key=model.model_key, prompt=prompt, api_key=api_key
-            )
-            text, finish_reason = groq_result.text, groq_result.finish_reason
-            token_usage = {
-                "prompt_tokens": groq_result.prompt_tokens,
-                "completion_tokens": groq_result.completion_tokens,
-                "total_tokens": groq_result.total_tokens,
-            }
-        else:
-            return InvokeRejected(reason=f"no adapter registered for provider {provider.code!r}")
-    except (GeminiGenerationError, GroqGenerationError) as exc:
-        session.add(
-            AIModelExecution(
-                task_type=task_type, provider_id=provider.id, model_id=model.id,
-                evidence_bundle_id=evidence_bundle_id,
-                request_started_at=started_at, response_received_at=dt.datetime.now(dt.UTC),
-                prompt_text=prompt, error=str(exc)[:1000],
-            )
+            await session.flush()
+            return InvokeRejected(reason=f"provider call failed: {exc}")
+
+        execution = AIModelExecution(
+            task_type=task_type, provider_id=provider.id, model_id=model.id,
+            evidence_bundle_id=evidence_bundle_id,
+            request_started_at=started_at, response_received_at=dt.datetime.now(dt.UTC),
+            prompt_text=call_prompt, response_text=text, finish_reason=finish_reason,
+            token_usage=token_usage,
         )
+        session.add(execution)
         await session.flush()
-        return InvokeRejected(reason=f"provider call failed: {exc}")
+        invoke_result = InvokeResult(
+            execution_id=execution.id, text=text, finish_reason=finish_reason
+        )
+        return invoke_result, execution
 
-    execution = AIModelExecution(
-        task_type=task_type, provider_id=provider.id, model_id=model.id,
-        evidence_bundle_id=evidence_bundle_id,
-        request_started_at=started_at, response_received_at=dt.datetime.now(dt.UTC),
-        prompt_text=prompt, response_text=text, finish_reason=finish_reason,
-        token_usage=token_usage,
+    outcome = await _call_provider(prompt)
+    if isinstance(outcome, InvokeRejected):
+        return outcome  # transport/provider failure - nothing to validate
+
+    result, execution = outcome
+    validation = validate_response(result.text, evidence_item_count=grounded.evidence_item_count)
+    session.add(
+        AIValidationResult(
+            ai_model_execution_id=execution.id, passed=validation.is_valid,
+            failure_reasons=validation.failure_reasons or None,
+        )
     )
-    session.add(execution)
     await session.flush()
+    if validation.is_valid:
+        return result
 
-    return InvokeResult(execution_id=execution.id, text=text, finish_reason=finish_reason)
+    # AI-001 §23: exactly one bounded regeneration on validation failure.
+    regen_prompt = (
+        f"{prompt}\n\nYour previous answer failed validation for this reason: "
+        f"{'; '.join(validation.failure_reasons)}. Answer again, correcting this - "
+        "do not repeat the same mistake."
+    )
+    regen_outcome = await _call_provider(regen_prompt)
+    if isinstance(regen_outcome, InvokeRejected):
+        return regen_outcome
+
+    regen_result, regen_execution = regen_outcome
+    regen_validation = validate_response(
+        regen_result.text, evidence_item_count=grounded.evidence_item_count
+    )
+    session.add(
+        AIValidationResult(
+            ai_model_execution_id=regen_execution.id, passed=regen_validation.is_valid,
+            failure_reasons=regen_validation.failure_reasons or None,
+        )
+    )
+    await session.flush()
+    if regen_validation.is_valid:
+        return regen_result
+
+    return InvokeRejected(
+        reason=(
+            "response failed validation twice (regeneration exhausted) - caller "
+            f"must fall back to an evidence-only render: "
+            f"{'; '.join(regen_validation.failure_reasons)}"
+        )
+    )

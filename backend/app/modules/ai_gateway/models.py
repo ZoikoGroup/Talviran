@@ -7,11 +7,11 @@ record.
 Deliberately NOT modelled yet, because nothing in this slice writes or
 reads them (same discipline as every other module's "don't add a column
 nothing uses"): ai_prompt_template, ai_output_schema, ai_toolset,
-ai_validation_result, ai_eval_suite, ai_eval_run (§27) - these belong to
-A2 (validation) and A4 (evaluation), neither of which exists yet.
-ai_model_execution now carries evidence_bundle_id (A1, evidence_path.py) -
-prompt_template_id, toolset_version, policy_version and validation_results
-still wait on those later slices' subsystems.
+ai_eval_suite, ai_eval_run (§27) - these belong to A3 (routing) and A4
+(evaluation), neither of which exists yet. ai_model_execution carries
+evidence_bundle_id (A1, evidence_path.py); ai_validation_result (A2,
+validation.py) is now real - prompt_template_id, toolset_version and
+policy_version still wait on those later slices' subsystems.
 
 Kill switches reuse governance.KillSwitch (policy/models.py, already
 exists) rather than a new ai_kill_switch table - it already is exactly
@@ -112,3 +112,21 @@ class AIModelExecution(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     finish_reason: Mapped[str | None] = mapped_column(String(32), default=None)
     token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     error: Mapped[str | None] = mapped_column(String(1000), default=None)
+
+
+class AIValidationResult(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """AI-001 §27, §23: one row per validated response - up to two per
+    invoke_model call (the original attempt, and the single bounded
+    regeneration if the first failed). A row only exists when a provider
+    actually returned text to validate - kill-switch/PDP/empty-bundle
+    rejections never reach validation at all, so they never get one.
+    """
+
+    __tablename__ = "ai_validation_result"
+    __table_args__ = {"schema": "ai_gateway"}
+
+    ai_model_execution_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("ai_gateway.ai_model_execution.id"), index=True
+    )
+    passed: Mapped[bool] = mapped_column()
+    failure_reasons: Mapped[list[str] | None] = mapped_column(JSONB, default=None)

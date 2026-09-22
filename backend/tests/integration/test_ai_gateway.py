@@ -1,12 +1,16 @@
-"""app/modules/ai_gateway/gateway.py (P4b AI-001 A0 + A1) against real
-Postgres.
+"""app/modules/ai_gateway/gateway.py (P4b AI-001 A0 + A1 + A2) against
+real Postgres.
 
 Provider calls use httpx.MockTransport (same pattern as conftest.py's
 FakeSupabaseAuth and yesterday's Gemini embedding tests) - the real
 Gemini and Groq APIs were already verified live before this was written
 (see gateway.py's own docstring, providers/gemini_client.py and
 providers/groq_client.py's proof runs). The automated suite doesn't
-depend on network/quota/cost for every run.
+depend on network/quota/cost for every run. A2's regeneration path in
+particular was proven live first (real Groq call, real citation/
+perimeter validation failure, real regenerated response) - the fake
+client below reproduces that same two-call shape deterministically,
+since live model behavior isn't reliable enough to assert against in CI.
 
 A1 added two hard prerequisites every test now has to satisfy before a
 call can even reach the provider: a PDP PERMIT (governance.capability_
@@ -32,6 +36,7 @@ from app.modules.ai_gateway.models import (
     AIModel,
     AIModelExecution,
     AIProvider,
+    AIValidationResult,
 )
 from app.modules.evidence.models import EvidenceBundle, EvidenceMember
 from app.modules.market.models import AcceptedFact
@@ -116,6 +121,31 @@ async def _empty_evidence_bundle(db_session: AsyncSession) -> uuid.UUID:
     db_session.add(bundle)
     await db_session.commit()
     return bundle.id
+
+
+def _gemini_response(text: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "candidates": [{"content": {"parts": [{"text": text}]}, "finishReason": "STOP"}],
+            "usageMetadata": {
+                "promptTokenCount": 3, "candidatesTokenCount": 1, "totalTokenCount": 4,
+            },
+        },
+    )
+
+
+def _scripted_gemini_client(*texts: str) -> httpx.AsyncClient:
+    """Returns `texts[0]` on the first call, `texts[1]` on the second, and
+    so on - lets a test assert on gateway.py's exactly-one-regeneration
+    behavior deterministically instead of depending on live model output.
+    """
+    calls = iter(texts)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return _gemini_response(next(calls))
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
 def _fake_gemini_client(status_code: int = 200) -> httpx.AsyncClient:
@@ -443,3 +473,120 @@ async def test_nonexistent_evidence_bundle_is_rejected(db_session: AsyncSession)
             db_session, http, evidence_bundle_id=uuid.uuid4(), api_keys={"gemini": "fake-key"},
         )
     assert isinstance(result, InvokeRejected)
+
+
+# ------------------------------------------------------------------ A2: validation
+
+
+async def test_valid_response_gets_one_passing_validation_row(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_provider_and_model(db_session)
+    await _seed_capability_and_jurisdiction(db_session)
+    bundle_id = await _seed_evidence_bundle(db_session)
+
+    async with _scripted_gemini_client("The answer is [1].") as http:
+        result = await _invoke(
+            db_session, http, evidence_bundle_id=bundle_id, api_keys={"gemini": "fake-key"},
+        )
+    await db_session.commit()
+
+    assert isinstance(result, InvokeResult)
+    executions = (
+        await db_session.execute(
+            select(AIModelExecution).where(AIModelExecution.evidence_bundle_id == bundle_id)
+        )
+    ).scalars().all()
+    assert len(executions) == 1  # no regeneration needed
+
+    validations = (
+        await db_session.execute(
+            select(AIValidationResult).where(
+                AIValidationResult.ai_model_execution_id == executions[0].id
+            )
+        )
+    ).scalars().all()
+    assert len(validations) == 1
+    assert validations[0].passed is True
+    assert validations[0].failure_reasons is None
+
+
+async def test_invalid_citation_triggers_one_regeneration_then_succeeds(
+    db_session: AsyncSession,
+) -> None:
+    """First response cites [2], but the bundle only has 1 item -
+    fabricated citation, must fail validation and regenerate. Second
+    response cites nothing - valid (evidence_path's own grounding
+    instruction explicitly allows a citation-free answer).
+    """
+    await _seed_provider_and_model(db_session)
+    await _seed_capability_and_jurisdiction(db_session)
+    bundle_id = await _seed_evidence_bundle(db_session)
+
+    async with _scripted_gemini_client(
+        "The answer is [2].", "I don't have enough evidence to answer that."
+    ) as http:
+        result = await _invoke(
+            db_session, http, evidence_bundle_id=bundle_id, api_keys={"gemini": "fake-key"},
+        )
+    await db_session.commit()
+
+    assert isinstance(result, InvokeResult)
+    assert result.text == "I don't have enough evidence to answer that."
+
+    executions = (
+        await db_session.execute(
+            select(AIModelExecution)
+            .where(AIModelExecution.evidence_bundle_id == bundle_id)
+            .order_by(AIModelExecution.request_started_at)
+        )
+    ).scalars().all()
+    assert len(executions) == 2  # exactly one regeneration, not more
+
+    validations = [
+        (
+            await db_session.execute(
+                select(AIValidationResult).where(
+                    AIValidationResult.ai_model_execution_id == e.id
+                )
+            )
+        ).scalar_one()
+        for e in executions
+    ]
+    assert validations[0].passed is False
+    assert "2" in str(validations[0].failure_reasons)
+    assert validations[1].passed is True
+
+
+async def test_recommendation_language_fails_validation(db_session: AsyncSession) -> None:
+    await _seed_provider_and_model(db_session)
+    await _seed_capability_and_jurisdiction(db_session)
+    bundle_id = await _seed_evidence_bundle(db_session)
+
+    async with _scripted_gemini_client(
+        "You should buy this gilt now.", "You should buy this gilt now.",
+    ) as http:
+        result = await _invoke(
+            db_session, http, evidence_bundle_id=bundle_id, api_keys={"gemini": "fake-key"},
+        )
+    await db_session.commit()
+
+    # Fails twice (regeneration exhausted) - caller must fall back to
+    # evidence-only, never serve the recommendation-shaped text.
+    assert isinstance(result, InvokeRejected)
+    assert "failed validation twice" in result.reason
+    assert "evidence-only" in result.reason
+
+    executions = (
+        await db_session.execute(
+            select(AIModelExecution).where(AIModelExecution.evidence_bundle_id == bundle_id)
+        )
+    ).scalars().all()
+    assert len(executions) == 2  # never a third attempt
+
+    validations = (
+        await db_session.execute(select(AIValidationResult))
+    ).scalars().all()
+    relevant = [v for v in validations if v.ai_model_execution_id in {e.id for e in executions}]
+    assert len(relevant) == 2
+    assert all(not v.passed for v in relevant)
