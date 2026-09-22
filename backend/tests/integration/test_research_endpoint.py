@@ -13,6 +13,7 @@ import datetime as dt
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from unittest.mock import AsyncMock, patch
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -24,6 +25,7 @@ from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.redis_client import get_redis
 from app.main import app
+from app.modules.ai_gateway.gateway import InvokeRejected, InvokeResult
 from app.modules.evidence.service import SEED_GILT_ISIN
 from app.modules.market.models import AcceptedFact
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
@@ -283,6 +285,80 @@ async def test_evidence_is_retrievable_for_a_facts_backed_reply(
         assert body["status"] == "READY"
         assert len(body["items"]) >= 1
         assert any(item["metric_id"] == METRIC_GILT_REFERENCE_TERMS for item in body["items"])
+
+
+# ------------------------------------------------------------- ai_gateway wiring
+
+
+async def test_gateway_success_replaces_the_rule_based_text(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    """P4b ai_gateway A0+A1+A2 wired into the real /research path (proven
+    live against real Groq before this was written - see
+    app/modules/ai_gateway/gateway.py's own docstring). invoke_model is
+    patched rather than routed through the shared HttpDep client -
+    that client is already committed to FakeSupabaseAuth's transport in
+    this file's make_client fixture (auth_module._http), which 404s
+    anything that isn't a Supabase endpoint, so a provider-level mock
+    would only ever exercise the failure path, not success.
+    """
+    await _seed_pdp_prerequisites(db_session)
+    await _seed_gilt_evidence_data(db_session)
+    fake_result = InvokeResult(
+        execution_id=uuid.uuid4(), text="AI-composed answer.", finish_reason="stop"
+    )
+
+    async with make_client() as client:
+        await _signed_in(client)
+        chat_id = await _new_chat(client)
+
+        with patch(
+            "app.modules.api.v1.research.invoke_model", AsyncMock(return_value=fake_result)
+        ):
+            posted = await client.post(
+                "/api/v1/research",
+                json={"conversation_id": chat_id, "query": "tell me about the 2036 gilt"},
+                headers={"Idempotency-Key": str(uuid.uuid4())},
+            )
+        assert posted.status_code == 201, posted.text
+        body = posted.json()
+        assert body["text"] == "AI-composed answer."
+        # The rule-based branch's own facts/citations/evidence_bundle_id
+        # are untouched - the Gateway only ever replaces the prose.
+        assert body["facts"] is not None
+        assert body["evidence_bundle_id"] is not None
+
+
+async def test_gateway_rejection_falls_back_to_the_rule_based_text(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    """"AI is fully removable" as a real, tested product invariant, not
+    just a doctrine statement - every other test in this file already
+    proves this implicitly (none of them seed an ai_gateway registry, so
+    invoke_model rejects for real on every call), but this one asserts it
+    explicitly against the exact rule-based text so a future change that
+    breaks the fallback can't hide behind "the other tests still passed."
+    """
+    await _seed_pdp_prerequisites(db_session)
+    await _seed_gilt_evidence_data(db_session)
+
+    async with make_client() as client:
+        await _signed_in(client)
+        chat_id = await _new_chat(client)
+
+        with patch(
+            "app.modules.api.v1.research.invoke_model",
+            AsyncMock(return_value=InvokeRejected(reason="no PRODUCTION model registered")),
+        ):
+            posted = await client.post(
+                "/api/v1/research",
+                json={"conversation_id": chat_id, "query": "tell me about the 2036 gilt"},
+                headers={"Idempotency-Key": str(uuid.uuid4())},
+            )
+        assert posted.status_code == 201, posted.text
+        # The rule-based reply's own fixed wording (evidence.service's
+        # _gilt_facts_reply) - not anything a model could have produced.
+        assert "canonical terms" in posted.json()["text"]
 
 
 async def test_evidence_is_empty_not_404_for_a_reply_with_no_bundle(

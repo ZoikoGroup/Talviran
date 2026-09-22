@@ -24,13 +24,16 @@ missing fact. Checked right after advice, since a genuine capability
 question is a different kind of thing from a request for financial data.
 
 Single-instrument, single-jurisdiction P1 scope, matching every other
-module built so far: `_DEV_JURISDICTION` is hardcoded (real auth exists now,
+module built so far: `DEV_JURISDICTION` is hardcoded (real auth exists now,
 but per-account jurisdiction resolution is still P2 - see
 reference/service.py for the same documented gap), and the gilt-facts
 branch assumes the one seeded instrument/source per metric rather than
 tracing FactObservationLink -> SourceObservation -> rights_profile_id for
 full multi-source generality (reconciliation_policy.py's own docstring
-notes the identical single-source scope limit for P1).
+notes the identical single-source scope limit for P1). Exported (not
+`_`-prefixed) because api/v1/research.py's own PDP-gated ai_gateway call
+needs the exact same value - one shared constant, not two literals that
+could silently drift apart.
 """
 
 import datetime as dt
@@ -73,7 +76,7 @@ from app.modules.reference.models import Instrument, InstrumentAlias
 from app.modules.rights.engine import RightsDecision, evaluate_action
 from app.modules.rights.models import RightsProfile
 
-_DEV_JURISDICTION = "GB"
+DEV_JURISDICTION = "GB"
 RESEARCH_CAPABILITY_CODE = "research.answer"
 SEED_GILT_ISIN = "GB0032452392"
 
@@ -682,7 +685,7 @@ async def _pdp_permits(
     ctx = PolicyContext(
         principal_id=principal_id,
         account_id=account_id,
-        jurisdiction_code=_DEV_JURISDICTION,
+        jurisdiction_code=DEV_JURISDICTION,
         capability_code=RESEARCH_CAPABILITY_CODE,
         requested_output_type=requested_output_type,
     )
