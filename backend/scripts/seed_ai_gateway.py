@@ -7,19 +7,26 @@ Run with:
 Idempotent: safe to run repeatedly, same pattern as scripts.seed_dev.
 
 Talvrin's own model-tier decision: talvrin-go -> Groq, talvrin-pro ->
-Gemini. As of 2026-09-22, only Gemini's flash-lite-latest model is
-actually verified working (see ai_gateway/providers/gemini_client.py's
-docstring - the "pro" model line has zero free-tier quota on the
-configured key). Seeded honestly, not aspirationally:
+Gemini. Seeded honestly, not aspirationally - both providers are now
+PRODUCTION, each proven live before promotion (same governance
+discipline scripts.approve_calculation_spec.py applies to calc specs):
 
-- gemini provider + a gemini-flash-lite-latest model registered for
-  talvrin-pro, at PRODUCTION status - the one real, working end-to-end
-  path this slice can actually prove.
-- groq provider + its intended model registered for talvrin-go, but at
-  CANDIDATE status - unverified, since no GROQ_API_KEY exists yet.
-  Promote it to PRODUCTION only after it's actually been called
-  successfully against a real key, same governance discipline
-  scripts.approve_calculation_spec.py applies to calculation specs.
+- gemini / gemini-flash-lite-latest for talvrin-pro. Only working
+  Gemini model on the configured free-tier key - see
+  ai_gateway/providers/gemini_client.py's docstring for the "pro" model
+  line's zero-quota finding.
+- groq / openai/gpt-oss-20b for talvrin-go, live-verified 2026-09-22
+  once a GROQ_API_KEY existed - see
+  ai_gateway/providers/groq_client.py's docstring. NOT
+  llama-3.3-70b-versatile (this script's own earlier assumption) - that
+  model doesn't exist on this key at all, found via a real
+  GET /openai/v1/models call.
+
+Idempotent re-runs also correct an existing model row's model_key/status
+in place (keyed on provider+task_type, not provider+task_type+model_key)
+so a prior wrong/unverified seed - like this script's own original
+llama-3.3-70b-versatile row - gets fixed rather than left stale
+alongside the corrected one.
 """
 
 import asyncio
@@ -29,7 +36,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session_factory
 from app.modules.ai_gateway.models import (
-    STATUS_CANDIDATE,
     STATUS_PRODUCTION,
     AIModel,
     AIProvider,
@@ -50,6 +56,9 @@ async def _seed_provider(
         session.add(provider)
         await session.flush()
         print(f"  + ai_provider {code} -> {status}")
+    elif provider.status != status:
+        print(f"  ~ ai_provider {code} {provider.status} -> {status}")
+        provider.status = status
     return provider
 
 
@@ -60,7 +69,6 @@ async def _seed_model(
         await session.execute(
             select(AIModel).where(
                 AIModel.provider_id == provider.id,
-                AIModel.model_key == model_key,
                 AIModel.task_type == task_type,
             )
         )
@@ -72,6 +80,13 @@ async def _seed_model(
             )
         )
         print(f"  + ai_model {provider.code}/{model_key} for {task_type} -> {status}")
+    elif existing.model_key != model_key or existing.status != status:
+        print(
+            f"  ~ ai_model {provider.code} for {task_type}: "
+            f"{existing.model_key}/{existing.status} -> {model_key}/{status}"
+        )
+        existing.model_key = model_key
+        existing.status = status
 
 
 async def seed() -> None:
@@ -86,11 +101,11 @@ async def seed() -> None:
         )
 
         groq = await _seed_provider(
-            session, code="groq", name="Groq", status=STATUS_CANDIDATE
+            session, code="groq", name="Groq", status=STATUS_PRODUCTION
         )
         await _seed_model(
-            session, provider=groq, model_key="llama-3.3-70b-versatile",
-            task_type=_TALVRIN_GO, status=STATUS_CANDIDATE,
+            session, provider=groq, model_key="openai/gpt-oss-20b",
+            task_type=_TALVRIN_GO, status=STATUS_PRODUCTION,
         )
 
         await session.commit()

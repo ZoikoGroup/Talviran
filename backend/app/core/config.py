@@ -86,10 +86,10 @@ class Settings(BaseSettings):
     #: not required at boot: only the pipelines that use it need it.
     gemini_api_key: str | None = None
 
-    #: P4b ai_gateway - talvrin-go's registered provider. Not yet
-    #: configured/verified as of 2026-09-22 (see ai_gateway/providers/
-    #: groq_client.py's own docstring); the corresponding AIModel row is
-    #: seeded at CANDIDATE status for exactly this reason.
+    #: Groq (P4b ai_gateway - talvrin-go's registered provider, PRODUCTION
+    #: since live-verified 2026-09-22; see ai_gateway/providers/
+    #: groq_client.py). Optional, not required at boot: only the ai_gateway
+    #: pipelines that use it need it.
     groq_api_key: str | None = None
 
 

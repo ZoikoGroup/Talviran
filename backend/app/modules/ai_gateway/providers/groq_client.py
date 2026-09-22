@@ -1,16 +1,26 @@
 """Thin HTTP wrapper around Groq's chat completions API.
 
-UNLIKE every other external connector in this codebase, this is NOT
-live-verified - there is no GROQ_API_KEY configured yet (2026-09-22).
-Written against Groq's well-established, publicly documented
-OpenAI-compatible chat completions endpoint (a stable, long-standing API
-shape Groq deliberately mirrors for drop-in compatibility), but treat
-this as unverified until it's actually been called against a real key.
-The corresponding AIModel row is seeded at CANDIDATE status, not
-PRODUCTION, for exactly this reason - see models.py's status lifecycle.
+Live-verified 2026-09-22 against a real GROQ_API_KEY. Two real findings,
+neither assumed beforehand:
 
-Run a real call and confirm this module still matches reality before
-trusting it, the same way gemini_client.py was built.
+1. `llama-3.3-70b-versatile` (this module's originally-assumed model,
+   and what scripts/seed_ai_gateway.py used to register) does not exist
+   on this key's model list at all - a real GET /openai/v1/models call
+   returned no such id. The actual available chat-capable models are
+   `openai/gpt-oss-20b`, `openai/gpt-oss-120b`, `qwen/qwen3.6-27b`,
+   `qwen/qwen3.8-27b`, `allam-2-7b` (the rest of the list is audio/guard
+   models: whisper-*, orpheus-*, llama-prompt-guard-*, not general chat).
+   Registered `openai/gpt-oss-20b` for talvrin-go - fast, 0.5s round
+   trip, matches the "fast everyday lookups" tier.
+2. Groq's gpt-oss models are reasoning models: the real response's
+   `choices[0].message` includes an extra `reasoning` field (the
+   chain-of-thought) alongside `content`. This module's parsing already
+   only reads `message["content"]`, so no code change was needed - just
+   noting it so it isn't mistaken for a malformed response later.
+
+The corresponding AIModel row is now PRODUCTION (models.py's status
+lifecycle) - promoted only after this live proof, same governance
+discipline scripts.approve_calculation_spec.py applies to calc specs.
 """
 
 from dataclasses import dataclass
