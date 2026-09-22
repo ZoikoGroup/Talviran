@@ -8,10 +8,10 @@ Deliberately NOT modelled yet, because nothing in this slice writes or
 reads them (same discipline as every other module's "don't add a column
 nothing uses"): ai_prompt_template, ai_output_schema, ai_toolset,
 ai_validation_result, ai_eval_suite, ai_eval_run (§27) - these belong to
-A1 (evidence path), A2 (validation) and A4 (evaluation), none of which
-exist yet. ai_model_execution is trimmed to what A0 actually populates -
-prompt_template_id, evidence_bundle_id, toolset_version, policy_version
-and validation_results all need subsystems those later slices build.
+A2 (validation) and A4 (evaluation), neither of which exists yet.
+ai_model_execution now carries evidence_bundle_id (A1, evidence_path.py) -
+prompt_template_id, toolset_version, policy_version and validation_results
+still wait on those later slices' subsystems.
 
 Kill switches reuse governance.KillSwitch (policy/models.py, already
 exists) rather than a new ai_kill_switch table - it already is exactly
@@ -99,6 +99,12 @@ class AIModelExecution(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     model_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("ai_gateway.ai_model.id")
     )
+    # Not a FK to evidence.evidence_bundle - same cross-schema convention
+    # policy/models.py documents for research.message: the owning module
+    # (evidence) isn't guaranteed to be imported first in every process,
+    # and this row must still exist forensically even if the bundle it
+    # names is later purged (EVID-001 purge semantics).
+    evidence_bundle_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True))
     request_started_at: Mapped[dt.datetime]
     response_received_at: Mapped[dt.datetime | None] = mapped_column(default=None)
     prompt_text: Mapped[str] = mapped_column(String())

@@ -776,25 +776,19 @@ async def is_message_visible(session: AsyncSession, *, message_id: uuid.UUID) ->
     return row is not None
 
 
-async def get_evidence_for_message(
-    session: AsyncSession, *, message_id: uuid.UUID
-) -> EvidenceDetail | None:
-    """None means this message genuinely has no evidence bundle - a normal
-    case (e.g. an advice-redirect reply never assembles one), not an error.
-    Callers must check is_message_visible() separately for the 404 case;
-    this function assumes visibility has already been established.
+async def _resolve_bundle_items(
+    session: AsyncSession, bundle_id: uuid.UUID
+) -> list[EvidenceItem]:
+    """FACT/CALCULATION rendering shared by every bundle reader - keyed on
+    bundle_id, not research_message_id, so a bundle can be read before (or
+    without ever) being attached to a persisted message. DOCUMENT_SPAN
+    members aren't rendered here yet - existing callers only ever read
+    FACT/CALCULATION bundles; extend this when a caller needs document-span
+    evidence back out in this shape.
     """
-    bundle = (
-        await session.execute(
-            select(EvidenceBundle).where(EvidenceBundle.research_message_id == message_id)
-        )
-    ).scalar_one_or_none()
-    if bundle is None:
-        return None
-
     members = (
         await session.execute(
-            select(EvidenceMember).where(EvidenceMember.evidence_bundle_id == bundle.id)
+            select(EvidenceMember).where(EvidenceMember.evidence_bundle_id == bundle_id)
         )
     ).scalars().all()
 
@@ -827,6 +821,43 @@ async def get_evidence_for_message(
                         as_of=result.as_of_date.isoformat(),
                     )
                 )
+    return items
+
+
+async def get_evidence_bundle_items(
+    session: AsyncSession, *, bundle_id: uuid.UUID
+) -> list[EvidenceItem] | None:
+    """Public read accessor for other modules (ai_gateway A1's grounding
+    path) that need a bundle's resolved items directly by bundle_id - a
+    bundle can be Gateway input before, or without ever, being linked to a
+    persisted research message. None means no such bundle exists; an empty
+    list means it exists but has no renderable items - callers must treat
+    those differently (the latter is a real bundle with nothing usable in
+    it, the former is a bad reference).
+    """
+    bundle = await session.get(EvidenceBundle, bundle_id)
+    if bundle is None:
+        return None
+    return await _resolve_bundle_items(session, bundle_id)
+
+
+async def get_evidence_for_message(
+    session: AsyncSession, *, message_id: uuid.UUID
+) -> EvidenceDetail | None:
+    """None means this message genuinely has no evidence bundle - a normal
+    case (e.g. an advice-redirect reply never assembles one), not an error.
+    Callers must check is_message_visible() separately for the 404 case;
+    this function assumes visibility has already been established.
+    """
+    bundle = (
+        await session.execute(
+            select(EvidenceBundle).where(EvidenceBundle.research_message_id == message_id)
+        )
+    ).scalar_one_or_none()
+    if bundle is None:
+        return None
+
+    items = await _resolve_bundle_items(session, bundle.id)
 
     return EvidenceDetail(
         evidence_bundle_id=bundle.id,

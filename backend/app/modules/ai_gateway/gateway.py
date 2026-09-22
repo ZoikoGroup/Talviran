@@ -5,17 +5,25 @@ provider credentials"). No other module may import
 ai_gateway/providers/* directly - route every model call through
 invoke_model().
 
-A0 slice only (AI-001 §34's own staged sequence): resolves task_type ->
-provider/model via the registry, checks kill switches, calls the
-provider, records the forensic execution row (§18). Deliberately NOT
-built yet, because the subsystems they depend on don't exist: PDP/rights
-gating (needs A1's evidence path decision), the EvidenceBundle input
-contract (A1), prompt templates and structured-output validation (A2),
-multi-route provider failover (A3), and the full 14-step pipeline (§11)
-this is the foundation of. Every caller of invoke_model right now is
-therefore a script/test proving the foundation works, not the real
-/research path - that wiring is a later slice's job, once grounding and
-validation exist to make an ungrounded model reply safe to show a user.
+A0 (foundation) + A1 (evidence path) now, per AI-001 §34's own staged
+sequence: resolves task_type -> provider/model via the registry, checks
+kill switches, runs the request through the same PDP every other
+protected capability uses (app.modules.policy.pdp - fixed precedence,
+fail-closed), refuses to call a provider at all unless a real, non-empty
+EvidenceBundle backs the prompt (app.modules.ai_gateway.evidence_path -
+AI-001 §23, "empty evidence bundle -> never generate a speculative
+answer"), calls the provider, records the forensic execution row (§18,
+now including the evidence_bundle_id that grounded it).
+
+Deliberately NOT built yet: structured-output/prompt-template validation
+(A2), multi-route provider failover (A3), and the rest of the full
+14-step pipeline (§11) this is the foundation of. Every caller of
+invoke_model right now is therefore a script/test proving the evidence
+path works, not the real /research path - swapping /research's
+rule-based text assembly for Gateway-composed prose is a later slice's
+job, once A2's output validation exists too (AI-001 §23: one bounded
+regeneration on validation failure, then evidence-only - this module
+doesn't have a validation step to regenerate against yet).
 """
 
 import datetime as dt
@@ -26,6 +34,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.ai_gateway.evidence_path import render_grounded_prompt
 from app.modules.ai_gateway.models import (
     KILL_SWITCH_GLOBAL_CODE,
     STATUS_PRODUCTION,
@@ -38,7 +47,11 @@ from app.modules.ai_gateway.models import (
 from app.modules.ai_gateway.providers import gemini_client, groq_client
 from app.modules.ai_gateway.providers.gemini_client import GeminiGenerationError
 from app.modules.ai_gateway.providers.groq_client import GroqGenerationError
+from app.modules.evidence.service import RESEARCH_CAPABILITY_CODE
+from app.modules.policy.allowed_output_type import AllowedOutputType
 from app.modules.policy.models import KillSwitch
+from app.modules.policy.pdp import PolicyContext
+from app.modules.policy.pdp import evaluate as pdp_evaluate
 
 
 @dataclass(frozen=True)
@@ -64,18 +77,60 @@ async def invoke_model(
     session: AsyncSession,
     *,
     task_type: str,
-    prompt: str,
+    evidence_bundle_id: uuid.UUID,
+    instruction: str,
     http: httpx.AsyncClient,
     api_keys: dict[str, str],
+    principal_id: uuid.UUID | None,
+    account_id: uuid.UUID | None,
+    jurisdiction_code: str | None,
+    requested_output_type: AllowedOutputType,
 ) -> InvokeResult | InvokeRejected:
     """api_keys maps provider code -> API key (e.g. {"gemini": "...",
     "groq": "..."}) - the Gateway never reads Settings directly, so a
     test can supply fake keys without needing real config, and a future
     per-tenant/per-region key strategy doesn't require changing this
     function's shape.
+
+    No bare `prompt: str` anymore (A1): callers hand over an
+    evidence_bundle_id (already assembled by evidence.service - this
+    module does no retrieval of its own) plus the task instruction, and
+    this function renders the grounded prompt itself so a caller can
+    never accidentally slip in ungrounded text. principal_id/account_id/
+    jurisdiction_code/requested_output_type feed the same PDP every other
+    protected capability goes through - reuses RESEARCH_CAPABILITY_CODE
+    because an AI-composed research answer and a rule-based one are the
+    same governed product capability, just a different execution path.
     """
     if await _kill_switch_active(session, code=KILL_SWITCH_GLOBAL_CODE):
         return InvokeRejected(reason="AI Gateway global kill switch is active")
+
+    policy_decision = await pdp_evaluate(
+        session,
+        PolicyContext(
+            principal_id=principal_id,
+            account_id=account_id,
+            jurisdiction_code=jurisdiction_code,
+            capability_code=RESEARCH_CAPABILITY_CODE,
+            requested_output_type=requested_output_type,
+        ),
+    )
+    if not policy_decision.is_permit:
+        return InvokeRejected(
+            reason=f"policy denied: {', '.join(policy_decision.reason_codes)}"
+        )
+
+    grounded = await render_grounded_prompt(
+        session, bundle_id=evidence_bundle_id, instruction=instruction
+    )
+    if grounded is None:
+        return InvokeRejected(
+            reason=(
+                f"evidence bundle {evidence_bundle_id} is missing or has no "
+                "renderable items - refusing to generate an ungrounded reply"
+            )
+        )
+    prompt = grounded.text
 
     model = (
         await session.execute(
@@ -130,6 +185,7 @@ async def invoke_model(
         session.add(
             AIModelExecution(
                 task_type=task_type, provider_id=provider.id, model_id=model.id,
+                evidence_bundle_id=evidence_bundle_id,
                 request_started_at=started_at, response_received_at=dt.datetime.now(dt.UTC),
                 prompt_text=prompt, error=str(exc)[:1000],
             )
@@ -139,6 +195,7 @@ async def invoke_model(
 
     execution = AIModelExecution(
         task_type=task_type, provider_id=provider.id, model_id=model.id,
+        evidence_bundle_id=evidence_bundle_id,
         request_started_at=started_at, response_received_at=dt.datetime.now(dt.UTC),
         prompt_text=prompt, response_text=text, finish_reason=finish_reason,
         token_usage=token_usage,

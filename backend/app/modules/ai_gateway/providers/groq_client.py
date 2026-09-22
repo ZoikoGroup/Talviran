@@ -17,6 +17,15 @@ neither assumed beforehand:
    chain-of-thought) alongside `content`. This module's parsing already
    only reads `message["content"]`, so no code change was needed - just
    noting it so it isn't mistaken for a malformed response later.
+3. Without an explicit `max_completion_tokens`, longer prompts (e.g. a
+   grounded evidence prompt with several items) can hit `finish_reason:
+   "length"` with ZERO content - the reasoning tokens alone exhaust
+   whatever implicit cap applies, leaving nothing for the answer itself.
+   Reproduced live 2026-09-22 (report of 5 Talvrin-scope queries run
+   through both providers) and confirmed fixed by setting
+   `max_completion_tokens=4096`: the same prompt that returned empty
+   content came back complete (`finish_reason: "stop"`,
+   `reasoning_tokens: 1912` of the 4096 budget).
 
 The corresponding AIModel row is now PRODUCTION (models.py's status
 lifecycle) - promoted only after this live proof, same governance
@@ -29,6 +38,11 @@ from typing import Any
 import httpx
 
 _API_BASE = "https://api.groq.com/openai/v1"
+# Empirically chosen (see module docstring finding 3) - large enough that
+# reasoning tokens on a grounded, multi-item evidence prompt don't crowd
+# out the answer itself. Revisit if evidence bundles grow large enough to
+# make this the binding constraint again.
+_MAX_COMPLETION_TOKENS = 4096
 
 
 class GroqGenerationError(Exception):
@@ -53,7 +67,11 @@ async def generate_content(
     response = await client.post(
         f"{_API_BASE}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}"},
-        json={"model": model_key, "messages": [{"role": "user", "content": prompt}]},
+        json={
+            "model": model_key,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_completion_tokens": _MAX_COMPLETION_TOKENS,
+        },
         timeout=30.0,
     )
     if response.status_code != 200:
