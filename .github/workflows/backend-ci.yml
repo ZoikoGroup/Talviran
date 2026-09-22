@@ -16,7 +16,10 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        # pgvector, not plain postgres - evidence.document_chunk.embedding
+        # (migration 59e91ab651d2) needs `CREATE EXTENSION vector`, same
+        # image infra/docker-compose.yml uses for local dev.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: talvrin
           POSTGRES_PASSWORD: talvrin
@@ -40,6 +43,13 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://talvrin_app:talvrin_app@localhost:5433/talvrin
       ADMIN_DATABASE_URL: postgresql+asyncpg://talvrin:talvrin@localhost:5433/talvrin
+      # A genuinely separate database, not just a separate schema - same
+      # reasoning as infra/init-db/02-test-database.sql (backend/README.md's
+      # "Testing" section): tests/integration/conftest.py's per-test
+      # TRUNCATE must never be able to touch the same rows a real DATABASE_URL
+      # session (dev or, here, a hypothetically-shared CI run) is using.
+      TEST_DATABASE_URL: postgresql+asyncpg://talvrin_app:talvrin_app@localhost:5433/talvrin_test
+      TEST_ADMIN_DATABASE_URL: postgresql+asyncpg://talvrin:talvrin@localhost:5433/talvrin_test
       REDIS_URL: redis://localhost:6380/0
       # Auth tests never make a real Supabase call — they inject a fake
       # httpx transport (tests/integration/conftest.py) — but Settings()
@@ -69,6 +79,10 @@ jobs:
           sudo apt-get update && sudo apt-get install -y postgresql-client
           psql "postgresql://talvrin:talvrin@localhost:5433/talvrin" -v ON_ERROR_STOP=1 -f ../infra/init-db/01-roles.sql
 
+      - name: Create test database
+        run: |
+          psql "postgresql://talvrin:talvrin@localhost:5433/talvrin" -v ON_ERROR_STOP=1 -f ../infra/init-db/02-test-database.sql
+
       - name: Lint (ruff)
         run: uv run ruff check .
 
@@ -77,6 +91,11 @@ jobs:
 
       - name: Migrate database
         run: uv run alembic upgrade head
+
+      - name: Migrate test database
+        run: uv run alembic upgrade head
+        env:
+          ADMIN_DATABASE_URL: ${{ env.TEST_ADMIN_DATABASE_URL }}
 
       - name: Test
         run: uv run pytest -q
