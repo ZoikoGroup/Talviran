@@ -1,0 +1,5 @@
+"Gilt Name","Close of Business Date","ISIN","Type","Coupon","Maturity","Clean Price","Dirty Price","Yield","Mod Duration","Accrued Interest"
+"UKTB  09/26","9/21/2026","GB00BSGQBJ36","Bills","N/A","9/28/2026","99.936984","N/A","3.835897","0.016428","N/A"
+"BTPS 3.45 02/36","9/21/2026","IT0005676504","Conventional","3.450","2/1/2036","93.917","94.413880","4.288992","7.655956","0.496880"
+"4¼% Treasury Stock 2036","9/21/2026","GB0032452392","Conventional","4.250","3/7/2036","93.410","93.512","4.612","7.912","0.102"
+"0¼% Index-linked Treasury Gilt 2052","9/21/2026","GB00BM8Z2V59","Index-linked","0.250","3/22/2052","N/A","N/A","N/A","N/A","N/A"

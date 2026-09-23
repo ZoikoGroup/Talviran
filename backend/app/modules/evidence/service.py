@@ -69,7 +69,8 @@ from app.modules.market.pipeline.curve_ingest import (
     SUBJECT_TYPE_YIELD_CURVE_POINT,
 )
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
-from app.modules.market.queries import current_accepted_fact_at
+from app.modules.market.pipeline.tradeweb_price_ingest import METRIC_GILT_MARKET_CLOSE_PRICE
+from app.modules.market.queries import current_accepted_fact_at, latest_accepted_fact
 from app.modules.policy.allowed_output_type import AllowedOutputType
 from app.modules.policy.pdp import PolicyContext, evaluate
 from app.modules.reference.models import Instrument, InstrumentAlias
@@ -621,6 +622,42 @@ async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchA
                     evidence_bundle_id=bundle.id,
                     kind="CALCULATION",
                     calculation_result_id=model_price.id,
+                )
+            )
+
+    if await _display_allowed(session, "tradeweb.gilt-prices"):
+        market_fact = await latest_accepted_fact(
+            session, subject_id=instrument.id, metric_id=METRIC_GILT_MARKET_CLOSE_PRICE
+        )
+        if market_fact is not None:
+            rows.append(
+                (
+                    "Market close price (Tradeweb — real quote)",
+                    f"{float(market_fact.value['clean_price']):.2f}",
+                )
+            )
+            assert market_fact.knowledge_range.lower is not None  # our own rows always set this
+            market_knowledge_time = market_fact.knowledge_range.lower
+            citations.append(
+                Citation(
+                    label="Tradeweb Market InSite — gilt closing prices",
+                    meta=(
+                        f"As of {market_knowledge_time.isoformat()} — a real market "
+                        "quote, not a model estimate"
+                    ),
+                    pill=compute_freshness(
+                        metric_id=METRIC_GILT_MARKET_CLOSE_PRICE,
+                        knowledge_time=market_knowledge_time,
+                        now=now,
+                    ),
+                    kind="doc",
+                )
+            )
+            session.add(
+                EvidenceMember(
+                    evidence_bundle_id=bundle.id,
+                    kind="FACT",
+                    accepted_fact_id=market_fact.id,
                 )
             )
 

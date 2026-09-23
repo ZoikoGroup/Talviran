@@ -49,6 +49,14 @@ UK_DMO_METHODOLOGY_RIGHTS_PROFILE_CODE = "uk-dmo.methodology"
 FRANKFURTER_FX_RIGHTS_PROFILE_CODE = "frankfurter.fx"
 DBNOMICS_MACRO_RIGHTS_PROFILE_CODE = "dbnomics.macro"
 TWELVE_DATA_EQUITY_RIGHTS_PROFILE_CODE = "twelve-data.equity"
+#: A genuinely different license than UK_DMO_GILTS_RIGHTS_PROFILE_CODE
+#: (its own source, its own terms) - "non-professional and
+#: non-commercial use" only, confirmed live from the export flow's own
+#: terms-of-use dialog, with no redistribution right granted. Deliberately
+#: NOT given "export"/"redistribute" actions - RIGHTS-001's per-action
+#: doctrine means this restriction is enforced structurally, not by
+#: policy convention alone.
+TRADEWEB_GILT_PRICES_RIGHTS_PROFILE_CODE = "tradeweb.gilt-prices"
 SEED_GILT_ISIN = "GB0032452392"
 
 #: (issuer name, NSE trading symbol) — the pilot equity list for the
@@ -276,6 +284,9 @@ async def seed() -> None:
         )
         await _seed_rights_profile(
             session, TWELVE_DATA_EQUITY_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
+        )
+        await _seed_rights_profile(
+            session, TRADEWEB_GILT_PRICES_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
         )
         await _seed_gilt_reference_data(session)
         await _seed_equity_reference_data(session)

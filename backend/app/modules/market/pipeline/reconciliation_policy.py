@@ -75,6 +75,21 @@ EQUITY_EOD_PRICE_POLICY = ReconciliationPolicy(
     conflict_action=CONFLICT_ACTION_FLAG,
 )
 
+# A real market quote, not a model estimate - see
+# market/connectors/tradeweb_gilts/client.py. Only one source today, same
+# as every other metric here, but this is the metric MODEL_IMPLIED_
+# CLEAN_PRICE (calculation.calculation_result) should eventually be
+# reconciled/compared against once a second real price source exists -
+# the two truth classes (accepted_fact here, calculation_result there)
+# are never merged even then, this policy just governs THIS metric's own
+# accepted_fact if/when a second source is added.
+GILT_MARKET_CLOSE_PRICE_POLICY = ReconciliationPolicy(
+    metric_id="GILT_MARKET_CLOSE_PRICE",
+    ordered_source_codes=("tradeweb",),
+    tolerance=None,
+    conflict_action=CONFLICT_ACTION_FLAG,
+)
+
 DEFAULT_POLICIES: dict[str, ReconciliationPolicy] = {
     GILT_REFERENCE_TERMS_POLICY.metric_id: GILT_REFERENCE_TERMS_POLICY,
     UK_GILT_NOMINAL_SPOT_CURVE_POLICY.metric_id: UK_GILT_NOMINAL_SPOT_CURVE_POLICY,
@@ -82,4 +97,5 @@ DEFAULT_POLICIES: dict[str, ReconciliationPolicy] = {
     MACRO_GDP_POLICY.metric_id: MACRO_GDP_POLICY,
     MACRO_CPI_POLICY.metric_id: MACRO_CPI_POLICY,
     EQUITY_EOD_PRICE_POLICY.metric_id: EQUITY_EOD_PRICE_POLICY,
+    GILT_MARKET_CLOSE_PRICE_POLICY.metric_id: GILT_MARKET_CLOSE_PRICE_POLICY,
 }

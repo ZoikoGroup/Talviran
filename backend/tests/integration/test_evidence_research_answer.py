@@ -37,6 +37,7 @@ from app.modules.market.pipeline.curve_ingest import (
     curve_point_subject_id,
 )
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
+from app.modules.market.pipeline.tradeweb_price_ingest import METRIC_GILT_MARKET_CLOSE_PRICE
 from app.modules.policy.allowed_output_type import AllowedOutputType
 from app.modules.policy.models import ActivationRecord, CapabilityStatus
 from app.modules.reference.models import Instrument, InstrumentAlias, Issuer
@@ -249,6 +250,29 @@ async def _seed_model_implied_price(session: AsyncSession, instrument_id: uuid.U
             metric_id=METRIC_MODEL_IMPLIED_CLEAN_PRICE, as_of_date=dt.date(2026, 9, 14),
             basis=BASIS_MODEL_IMPLIED,
             value={"dirty_price": "92.44", "accrued_interest": "0.08", "clean_price": "92.36"},
+            status="ACTIVE",
+        )
+    )
+    await session.flush()
+
+
+async def _seed_market_close_price(
+    session: AsyncSession, instrument_id: uuid.UUID, *, knowledge_time: dt.datetime | None = None
+) -> None:
+    session.add(
+        AcceptedFact(
+            subject_type="INSTRUMENT", subject_id=instrument_id,
+            metric_id=METRIC_GILT_MARKET_CLOSE_PRICE, valid_range=_CURVE_DAY_RANGE,
+            knowledge_range=Range(
+                lower=knowledge_time or dt.datetime.now(dt.UTC), upper=None, bounds="[)"
+            ),
+            value={
+                "instrument_name": "4 1/4% Treasury Stock 2036",
+                "instrument_type": "Conventional",
+                "clean_price": "93.410", "dirty_price": "93.512",
+                "yield_pct": "4.612", "mod_duration": "7.912",
+                "accrued_interest": "0.102",
+            },
             status="ACTIVE",
         )
     )
@@ -478,6 +502,51 @@ async def test_gilt_query_returns_real_facts_and_model_price(db_session: AsyncSe
     bundle = await db_session.get(EvidenceBundle, answer.evidence_bundle_id)
     assert bundle is not None
     assert bundle.status == "ASSEMBLING"  # not READY until the caller links a message
+
+
+async def test_gilt_query_returns_real_market_price(db_session: AsyncSession) -> None:
+    # A genuine Tradeweb quote is a distinct fact from the model-implied
+    # estimate above - must appear as its own row, labeled as a real
+    # quote (never conflated with the "not a market quote" model row).
+    await _seed_capability_and_jurisdiction(db_session)
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_market_close_price(db_session, instrument.id)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+    await _seed_rights_profile(db_session, code="tradeweb.gilt-prices", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="tell me about the 2036 gilt",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["Market close price (Tradeweb — real quote)"] == "93.41"
+
+    market_citation = next(c for c in answer.citations if "Tradeweb" in c.label)
+    assert market_citation.meta is not None
+    assert "real market quote" in market_citation.meta
+    assert market_citation.pill == "CURRENT"
+
+
+async def test_gilt_query_without_tradeweb_rights_omits_market_price(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_market_close_price(db_session, instrument.id)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+    # deliberately no tradeweb.gilt-prices rights profile seeded
+
+    answer = await assemble_research_answer(
+        db_session, query_text="tell me about the 2036 gilt",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert "Market close price (Tradeweb — real quote)" not in dict(answer.facts.rows)
 
 
 async def test_gilt_query_pill_reflects_real_fact_age_not_hardcoded_current(
