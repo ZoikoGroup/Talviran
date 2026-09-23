@@ -89,6 +89,18 @@ _ADVICE_PATTERNS = [
     re.compile(r"worth (buying|investing)", re.I),
 ]
 _GILT_PATTERN = re.compile(r"\bgilt|treasury gilt|2036\b", re.I)
+# Checked BEFORE _GILT_PATTERN below - "Gilt-Edged Market Maker" contains
+# the substring "gilt", so without this a genuine market-structure/dealer
+# question was silently misrouted to the single-instrument facts branch
+# (found live, 2026-09-23, asking about GEMM obligations after the GEMM
+# Guidebook was added to the document corpus - it never reached the
+# document search that would have actually answered it). This pattern
+# doesn't try to be a general topic classifier, just to catch the one
+# real ambiguity "gilt" as a substring creates against this specific
+# document's own subject matter.
+_MARKET_STRUCTURE_PATTERN = re.compile(
+    r"market maker|\bgemm\b|primary dealer|going live|\bdmo\b.*(role|obligation)", re.I
+)
 _YEAR_PATTERN = re.compile(r"\b(19|20)\d{2}\b")
 _ACCRUED_PATTERN = re.compile(
     r"accrued|day count|convention|clean|dirty|act/act|ex[- ]?dividend", re.I
@@ -129,6 +141,10 @@ def _is_greeting(text: str) -> bool:
 
 def _mentions_gilt(text: str) -> bool:
     return bool(_GILT_PATTERN.search(text))
+
+
+def _mentions_market_structure(text: str) -> bool:
+    return bool(_MARKET_STRUCTURE_PATTERN.search(text))
 
 
 def _mentioned_year(text: str) -> int | None:
@@ -351,9 +367,17 @@ def _accrued_reply() -> ResearchAnswer:
 #: "what stocks should I buy") land at cosine distance 0.49-0.56;
 #: genuinely relevant ones ("accrued interest", "redemption yield
 #: calculation", a full paraphrased question) land at 0.23-0.33. 0.4 sits
-#: in the clear gap between them on every case tested - not a
-#: theoretical/guessed number, but it's calibrated on a five-chunk, one-
-#: document corpus, so revisit once the corpus is bigger and more varied.
+#: in the clear gap between them on every case tested.
+#:
+#: Re-measured 2026-09-23 after the corpus grew from one document/5
+#: chunks to two documents/31 chunks (the GEMM Guidebook added, a
+#: genuinely different topic - market structure/dealer obligations, not
+#: numeric yield-conversion methodology): the gap held. Relevant queries
+#: against EITHER document now land at 0.17-0.29; irrelevant queries at
+#: 0.49-0.57. 0.4 still sits cleanly in the middle with room either side
+#: - real evidence the threshold generalizes across topics, not just an
+#: artifact of the original single-document corpus. Still worth
+#: re-measuring again at the next real jump in corpus size/diversity.
 _MAX_SEMANTIC_MATCH_DISTANCE = 0.4
 
 
@@ -440,53 +464,108 @@ async def _display_allowed(session: AsyncSession, rights_profile_code: str) -> b
     return decision is RightsDecision.ALLOW
 
 
-async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchAnswer:
-    instrument = (
+async def _gilts_maturing_in(
+    session: AsyncSession, *, year: int, now: dt.datetime
+) -> list[tuple[Instrument, AcceptedFact]]:
+    """Every onboarded gilt (scripts.onboard_all_gilts) whose CURRENT
+    GILT_REFERENCE_TERMS fact redeems in `year` - deterministic only
+    (doctrine: no fuzzy identity matching), and can genuinely return more
+    than one row: several real UK gilts often share a maturity year (e.g.
+    four different gilts mature in 2027), so the caller must handle that
+    as an honest disambiguation request, never pick one silently.
+    """
+    facts = (
         await session.execute(
-            select(Instrument)
-            .join(InstrumentAlias, InstrumentAlias.instrument_id == Instrument.id)
-            .where(
+            select(AcceptedFact).where(
+                AcceptedFact.subject_type == "INSTRUMENT",
+                AcceptedFact.metric_id == METRIC_GILT_REFERENCE_TERMS,
+                AcceptedFact.status == "ACTIVE",
+                AcceptedFact.valid_range.contains(now),
+                AcceptedFact.value["redemption_date"].astext.startswith(f"{year}-"),
+            )
+        )
+    ).scalars().all()
+    out: list[tuple[Instrument, AcceptedFact]] = []
+    for fact in facts:
+        instrument = await session.get(Instrument, fact.subject_id)
+        if instrument is not None:
+            out.append((instrument, fact))
+    return out
+
+
+async def _isin_for_instrument(session: AsyncSession, instrument_id: uuid.UUID) -> str | None:
+    alias = (
+        await session.execute(
+            select(InstrumentAlias).where(
+                InstrumentAlias.instrument_id == instrument_id,
                 InstrumentAlias.alias_type == "ISIN",
-                InstrumentAlias.alias_value == SEED_GILT_ISIN,
             )
         )
     ).scalar_one_or_none()
-    if instrument is None or not await _display_allowed(session, "uk-dmo.gilts"):
+    return alias.alias_value if alias is not None else None
+
+
+async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchAnswer:
+    if not await _display_allowed(session, "uk-dmo.gilts"):
         return _default_reply("gilt reference facts")
 
     now = dt.datetime.now(dt.UTC)
-    reference_fact = await current_accepted_fact_at(
-        session, subject_id=instrument.id, metric_id=METRIC_GILT_REFERENCE_TERMS, at=now
-    )
-    if reference_fact is None:
-        return _default_reply("gilt reference facts")
-
-    # Only one gilt exists in the platform right now, but the query pattern
-    # matches ANY "gilt" mention - without this check, asking about a
-    # completely different gilt (e.g. "the 2065 gilt") would silently show
-    # this one's facts as if they answered the question. That's worse than
-    # the honest "no data" default: it's actively misleading, not just
-    # unhelpful. A mentioned year that doesn't match this instrument's own
-    # maturity year means the question is about a DIFFERENT instrument.
     mentioned_year = _mentioned_year(query_text)
-    maturity_year = dt.date.fromisoformat(reference_fact.value["redemption_date"]).year
-    if mentioned_year is not None and mentioned_year != maturity_year:
-        return ResearchAnswer(
-            text=(
-                f"I don't have reconciled data for a gilt maturing in {mentioned_year} yet "
-                f"— currently only {reference_fact.value['instrument_name']} (maturing "
-                f"{maturity_year}) is live on the platform."
-            ),
-            facts=None,
-            citations=[],
-            note=None,
-            allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
-            evidence_bundle_id=None,
-        )
 
+    if mentioned_year is not None:
+        # A year was named - resolve among every onboarded gilt, not just
+        # the original seed instrument (scripts.onboard_all_gilts widened
+        # coverage beyond the single 2036 gilt this branch used to assume
+        # was the only one that could ever exist).
+        matches = await _gilts_maturing_in(session, year=mentioned_year, now=now)
+        if not matches:
+            return ResearchAnswer(
+                text=f"I don't have reconciled data for a gilt maturing in {mentioned_year}.",
+                facts=None, citations=[], note=None,
+                allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION, evidence_bundle_id=None,
+            )
+        if len(matches) > 1:
+            name_parts = []
+            for inst, fact in matches:
+                isin_for_inst = await _isin_for_instrument(session, inst.id)
+                name_parts.append(f"{fact.value['instrument_name']} ({isin_for_inst})")
+            names = "; ".join(name_parts)
+            return ResearchAnswer(
+                text=(
+                    f"More than one gilt matures in {mentioned_year}: {names}. "
+                    "Which one did you mean?"
+                ),
+                facts=None, citations=[], note=None,
+                allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION, evidence_bundle_id=None,
+            )
+        instrument, reference_fact = matches[0]
+    else:
+        # No year named - default to the original seed instrument, the
+        # same behavior this branch always had for a generic "tell me
+        # about the gilt" ask with nothing to disambiguate by.
+        seed_instrument = (
+            await session.execute(
+                select(Instrument)
+                .join(InstrumentAlias, InstrumentAlias.instrument_id == Instrument.id)
+                .where(
+                    InstrumentAlias.alias_type == "ISIN",
+                    InstrumentAlias.alias_value == SEED_GILT_ISIN,
+                )
+            )
+        ).scalar_one_or_none()
+        if seed_instrument is None:
+            return _default_reply("gilt reference facts")
+        seed_fact = await current_accepted_fact_at(
+            session, subject_id=seed_instrument.id, metric_id=METRIC_GILT_REFERENCE_TERMS, at=now
+        )
+        if seed_fact is None:
+            return _default_reply("gilt reference facts")
+        instrument, reference_fact = seed_instrument, seed_fact
+
+    isin = await _isin_for_instrument(session, instrument.id)
     rows: list[tuple[str, str]] = [
         ("Instrument", reference_fact.value["instrument_name"]),
-        ("ISIN", SEED_GILT_ISIN),
+        ("ISIN", isin or "unknown"),
         ("Coupon", f"{reference_fact.value['coupon_rate']}% semi-annual"),
         ("Maturity", reference_fact.value["redemption_date"]),
         ("Day count", "ACT/ACT (ICMA)"),
@@ -724,6 +803,14 @@ async def assemble_research_answer(
         answer = await _document_backed_accrued_reply(session) or _accrued_reply()
     elif _mentions_yield_curve(query_text):
         answer = await _yield_curve_reply(session)
+    elif _mentions_market_structure(query_text):
+        # Checked before _mentions_gilt - see _MARKET_STRUCTURE_PATTERN's
+        # own comment for the real "Gilt-Edged Market Maker" misroute
+        # this guards against.
+        answer = (
+            await _document_backed_fallback_reply(session, query_text, http)
+            or _default_reply(query_text)
+        )
     elif _mentions_gilt(query_text):
         answer = await _gilt_facts_reply(session, query_text)
     else:

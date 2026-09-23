@@ -10,6 +10,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -145,6 +146,45 @@ async def _seed_gilt(session: AsyncSession) -> Instrument:
     await session.flush()
     session.add(
         InstrumentAlias(instrument_id=instrument.id, alias_type="ISIN", alias_value=SEED_GILT_ISIN)
+    )
+    await session.flush()
+    return instrument
+
+
+async def _seed_another_gilt(
+    session: AsyncSession, *, isin: str, name: str, redemption_date: str, coupon_rate: str,
+) -> Instrument:
+    """A second, independently-named/ISIN'd gilt - for exercising the
+    multi-gilt resolution and disambiguation paths _gilt_facts_reply
+    gained once scripts.onboard_all_gilts widened real coverage beyond
+    the single seed instrument these other fixtures assume.
+    """
+    issuer = (
+        await session.execute(select(Issuer).where(Issuer.name == "HM Treasury"))
+    ).scalar_one_or_none()
+    if issuer is None:
+        issuer = Issuer(name="HM Treasury", country_code="GB", status="ACTIVE")
+        session.add(issuer)
+        await session.flush()
+    instrument = Instrument(
+        issuer_id=issuer.id, instrument_type="FI_SOVEREIGN", name=name,
+        currency_code="GBP", status="ACTIVE",
+    )
+    session.add(instrument)
+    await session.flush()
+    session.add(InstrumentAlias(instrument_id=instrument.id, alias_type="ISIN", alias_value=isin))
+    session.add(
+        AcceptedFact(
+            subject_type="INSTRUMENT", subject_id=instrument.id,
+            metric_id=METRIC_GILT_REFERENCE_TERMS, valid_range=_OPEN_RANGE,
+            knowledge_range=Range(lower=dt.datetime.now(dt.UTC), upper=None, bounds="[)"),
+            value={
+                "instrument_name": name, "gilt_type": "CONVENTIONAL", "coupon_rate": coupon_rate,
+                "redemption_date": redemption_date, "first_issue_date": "2020-01-01",
+                "dividend_dates": "some dates",
+            },
+            status="ACTIVE",
+        )
     )
     await session.flush()
     return instrument
@@ -372,6 +412,43 @@ async def test_default_query_has_no_facts(db_session: AsyncSession) -> None:
     assert answer.evidence_bundle_id is None
 
 
+async def test_market_maker_question_reaches_document_search_not_instrument_facts(
+    db_session: AsyncSession,
+) -> None:
+    """Found live 2026-09-23: "Gilt-Edged Market Maker" contains the
+    substring "gilt", so without _MARKET_STRUCTURE_PATTERN being checked
+    first, this silently misrouted to the single-instrument facts branch
+    and never reached the document corpus that actually answers it (the
+    GEMM Guidebook, added the same day).
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    profile_id = await _seed_rights_profile(
+        db_session, code="test.doc-display-gemm", actions=["display"]
+    )
+    document = await _seed_accrued_document_chunk(
+        db_session, rights_profile_id=profile_id,
+        text_content="GEMM Criteria, Obligations and Privileges: GEMMs are committed to make "
+        "continuous bid and offer prices to their clients in all gilts in which they are "
+        "recognised as a market maker.",
+    )
+
+    # No hyphenated "gilt-edged" here - plainto_tsquery tokenizes it into
+    # two lexemes ("gilt", "edged"), and the seeded chunk above doesn't
+    # contain "edged", so an AND-match would fail for a reason unrelated
+    # to what this test actually verifies (routing, not lexical parsing
+    # of compound words).
+    answer = await assemble_research_answer(
+        db_session, query_text="obligations of a gilt market maker",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.DOCUMENT_EXPLANATION
+    assert answer.citations and answer.citations[0].label == document.title
+    # The instrument-facts branch never even considered - no seed gilt
+    # was registered in this test's DB at all, so a misroute there would
+    # have surfaced as the "no data" default, not a document citation.
+
+
 async def test_gilt_query_returns_real_facts_and_model_price(db_session: AsyncSession) -> None:
     await _seed_capability_and_jurisdiction(db_session)
     instrument = await _seed_gilt(db_session)
@@ -432,9 +509,9 @@ async def test_gilt_query_pill_reflects_real_fact_age_not_hardcoded_current(
 async def test_gilt_query_about_a_different_gilt_does_not_show_the_wrong_one(
     db_session: AsyncSession,
 ) -> None:
-    # Only one gilt exists in the platform, but the query pattern matches
-    # ANY "gilt" mention - a query about a completely different maturity
-    # year must NOT silently show this instrument's facts as the answer.
+    # Only the seed gilt is registered in this test's DB, but the query
+    # pattern matches ANY "gilt" mention - a query about a maturity year
+    # nothing matches must NOT silently show this instrument's facts.
     await _seed_capability_and_jurisdiction(db_session)
     instrument = await _seed_gilt(db_session)
     await _seed_reference_fact(db_session, instrument.id)
@@ -448,7 +525,57 @@ async def test_gilt_query_about_a_different_gilt_does_not_show_the_wrong_one(
     assert answer.facts is None, "must never show the 2036 gilt's facts for a 2065 question"
     assert answer.evidence_bundle_id is None
     assert "2065" in answer.text
-    assert "2036" in answer.text  # says what IS available, doesn't just say "no"
+
+
+async def test_gilt_query_resolves_a_different_gilt_by_year(db_session: AsyncSession) -> None:
+    # scripts.onboard_all_gilts widened real coverage beyond the single
+    # seed instrument - a year matching a DIFFERENT onboarded gilt must
+    # actually return THAT gilt's facts, not just correctly refuse.
+    await _seed_capability_and_jurisdiction(db_session)
+    seed_instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, seed_instrument.id)
+    other = await _seed_another_gilt(
+        db_session, isin="GB00BYYMZX75", name="2½% Treasury Gilt 2065",
+        redemption_date="2065-07-22", coupon_rate="2.5",
+    )
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the coupon rate of the 2065 gilt?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["ISIN"] == "GB00BYYMZX75"
+    assert rows["Coupon"] == "2.5% semi-annual"
+    assert rows["Maturity"] == "2065-07-22"
+    assert other.id != seed_instrument.id  # sanity: genuinely a different instrument
+
+
+async def test_gilt_query_with_ambiguous_year_asks_which_one(db_session: AsyncSession) -> None:
+    # Real UK gilts often share a maturity year (confirmed live: four
+    # different gilts mature in 2029) - never guess one, ask.
+    await _seed_capability_and_jurisdiction(db_session)
+    seed_instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, seed_instrument.id)
+    await _seed_another_gilt(
+        db_session, isin="GB00BWBR1N39", name="4 7/8% Treasury Gilt 2036",
+        redemption_date="2036-07-31", coupon_rate="4.875",
+    )
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="coupon rate of the 2036 gilt",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+    assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
+    assert "4¼% Treasury Stock 2036" in answer.text or "4 1/4% Treasury Stock 2036" in answer.text
+    assert "4 7/8% Treasury Gilt 2036" in answer.text
+    assert "which one" in answer.text.lower()
 
 
 async def test_gilt_query_with_no_year_mentioned_shows_the_one_seeded_gilt(
