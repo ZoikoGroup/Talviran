@@ -18,6 +18,11 @@ interface ComposerProps {
   onRemoveAttachment: (index: number) => void
   model: ModelId
   onModelChange: (id: ModelId) => void
+  /** True once this chat's backend conversation exists - its model tier is
+   * fixed forever at that point (the backend reads it once, at creation),
+   * so the picker must stop being changeable or it would silently lie
+   * about which model is actually answering later messages. */
+  modelLocked?: boolean
 }
 
 export default function Composer({
@@ -30,6 +35,7 @@ export default function Composer({
   onRemoveAttachment,
   model,
   onModelChange,
+  modelLocked,
 }: ComposerProps) {
   const { textareaRef, adjustHeight } = useAutoResizeTextarea({
     minHeight: 36,
@@ -82,7 +88,9 @@ export default function Composer({
           style={{ overflow: 'hidden' }}
         />
 
-        <ModelSwitcher value={model} onChange={onModelChange} disabled={disabled} />
+        <span title={modelLocked ? "This chat's model is set for its whole conversation" : undefined}>
+          <ModelSwitcher value={model} onChange={onModelChange} disabled={disabled || modelLocked} />
+        </span>
 
         <Button
           size="icon"

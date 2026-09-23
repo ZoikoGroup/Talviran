@@ -33,6 +33,13 @@ interface ChatRecord extends Chat {
    * it exists. Created lazily on the first message sent in a given chat -
    * a brand-new chat the user never types in never needs a backend row. */
   backendId?: string
+  /** The model tier this chat's backend conversation was actually created
+   * with — undefined only for a chat that has no backendId yet. The
+   * backend reads `research.conversation.model` once, at creation, and
+   * never again: every later message in this chat is routed through this
+   * value regardless of the composer's global model picker, so once it's
+   * set it must never be overwritten by that picker's current value. */
+  model?: ModelId
   /** True once `messages` reflects this chat's real backend content (or the
    * chat has none yet, e.g. a fresh draft). A row fetched from `listChats()`
    * starts false — its history is only pulled down when it's opened. */
@@ -120,6 +127,7 @@ export default function App() {
         const loaded: ChatRecord[] = chatRows.map((c) => ({
           id: c.id,
           backendId: c.id,
+          model: c.model as ModelId,
           title: c.title ?? 'New chat',
           hasMessages: true,
           messages: [],
@@ -187,6 +195,7 @@ export default function App() {
                   ...c,
                   messagesLoaded: true,
                   title: detail.title ?? c.title,
+                  model: detail.model as ModelId,
                   messages: detail.messages.map(toDisplayMessage),
                 }
               : c
@@ -209,6 +218,12 @@ export default function App() {
     const chatId = activeId
     const before = chats.find((c) => c.id === chatId)
     const isFirstMessage = !before || before.messages.length === 0
+    // A chat's model is fixed forever once its backend conversation exists
+    // (research.conversation.model is read once, at creation) - use that
+    // bound value for every later message, never the picker's current
+    // value, which the user is free to change for the *next* chat without
+    // affecting this one.
+    const effectiveModel = before?.model ?? model
 
     setDraft('')
     setAttachments([])
@@ -225,7 +240,9 @@ export default function App() {
     if (USE_MOCK) {
       // Placeholder latency so the typing indicator is visible.
       setTimeout(() => {
-        appendAssistantMessage(chatId, { role: 'assistant', model, ...buildReply(content) })
+        appendAssistantMessage(chatId, {
+          role: 'assistant', model: effectiveModel, ...buildReply(content),
+        })
         setThinking(false)
       }, 750)
       return
@@ -236,18 +253,20 @@ export default function App() {
         let backendId = before?.backendId
         if (!backendId) {
           const created = await createChat(
-            model,
+            effectiveModel,
             isFirstMessage ? content.slice(0, 40) : before?.title,
             before?.projectId ?? null
           )
           backendId = created.id
-          setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, backendId } : c)))
+          setChats((prev) =>
+            prev.map((c) => (c.id === chatId ? { ...c, backendId, model: effectiveModel } : c))
+          )
         }
 
         const answer = await postResearch(backendId, content)
         appendAssistantMessage(chatId, {
           role: 'assistant',
-          model,
+          model: effectiveModel,
           text: answer.text,
           facts: answer.facts,
           citations: answer.citations,
@@ -261,7 +280,7 @@ export default function App() {
         }
         appendAssistantMessage(chatId, {
           role: 'assistant',
-          model,
+          model: effectiveModel,
           text: errorMessageFor(err),
           facts: null,
           citations: [],
@@ -507,8 +526,9 @@ export default function App() {
               onRemoveAttachment={(i) =>
                 setAttachments((prev) => prev.filter((_, n) => n !== i))
               }
-              model={model}
+              model={active.model ?? model}
               onModelChange={setModel}
+              modelLocked={Boolean(active.model)}
             />
           </>
         )}
