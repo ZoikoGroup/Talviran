@@ -27,6 +27,14 @@ in place (keyed on provider+task_type, not provider+task_type+model_key)
 so a prior wrong/unverified seed - like this script's own original
 llama-3.3-70b-versatile row - gets fixed rather than left stale
 alongside the corrected one.
+
+A3 (routing, 2026-09-23) adds a real second route per task_type, not a
+hypothetical one: each tier's non-primary provider is registered as its
+priority-1 fallback (gateway.py's routing loop tries priority 0 first,
+falls to priority 1 only if priority 0 is killswitched, keyless, or its
+provider call errors). Both providers are already independently
+live-verified PRODUCTION, so this is two real, working routes per tier,
+not a stub with nothing to fail over to.
 """
 
 import asyncio
@@ -63,7 +71,8 @@ async def _seed_provider(
 
 
 async def _seed_model(
-    session: AsyncSession, *, provider: AIProvider, model_key: str, task_type: str, status: str
+    session: AsyncSession, *, provider: AIProvider, model_key: str, task_type: str, status: str,
+    priority: int,
 ) -> None:
     existing = (
         await session.execute(
@@ -76,17 +85,23 @@ async def _seed_model(
     if existing is None:
         session.add(
             AIModel(
-                provider_id=provider.id, model_key=model_key, task_type=task_type, status=status
+                provider_id=provider.id, model_key=model_key, task_type=task_type, status=status,
+                priority=priority,
             )
         )
-        print(f"  + ai_model {provider.code}/{model_key} for {task_type} -> {status}")
-    elif existing.model_key != model_key or existing.status != status:
+        print(
+            f"  + ai_model {provider.code}/{model_key} for {task_type} "
+            f"-> {status} (priority {priority})"
+        )
+    elif (existing.model_key, existing.status, existing.priority) != (model_key, status, priority):
         print(
             f"  ~ ai_model {provider.code} for {task_type}: "
-            f"{existing.model_key}/{existing.status} -> {model_key}/{status}"
+            f"{existing.model_key}/{existing.status}/p{existing.priority} -> "
+            f"{model_key}/{status}/p{priority}"
         )
         existing.model_key = model_key
         existing.status = status
+        existing.priority = priority
 
 
 async def seed() -> None:
@@ -95,17 +110,28 @@ async def seed() -> None:
         gemini = await _seed_provider(
             session, code="gemini", name="Google Gemini", status=STATUS_PRODUCTION
         )
-        await _seed_model(
-            session, provider=gemini, model_key="gemini-flash-lite-latest",
-            task_type=_TALVRIN_PRO, status=STATUS_PRODUCTION,
-        )
-
         groq = await _seed_provider(
             session, code="groq", name="Groq", status=STATUS_PRODUCTION
         )
+
+        # talvrin-pro: Gemini primary, Groq fallback.
+        await _seed_model(
+            session, provider=gemini, model_key="gemini-flash-lite-latest",
+            task_type=_TALVRIN_PRO, status=STATUS_PRODUCTION, priority=0,
+        )
         await _seed_model(
             session, provider=groq, model_key="openai/gpt-oss-20b",
-            task_type=_TALVRIN_GO, status=STATUS_PRODUCTION,
+            task_type=_TALVRIN_PRO, status=STATUS_PRODUCTION, priority=1,
+        )
+
+        # talvrin-go: Groq primary, Gemini fallback.
+        await _seed_model(
+            session, provider=groq, model_key="openai/gpt-oss-20b",
+            task_type=_TALVRIN_GO, status=STATUS_PRODUCTION, priority=0,
+        )
+        await _seed_model(
+            session, provider=gemini, model_key="gemini-flash-lite-latest",
+            task_type=_TALVRIN_GO, status=STATUS_PRODUCTION, priority=1,
         )
 
         await session.commit()

@@ -6,12 +6,12 @@ record.
 
 Deliberately NOT modelled yet, because nothing in this slice writes or
 reads them (same discipline as every other module's "don't add a column
-nothing uses"): ai_prompt_template, ai_output_schema, ai_toolset,
-ai_eval_suite, ai_eval_run (§27) - these belong to A3 (routing) and A4
-(evaluation), neither of which exists yet. ai_model_execution carries
-evidence_bundle_id (A1, evidence_path.py); ai_validation_result (A2,
-validation.py) is now real - prompt_template_id, toolset_version and
-policy_version still wait on those later slices' subsystems.
+nothing uses"): ai_prompt_template, ai_output_schema, ai_toolset - these
+belong to prompt/schema versioning, no part of which exists yet.
+ai_model_execution carries evidence_bundle_id (A1, evidence_path.py);
+ai_validation_result (A2, validation.py) and ai_eval_suite/ai_eval_run
+(A4, eval_suite.py) are now real - prompt_template_id, toolset_version
+and policy_version still wait on prompt/schema versioning.
 
 Kill switches reuse governance.KillSwitch (policy/models.py, already
 exists) rather than a new ai_kill_switch table - it already is exactly
@@ -69,6 +69,14 @@ class AIModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     see backend/app/modules/api/v1/chats.py's ALLOWED_MODELS) - AI-001
     §26.2's "no client-selected model": a caller picks a task tier, this
     registry resolves the actual provider/model, never the reverse.
+
+    Multiple PRODUCTION rows may share a task_type (A3, gateway.py's
+    routing loop) - `priority` orders them, lowest tried first. A route
+    is skipped (not failed) when its provider/model is killswitched or
+    has no configured key, or the provider call itself errors; it is
+    never retried across routes for a validation failure (AI-001 §23
+    keeps "model unavailable" and "invalid output" as separate taxonomy
+    rows with separate handling).
     """
 
     __tablename__ = "ai_model"
@@ -80,6 +88,7 @@ class AIModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     model_key: Mapped[str] = mapped_column(String(200))  # e.g. "gemini-flash-lite-latest"
     task_type: Mapped[str] = mapped_column(String(32), index=True)
     status: Mapped[str] = mapped_column(String(16), default=STATUS_CANDIDATE)
+    priority: Mapped[int] = mapped_column(default=0)
 
 
 class AIModelExecution(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
@@ -130,3 +139,38 @@ class AIValidationResult(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
     passed: Mapped[bool] = mapped_column()
     failure_reasons: Mapped[list[str] | None] = mapped_column(JSONB, default=None)
+
+
+class AIEvalSuite(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """A named, versioned adversarial corpus (AI-001 §21/§27) - the
+    corpus content itself lives in code (eval_suite.py's CORPUS, the same
+    "versioned, immutable, checksummed" discipline FIN-001's golden-test
+    corpus uses), this row is just the identity a run points back to.
+    """
+
+    __tablename__ = "ai_eval_suite"
+    __table_args__ = {"schema": "ai_gateway"}
+
+    name: Mapped[str] = mapped_column(String(100))
+    version: Mapped[str] = mapped_column(String(20))
+
+
+class AIEvalRun(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """One execution of an AIEvalSuite against a real task_type/provider
+    route (AI-001 §22 gate AI-G15: "perimeter adversarial: 0 failures" -
+    `failed_cases` is the number that must be 0 before this run counts as
+    passing). `results` holds one entry per case: id, category, passed,
+    detail - enough to reconstruct what happened without re-running.
+    """
+
+    __tablename__ = "ai_eval_run"
+    __table_args__ = {"schema": "ai_gateway"}
+
+    ai_eval_suite_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("ai_gateway.ai_eval_suite.id"), index=True
+    )
+    task_type: Mapped[str] = mapped_column(String(32), index=True)
+    executed_at: Mapped[dt.datetime]
+    total_cases: Mapped[int] = mapped_column()
+    failed_cases: Mapped[int] = mapped_column()
+    results: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)

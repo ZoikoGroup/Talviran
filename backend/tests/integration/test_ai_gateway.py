@@ -1,5 +1,5 @@
-"""app/modules/ai_gateway/gateway.py (P4b AI-001 A0 + A1 + A2) against
-real Postgres.
+"""app/modules/ai_gateway/gateway.py (P4b AI-001 A0 + A1 + A2 + A3)
+against real Postgres.
 
 Provider calls use httpx.MockTransport (same pattern as conftest.py's
 FakeSupabaseAuth and yesterday's Gemini embedding tests) - the real
@@ -53,18 +53,34 @@ async def _seed_provider_and_model(
     provider_status: str = STATUS_PRODUCTION,
     model_status: str = STATUS_PRODUCTION,
     task_type: str = _TASK_TYPE,
+    priority: int = 0,
 ) -> tuple[AIProvider, AIModel]:
     provider = AIProvider(code=provider_code, name=provider_code, status=provider_status)
     db_session.add(provider)
     await db_session.flush()
     model = AIModel(
         provider_id=provider.id, model_key="test-model", task_type=task_type,
-        status=model_status,
+        status=model_status, priority=priority,
     )
     db_session.add(model)
     await db_session.flush()
     await db_session.commit()
     return provider, model
+
+
+async def _seed_two_routes(
+    db_session: AsyncSession, *, task_type: str = _TASK_TYPE
+) -> tuple[AIProvider, AIModel, AIProvider, AIModel]:
+    """gemini at priority 0 (primary), groq at priority 1 (fallback) -
+    the same real shape scripts.seed_ai_gateway now registers (A3).
+    """
+    gemini, gemini_model = await _seed_provider_and_model(
+        db_session, provider_code="gemini", task_type=task_type, priority=0,
+    )
+    groq, groq_model = await _seed_provider_and_model(
+        db_session, provider_code="groq", task_type=task_type, priority=1,
+    )
+    return gemini, gemini_model, groq, groq_model
 
 
 async def _seed_capability_and_jurisdiction(db_session: AsyncSession) -> None:
@@ -163,6 +179,42 @@ def _fake_gemini_client(status_code: int = 200) -> httpx.AsyncClient:
                 },
             },
         )
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+def _groq_response(text: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "choices": [{"message": {"content": text}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4},
+        },
+    )
+
+
+def _multi_provider_client(
+    *, gemini_status_code: int = 200, gemini_text: str = "from-gemini",
+    groq_status_code: int = 200, groq_text: str = "from-groq",
+) -> httpx.AsyncClient:
+    """Distinguishes by real host (generativelanguage.googleapis.com vs
+    api.groq.com - each client module's own _API_BASE), the same way a
+    real network call would - lets A3's routing-loop tests script each
+    provider's response independently in one shared transport, exactly
+    as invoke_model shares one http client across every candidate route.
+    """
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        if "generativelanguage" in host:
+            if gemini_status_code != 200:
+                return httpx.Response(gemini_status_code, text="gemini error")
+            return _gemini_response(gemini_text)
+        if "groq.com" in host:
+            if groq_status_code != 200:
+                return httpx.Response(groq_status_code, text="groq error")
+            return _groq_response(groq_text)
+        return httpx.Response(404, text=f"unhandled host {host}")
 
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
@@ -590,3 +642,188 @@ async def test_recommendation_language_fails_validation(db_session: AsyncSession
     relevant = [v for v in validations if v.ai_model_execution_id in {e.id for e in executions}]
     assert len(relevant) == 2
     assert all(not v.passed for v in relevant)
+
+
+# ------------------------------------------------------------------ A3: routing
+
+
+async def test_killswitched_primary_falls_back_to_secondary_route(
+    db_session: AsyncSession,
+) -> None:
+    _, _, groq, _ = await _seed_two_routes(db_session)
+    await _seed_capability_and_jurisdiction(db_session)
+    bundle_id = await _seed_evidence_bundle(db_session)
+    db_session.add(
+        KillSwitch(
+            code="ai_gateway.provider.gemini", is_active=True,
+            activated_at=dt.datetime.now(dt.UTC), reason="test",
+        )
+    )
+    await db_session.commit()
+
+    async with _multi_provider_client() as http:
+        result = await _invoke(
+            db_session, http, evidence_bundle_id=bundle_id,
+            api_keys={"gemini": "fake-key", "groq": "fake-key"},
+        )
+    await db_session.commit()
+
+    assert isinstance(result, InvokeResult)
+    assert result.text == "from-groq"
+    # The killswitched route never reached the provider at all - no
+    # execution row for it, only groq's real attempt.
+    executions = (
+        await db_session.execute(
+            select(AIModelExecution).where(AIModelExecution.evidence_bundle_id == bundle_id)
+        )
+    ).scalars().all()
+    assert len(executions) == 1
+    assert executions[0].provider_id == groq.id
+
+
+async def test_provider_error_on_primary_falls_back_to_secondary_route(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_two_routes(db_session)
+    await _seed_capability_and_jurisdiction(db_session)
+    bundle_id = await _seed_evidence_bundle(db_session)
+
+    async with _multi_provider_client(gemini_status_code=500) as http:
+        result = await _invoke(
+            db_session, http, evidence_bundle_id=bundle_id,
+            api_keys={"gemini": "fake-key", "groq": "fake-key"},
+        )
+    await db_session.commit()
+
+    assert isinstance(result, InvokeResult)
+    assert result.text == "from-groq"
+    # Gemini's failed attempt IS recorded (a real provider call was made
+    # and errored) - this is the one place a "route unavailable" case
+    # still produces a forensic row, distinct from the killswitch case.
+    executions = (
+        await db_session.execute(
+            select(AIModelExecution)
+            .where(AIModelExecution.evidence_bundle_id == bundle_id)
+            .order_by(AIModelExecution.request_started_at)
+        )
+    ).scalars().all()
+    assert len(executions) == 2
+    assert executions[0].error is not None
+    assert executions[1].response_text == "from-groq"
+
+
+async def test_validation_failure_never_tries_the_next_route(
+    db_session: AsyncSession,
+) -> None:
+    """The core A3 distinction: an available-but-wrong primary route must
+    exhaust its own one regeneration and then reject - never fail over to
+    the secondary route, which AI-001 SS23 keeps as a separate taxonomy
+    row ("model unavailable" only, not "invalid output").
+    """
+    await _seed_two_routes(db_session)
+    await _seed_capability_and_jurisdiction(db_session)
+    bundle_id = await _seed_evidence_bundle(db_session)
+
+    async with _multi_provider_client(
+        gemini_text="You should buy this now.",
+    ) as http:
+        result = await _invoke(
+            db_session, http, evidence_bundle_id=bundle_id,
+            api_keys={"gemini": "fake-key", "groq": "fake-key"},
+        )
+    await db_session.commit()
+
+    assert isinstance(result, InvokeRejected)
+    assert "regeneration exhausted" in result.reason
+
+    executions = (
+        await db_session.execute(
+            select(AIModelExecution).where(AIModelExecution.evidence_bundle_id == bundle_id)
+        )
+    ).scalars().all()
+    # Both attempts against gemini (the primary route) - groq never called.
+    assert len(executions) == 2
+    assert {e.response_text for e in executions} == {"You should buy this now."}
+
+
+async def test_all_routes_unavailable_is_rejected(db_session: AsyncSession) -> None:
+    await _seed_two_routes(db_session)
+    await _seed_capability_and_jurisdiction(db_session)
+    bundle_id = await _seed_evidence_bundle(db_session)
+    db_session.add_all([
+        KillSwitch(
+            code="ai_gateway.provider.gemini", is_active=True,
+            activated_at=dt.datetime.now(dt.UTC), reason="test",
+        ),
+        KillSwitch(
+            code="ai_gateway.provider.groq", is_active=True,
+            activated_at=dt.datetime.now(dt.UTC), reason="test",
+        ),
+    ])
+    await db_session.commit()
+
+    async with _multi_provider_client() as http:
+        result = await _invoke(
+            db_session, http, evidence_bundle_id=bundle_id,
+            api_keys={"gemini": "fake-key", "groq": "fake-key"},
+        )
+    assert isinstance(result, InvokeRejected)
+    assert "all routes unavailable" in result.reason
+
+
+# ------------------------------------------------------------------ A6: hardening
+
+
+async def test_oversized_bundle_is_rejected_not_truncated(db_session: AsyncSession) -> None:
+    await _seed_provider_and_model(db_session)
+    await _seed_capability_and_jurisdiction(db_session)
+
+    fact = AcceptedFact(
+        subject_type="INSTRUMENT", subject_id=uuid.uuid4(), metric_id="OVERSIZED_METRIC",
+        valid_range=Range(lower=dt.datetime(2026, 1, 1, tzinfo=dt.UTC), upper=None, bounds="[)"),
+        knowledge_range=Range(
+            lower=dt.datetime(2026, 1, 1, tzinfo=dt.UTC), upper=None, bounds="[)"
+        ),
+        value={"filler": "x" * 25_000},  # forces the rendered prompt over _MAX_PROMPT_CHARS
+    )
+    db_session.add(fact)
+    await db_session.flush()
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION", knowledge_time=dt.datetime.now(dt.UTC),
+        status="ASSEMBLING",
+    )
+    db_session.add(bundle)
+    await db_session.flush()
+    db_session.add(
+        EvidenceMember(evidence_bundle_id=bundle.id, kind="FACT", accepted_fact_id=fact.id)
+    )
+    await db_session.commit()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("provider must never be called with an oversized prompt")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await _invoke(
+            db_session, http, evidence_bundle_id=bundle.id, api_keys={"gemini": "fake-key"},
+        )
+    assert isinstance(result, InvokeRejected)
+    assert "bounded-context limit exceeded" in result.reason
+
+
+async def test_network_error_is_a_graceful_rejection_not_a_crash(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_provider_and_model(db_session)
+    await _seed_capability_and_jurisdiction(db_session)
+    bundle_id = await _seed_evidence_bundle(db_session)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("simulated connection failure")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await _invoke(
+            db_session, http, evidence_bundle_id=bundle_id, api_keys={"gemini": "fake-key"},
+        )
+    assert isinstance(result, InvokeRejected)
+    assert "network error" in result.reason
+    assert "ConnectError" in result.reason
