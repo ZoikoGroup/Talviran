@@ -5,6 +5,7 @@ import Sidebar, { type Chat, type Project } from '@/components/Sidebar'
 import Message from '@/components/Message'
 import Composer from '@/components/Composer'
 import SettingsPage from '@/components/SettingsPage'
+import MonitoringPage from '@/components/MonitoringPage'
 import TalvrinMoonChat from '@/components/ui/talvrin-moon-chat'
 import { buildReply, type ChatMessage } from '@/data/mockReply'
 import { DEFAULT_MODEL, type ModelId } from '@/data/models'
@@ -106,6 +107,7 @@ export default function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const { theme, setTheme } = useTheme()
   const [showSettings, setShowSettings] = useState(false)
+  const [showMonitoring, setShowMonitoring] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const active = chats.find((c) => c.id === activeId) ?? chats[0]
@@ -420,6 +422,7 @@ export default function App() {
         onNew={(projectId) => {
           startChat(projectId ?? null)
           setShowSettings(false)
+          setShowMonitoring(false)
         }}
         onNewProject={addProject}
         onMoveChat={moveChat}
@@ -429,7 +432,14 @@ export default function App() {
         onDeleteProject={deleteProject}
         onCollapse={() => setCollapsed(true)}
         onExpand={() => setCollapsed(false)}
-        onOpenSettings={() => setShowSettings(true)}
+        onOpenSettings={() => {
+          setShowSettings(true)
+          setShowMonitoring(false)
+        }}
+        onOpenMonitoring={() => {
+          setShowMonitoring(true)
+          setShowSettings(false)
+        }}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
       />
@@ -469,6 +479,8 @@ export default function App() {
             onClearWorkspace={clearWorkspace}
             onExportWorkspace={exportWorkspace}
           />
+        ) : showMonitoring ? (
+          <MonitoringPage onBack={() => setShowMonitoring(false)} />
         ) : isLoadingActive ? (
           <div className="flex flex-1 items-center justify-center text-[13.5px] text-muted-foreground">
             Loading conversation…
