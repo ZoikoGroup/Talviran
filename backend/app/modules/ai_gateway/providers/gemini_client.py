@@ -17,6 +17,17 @@ Real findings from that verification, not assumed from documentation:
 Response shape (confirmed live): candidates[0].content.parts[0].text,
 candidates[0].finishReason, usageMetadata.{promptTokenCount,
 candidatesTokenCount, totalTokenCount}.
+
+(A6 hardening, 2026-09-23) `client.post` had no surrounding try/except -
+a real network failure (timeout, DNS, connection reset) raised a bare
+httpx exception neither this module nor gateway.py's
+`except (GeminiGenerationError, GroqGenerationError)` caught, crashing
+the whole `invoke_model` call instead of gracefully rejecting. Also a
+real leak-risk: Gemini's own auth scheme puts `api_key` in the request
+URL's query string, and some httpx exceptions embed the request URL in
+their message - fixed by wrapping the call, re-raising as
+GeminiGenerationError, and using only `type(exc).__name__`, never
+`str(exc)`.
 """
 
 from dataclasses import dataclass
@@ -46,12 +57,25 @@ class GeminiGenerationResult:
 async def generate_content(
     client: httpx.AsyncClient, *, model_key: str, prompt: str, api_key: str
 ) -> GeminiGenerationResult:
-    response = await client.post(
-        f"{_API_BASE}/models/{model_key}:generateContent",
-        params={"key": api_key},
-        json={"contents": [{"role": "user", "parts": [{"text": prompt}]}]},
-        timeout=30.0,
-    )
+    try:
+        response = await client.post(
+            f"{_API_BASE}/models/{model_key}:generateContent",
+            params={"key": api_key},
+            json={"contents": [{"role": "user", "parts": [{"text": prompt}]}]},
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        # A0/A1/A2 (gateway.py) only ever catch GeminiGenerationError, not
+        # raw httpx exceptions - without this, a timeout/DNS/connection
+        # failure would crash the whole invoke_model call instead of
+        # gracefully rejecting (A3's "model unavailable -> alternate
+        # route" needs this to fire at all). type(exc).__name__ only,
+        # never str(exc) - the request URL carries api_key as a query
+        # param (Gemini's own auth scheme), and some httpx exceptions
+        # embed the request URL in their message.
+        raise GeminiGenerationError(
+            f"network error calling Gemini: {type(exc).__name__}"
+        ) from exc
     if response.status_code != 200:
         raise GeminiGenerationError(
             f"Gemini generateContent returned {response.status_code}: {response.text[:500]}"

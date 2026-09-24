@@ -84,6 +84,8 @@ _TRUNCATE_TABLES = text(
         monitoring.monitoring_rule_version,
         monitoring.monitoring_rule,
         monitoring.evaluator_heartbeat,
+        ai_gateway.ai_eval_run,
+        ai_gateway.ai_eval_suite,
         ai_gateway.ai_model_execution,
         ai_gateway.ai_model,
         ai_gateway.ai_provider

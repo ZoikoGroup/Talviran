@@ -10,6 +10,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +37,7 @@ from app.modules.market.pipeline.curve_ingest import (
     curve_point_subject_id,
 )
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
+from app.modules.market.pipeline.tradeweb_price_ingest import METRIC_GILT_MARKET_CLOSE_PRICE
 from app.modules.policy.allowed_output_type import AllowedOutputType
 from app.modules.policy.models import ActivationRecord, CapabilityStatus
 from app.modules.reference.models import Instrument, InstrumentAlias, Issuer
@@ -150,6 +152,45 @@ async def _seed_gilt(session: AsyncSession) -> Instrument:
     return instrument
 
 
+async def _seed_another_gilt(
+    session: AsyncSession, *, isin: str, name: str, redemption_date: str, coupon_rate: str,
+) -> Instrument:
+    """A second, independently-named/ISIN'd gilt - for exercising the
+    multi-gilt resolution and disambiguation paths _gilt_facts_reply
+    gained once scripts.onboard_all_gilts widened real coverage beyond
+    the single seed instrument these other fixtures assume.
+    """
+    issuer = (
+        await session.execute(select(Issuer).where(Issuer.name == "HM Treasury"))
+    ).scalar_one_or_none()
+    if issuer is None:
+        issuer = Issuer(name="HM Treasury", country_code="GB", status="ACTIVE")
+        session.add(issuer)
+        await session.flush()
+    instrument = Instrument(
+        issuer_id=issuer.id, instrument_type="FI_SOVEREIGN", name=name,
+        currency_code="GBP", status="ACTIVE",
+    )
+    session.add(instrument)
+    await session.flush()
+    session.add(InstrumentAlias(instrument_id=instrument.id, alias_type="ISIN", alias_value=isin))
+    session.add(
+        AcceptedFact(
+            subject_type="INSTRUMENT", subject_id=instrument.id,
+            metric_id=METRIC_GILT_REFERENCE_TERMS, valid_range=_OPEN_RANGE,
+            knowledge_range=Range(lower=dt.datetime.now(dt.UTC), upper=None, bounds="[)"),
+            value={
+                "instrument_name": name, "gilt_type": "CONVENTIONAL", "coupon_rate": coupon_rate,
+                "redemption_date": redemption_date, "first_issue_date": "2020-01-01",
+                "dividend_dates": "some dates",
+            },
+            status="ACTIVE",
+        )
+    )
+    await session.flush()
+    return instrument
+
+
 async def _seed_reference_fact(
     session: AsyncSession, instrument_id: uuid.UUID, *, knowledge_time: dt.datetime | None = None
 ) -> None:
@@ -209,6 +250,29 @@ async def _seed_model_implied_price(session: AsyncSession, instrument_id: uuid.U
             metric_id=METRIC_MODEL_IMPLIED_CLEAN_PRICE, as_of_date=dt.date(2026, 9, 14),
             basis=BASIS_MODEL_IMPLIED,
             value={"dirty_price": "92.44", "accrued_interest": "0.08", "clean_price": "92.36"},
+            status="ACTIVE",
+        )
+    )
+    await session.flush()
+
+
+async def _seed_market_close_price(
+    session: AsyncSession, instrument_id: uuid.UUID, *, knowledge_time: dt.datetime | None = None
+) -> None:
+    session.add(
+        AcceptedFact(
+            subject_type="INSTRUMENT", subject_id=instrument_id,
+            metric_id=METRIC_GILT_MARKET_CLOSE_PRICE, valid_range=_CURVE_DAY_RANGE,
+            knowledge_range=Range(
+                lower=knowledge_time or dt.datetime.now(dt.UTC), upper=None, bounds="[)"
+            ),
+            value={
+                "instrument_name": "4 1/4% Treasury Stock 2036",
+                "instrument_type": "Conventional",
+                "clean_price": "93.410", "dirty_price": "93.512",
+                "yield_pct": "4.612", "mod_duration": "7.912",
+                "accrued_interest": "0.102",
+            },
             status="ACTIVE",
         )
     )
@@ -361,6 +425,60 @@ async def test_catch_all_query_degrades_to_lexical_when_gemini_call_fails(
     assert answer.citations[0].label == document.title
 
 
+async def test_typo_glit_routes_to_gilt_facts_not_document_search(
+    db_session: AsyncSession,
+) -> None:
+    # Real bug found live: "glit" (a real typo for "gilt": "todays uk glit
+    # closing prices") didn't match _GILT_PATTERN, so a genuine live-price
+    # question fell through to the document-search catch-all instead of
+    # _gilt_facts_reply - landing on an unrelated DMO worked-example table
+    # instead of real data, a materially wrong answer, not just a miss.
+    await _seed_capability_and_jurisdiction(db_session)
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="todays uk glit closing prices",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert dict(answer.facts.rows)["ISIN"] == SEED_GILT_ISIN
+
+
+async def test_catch_all_query_with_a_dense_numeric_chunk_is_not_dumped_raw(
+    db_session: AsyncSession,
+) -> None:
+    # Real bug found live: a genuine, honestly-cited excerpt match (a DMO
+    # worked-example table - dates/decimals packed one row per line) got
+    # dumped verbatim into the chat reply. Real source, real citation, but
+    # unreadable and unprofessional - the fix points at the citation
+    # instead of inlining dense tabular text.
+    await _seed_capability_and_jurisdiction(db_session)
+    profile_id = await _seed_rights_profile(
+        db_session, code="test.doc-display-table", actions=["display"]
+    )
+    dense_text = (
+        "Scenario 1 2 3 4\nYield 0.04445 0.04445 0.04445 0.04445\n"
+        "Settlement date 24-May-99 26-May-99 27-May-99 07-Jun-99\n"
+        "Dirty Price 145.012268 145.047301 141.070132 141.257676"
+    )
+    document = await _seed_accrued_document_chunk(
+        db_session, rights_profile_id=profile_id, text_content=dense_text,
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the settlement date scenario",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.evidence_bundle_id is not None
+    assert answer.citations[0].label == document.title
+    assert dense_text not in answer.text
+    assert "not something I can read out cleanly" in answer.text
+
+
 async def test_default_query_has_no_facts(db_session: AsyncSession) -> None:
     await _seed_capability_and_jurisdiction(db_session)
     answer = await assemble_research_answer(
@@ -370,6 +488,43 @@ async def test_default_query_has_no_facts(db_session: AsyncSession) -> None:
     assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
     assert answer.facts is None
     assert answer.evidence_bundle_id is None
+
+
+async def test_market_maker_question_reaches_document_search_not_instrument_facts(
+    db_session: AsyncSession,
+) -> None:
+    """Found live 2026-09-23: "Gilt-Edged Market Maker" contains the
+    substring "gilt", so without _MARKET_STRUCTURE_PATTERN being checked
+    first, this silently misrouted to the single-instrument facts branch
+    and never reached the document corpus that actually answers it (the
+    GEMM Guidebook, added the same day).
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    profile_id = await _seed_rights_profile(
+        db_session, code="test.doc-display-gemm", actions=["display"]
+    )
+    document = await _seed_accrued_document_chunk(
+        db_session, rights_profile_id=profile_id,
+        text_content="GEMM Criteria, Obligations and Privileges: GEMMs are committed to make "
+        "continuous bid and offer prices to their clients in all gilts in which they are "
+        "recognised as a market maker.",
+    )
+
+    # No hyphenated "gilt-edged" here - plainto_tsquery tokenizes it into
+    # two lexemes ("gilt", "edged"), and the seeded chunk above doesn't
+    # contain "edged", so an AND-match would fail for a reason unrelated
+    # to what this test actually verifies (routing, not lexical parsing
+    # of compound words).
+    answer = await assemble_research_answer(
+        db_session, query_text="obligations of a gilt market maker",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.DOCUMENT_EXPLANATION
+    assert answer.citations and answer.citations[0].label == document.title
+    # The instrument-facts branch never even considered - no seed gilt
+    # was registered in this test's DB at all, so a misroute there would
+    # have surfaced as the "no data" default, not a document citation.
 
 
 async def test_gilt_query_returns_real_facts_and_model_price(db_session: AsyncSession) -> None:
@@ -403,6 +558,51 @@ async def test_gilt_query_returns_real_facts_and_model_price(db_session: AsyncSe
     assert bundle.status == "ASSEMBLING"  # not READY until the caller links a message
 
 
+async def test_gilt_query_returns_real_market_price(db_session: AsyncSession) -> None:
+    # A genuine Tradeweb quote is a distinct fact from the model-implied
+    # estimate above - must appear as its own row, labeled as a real
+    # quote (never conflated with the "not a market quote" model row).
+    await _seed_capability_and_jurisdiction(db_session)
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_market_close_price(db_session, instrument.id)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+    await _seed_rights_profile(db_session, code="tradeweb.gilt-prices", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="tell me about the 2036 gilt",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["Market close price (Tradeweb — real quote)"] == "93.41"
+
+    market_citation = next(c for c in answer.citations if "Tradeweb" in c.label)
+    assert market_citation.meta is not None
+    assert "real market quote" in market_citation.meta
+    assert market_citation.pill == "CURRENT"
+
+
+async def test_gilt_query_without_tradeweb_rights_omits_market_price(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_market_close_price(db_session, instrument.id)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+    # deliberately no tradeweb.gilt-prices rights profile seeded
+
+    answer = await assemble_research_answer(
+        db_session, query_text="tell me about the 2036 gilt",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert "Market close price (Tradeweb — real quote)" not in dict(answer.facts.rows)
+
+
 async def test_gilt_query_pill_reflects_real_fact_age_not_hardcoded_current(
     db_session: AsyncSession,
 ) -> None:
@@ -432,9 +632,9 @@ async def test_gilt_query_pill_reflects_real_fact_age_not_hardcoded_current(
 async def test_gilt_query_about_a_different_gilt_does_not_show_the_wrong_one(
     db_session: AsyncSession,
 ) -> None:
-    # Only one gilt exists in the platform, but the query pattern matches
-    # ANY "gilt" mention - a query about a completely different maturity
-    # year must NOT silently show this instrument's facts as the answer.
+    # Only the seed gilt is registered in this test's DB, but the query
+    # pattern matches ANY "gilt" mention - a query about a maturity year
+    # nothing matches must NOT silently show this instrument's facts.
     await _seed_capability_and_jurisdiction(db_session)
     instrument = await _seed_gilt(db_session)
     await _seed_reference_fact(db_session, instrument.id)
@@ -448,7 +648,111 @@ async def test_gilt_query_about_a_different_gilt_does_not_show_the_wrong_one(
     assert answer.facts is None, "must never show the 2036 gilt's facts for a 2065 question"
     assert answer.evidence_bundle_id is None
     assert "2065" in answer.text
-    assert "2036" in answer.text  # says what IS available, doesn't just say "no"
+
+
+async def test_gilt_query_resolves_a_different_gilt_by_year(db_session: AsyncSession) -> None:
+    # scripts.onboard_all_gilts widened real coverage beyond the single
+    # seed instrument - a year matching a DIFFERENT onboarded gilt must
+    # actually return THAT gilt's facts, not just correctly refuse.
+    await _seed_capability_and_jurisdiction(db_session)
+    seed_instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, seed_instrument.id)
+    other = await _seed_another_gilt(
+        db_session, isin="GB00BYYMZX75", name="2½% Treasury Gilt 2065",
+        redemption_date="2065-07-22", coupon_rate="2.5",
+    )
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the coupon rate of the 2065 gilt?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["ISIN"] == "GB00BYYMZX75"
+    assert rows["Coupon"] == "2.5% semi-annual"
+    assert rows["Maturity"] == "2065-07-22"
+    assert other.id != seed_instrument.id  # sanity: genuinely a different instrument
+
+
+async def test_gilt_query_with_ambiguous_year_asks_which_one(db_session: AsyncSession) -> None:
+    # Real UK gilts often share a maturity year (confirmed live: four
+    # different gilts mature in 2029) - never guess one, ask.
+    await _seed_capability_and_jurisdiction(db_session)
+    seed_instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, seed_instrument.id)
+    await _seed_another_gilt(
+        db_session, isin="GB00BWBR1N39", name="4 7/8% Treasury Gilt 2036",
+        redemption_date="2036-07-31", coupon_rate="4.875",
+    )
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="coupon rate of the 2036 gilt",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+    assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
+    assert "4¼% Treasury Stock 2036" in answer.text or "4 1/4% Treasury Stock 2036" in answer.text
+    assert "4 7/8% Treasury Gilt 2036" in answer.text
+    assert "which one" in answer.text.lower()
+
+
+async def test_ambiguous_year_follow_up_naming_one_option_resolves_it(
+    db_session: AsyncSession,
+) -> None:
+    # A real bug found via live testing: asking about "2027"/"2036" gets an
+    # ambiguous-year list back, and replying with one of the EXACT options
+    # just offered (its instrument_name, copied verbatim) must resolve to
+    # that gilt, not repeat the same ambiguous list - "2036" is still
+    # present in the follow-up, so only the year-based lookup ran before.
+    await _seed_capability_and_jurisdiction(db_session)
+    seed_instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, seed_instrument.id)
+    await _seed_another_gilt(
+        db_session, isin="GB00BWBR1N39", name="4 7/8% Treasury Gilt 2036",
+        redemption_date="2036-07-31", coupon_rate="4.875",
+    )
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="4 7/8% Treasury Gilt 2036",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["ISIN"] == "GB00BWBR1N39"
+    assert rows["Coupon"] == "4.875% semi-annual"
+
+
+async def test_ambiguous_year_follow_up_naming_an_isin_resolves_it(
+    db_session: AsyncSession,
+) -> None:
+    # ISIN alone never carries a year token _mentioned_year can extract
+    # (no word boundary inside a contiguous alphanumeric string), so this
+    # only exercises the narrowing branch when the year is repeated too -
+    # a natural follow-up like "the 2036 one, GB00BWBR1N39".
+    await _seed_capability_and_jurisdiction(db_session)
+    seed_instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, seed_instrument.id)
+    await _seed_another_gilt(
+        db_session, isin="GB00BWBR1N39", name="4 7/8% Treasury Gilt 2036",
+        redemption_date="2036-07-31", coupon_rate="4.875",
+    )
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="the 2036 one, GB00BWBR1N39",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["ISIN"] == "GB00BWBR1N39"
 
 
 async def test_gilt_query_with_no_year_mentioned_shows_the_one_seeded_gilt(
@@ -605,13 +909,18 @@ async def test_help_query_lists_real_current_topics(db_session: AsyncSession) ->
     assert answer.evidence_bundle_id is None
 
 
-async def test_bare_greeting_gets_the_capability_reply_not_the_cold_default(
+async def test_bare_greeting_gets_a_short_conversational_reply_not_the_cold_default(
     db_session: AsyncSession,
 ) -> None:
     """A real bug found via live UI testing: "hi" used to fall all the way
     through to the generic "no data" default, identical to a genuinely
     failed lookup - a poor first impression and not actually "no data",
-    just no *query* to look anything up for.
+    just no *query* to look anything up for. A second real complaint after
+    that fix: routing "hi" to the full bulleted _CAPABILITY_SUMMARY (with
+    its recommendation-disclaimer front-loaded) read as a scripted bot
+    reply, not a chat - the greeting reply is now a short, plain sentence
+    instead, and the full list stays reserved for an explicit "what can
+    you do" (_help_reply, see test_help_query_lists_real_current_topics).
     """
     await _seed_capability_and_jurisdiction(db_session)
 
@@ -620,8 +929,44 @@ async def test_bare_greeting_gets_the_capability_reply_not_the_cold_default(
             db_session, query_text=greeting, principal_id=None, account_id=None,
         )
         assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
-        assert "gilt reference terms" in answer.text.lower(), greeting
         assert not answer.text.startswith('You asked:'), greeting
+        assert "-" not in answer.text, f"greeting reply must not be a bulleted list: {greeting}"
+        assert len(answer.text) < 220, f"greeting reply must stay short: {greeting}"
+
+
+async def test_closing_remark_gets_a_warm_reply_not_the_cold_default(
+    db_session: AsyncSession,
+) -> None:
+    """"thank you" used to fall all the way through the document-search
+    fallback (no chunk is actually about "thank you") to the same cold,
+    generic "no data" default a genuinely failed lookup gets - technically
+    correct, but an unfriendly answer to what's obviously a closing remark,
+    not a data question.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+
+    for closing in ("thanks", "thank you", "Thank you so much!", "cheers", "bye", "ok thanks"):
+        answer = await assemble_research_answer(
+            db_session, query_text=closing, principal_id=None, account_id=None,
+        )
+        assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
+        assert "you're welcome" in answer.text.lower(), closing
+        assert not answer.text.startswith('You asked:'), closing
+
+
+async def test_closing_pattern_does_not_false_positive_on_real_questions(
+    db_session: AsyncSession,
+) -> None:
+    """Whole-message match only - "thanks"/"bye" as real words inside an
+    actual question must never be mis-routed to the closing branch.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="thanks to the ex-dividend convention, what is accrued interest",
+        principal_id=None, account_id=None,
+    )
+    assert "you're welcome" not in answer.text.lower()
 
 
 async def test_greeting_pattern_does_not_false_positive_on_real_questions(

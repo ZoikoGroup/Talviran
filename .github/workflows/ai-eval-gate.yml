@@ -1,0 +1,91 @@
+name: ai-eval-gate
+
+# P4b AI-001 A4/G15 ("perimeter adversarial: 0 failures") as a real CI
+# gate, not a manual script someone has to remember to run - see
+# backend/scripts/run_ai_eval_suite.py.
+#
+# Deliberately a SEPARATE workflow from backend-ci.yml, on pull_request
+# to main only (not every push to every branch): this makes real, paid
+# calls against live Gemini/Groq for every case, and Gemini's free-tier
+# quota is genuinely scarce (see ai_gateway/providers/gemini_client.py's
+# own docstring on this) - running it on every commit would burn through
+# that quota fast for no extra safety value. A pre-merge gate is where
+# this check actually earns its keep.
+#
+# Requires two repository secrets that must be added in GitHub
+# (Settings -> Secrets and variables -> Actions) before this can pass -
+# no code change can supply these: GROQ_API_KEY, GEMINI_API_KEY. Without
+# them, scripts/run_ai_eval_suite.py's own fail-fast check refuses to
+# run rather than silently reporting a false green (see that script's
+# docstring for why a "no keys configured" run must never look like a
+# pass).
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths: ["backend/**", ".github/workflows/ai-eval-gate.yml"]
+  workflow_dispatch: {}
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: talvrin
+          POSTGRES_PASSWORD: talvrin
+          POSTGRES_DB: talvrin
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U talvrin -d talvrin"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://talvrin_app:talvrin_app@localhost:5433/talvrin
+      ADMIN_DATABASE_URL: postgresql+asyncpg://talvrin:talvrin@localhost:5433/talvrin
+      SUPABASE_URL: https://ci-placeholder.supabase.co
+      SUPABASE_ANON_KEY: ci-placeholder-anon-key
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Create app DB role
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql "postgresql://talvrin:talvrin@localhost:5433/talvrin" -v ON_ERROR_STOP=1 -f ../infra/init-db/01-roles.sql
+
+      - name: Migrate database
+        run: uv run alembic upgrade head
+
+      # Real PDP prerequisites (research.answer capability + GB
+      # activation) and a real PRODUCTION provider/model registry -
+      # eval_suite.py calls the real Gateway end-to-end, not a mock of
+      # it, so it needs the same governed rows a real deployment would.
+      - name: Seed governance + AI Gateway registry
+        run: |
+          uv run python -m scripts.seed_dev
+          uv run python -m scripts.seed_ai_gateway
+
+      - name: Run adversarial red-team suite (talvrin-go)
+        run: uv run python -m scripts.run_ai_eval_suite talvrin-go
+
+      - name: Run adversarial red-team suite (talvrin-pro)
+        run: uv run python -m scripts.run_ai_eval_suite talvrin-pro

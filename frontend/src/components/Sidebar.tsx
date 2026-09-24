@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  Bell,
   Check,
   ChevronRight,
   Ellipsis,
@@ -60,6 +61,7 @@ interface SidebarProps {
   onCollapse: () => void
   onExpand: () => void
   onOpenSettings: () => void
+  onOpenMonitoring: () => void
   /** Below `lg` the sidebar is an off-canvas drawer rather than a permanent
    * column — there is no room for the icon rail, so it is simply open or
    * closed. `collapsed` is a desktop-only concept and is ignored here. */
@@ -110,6 +112,7 @@ export default function Sidebar({
   onCollapse,
   onExpand,
   onOpenSettings,
+  onOpenMonitoring,
   mobileOpen,
   onMobileClose,
 }: SidebarProps) {
@@ -418,6 +421,12 @@ export default function Sidebar({
                 label: 'Recent chats',
                 Icon: MessageSquare,
                 onClick: () => openView('chats'),
+              },
+              {
+                key: 'monitoring',
+                label: 'Monitoring',
+                Icon: Bell,
+                onClick: onOpenMonitoring,
               },
             ] as const
           ).map(({ key, label, Icon, onClick }) => (
@@ -755,6 +764,18 @@ export default function Sidebar({
           <span className="ml-auto shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-primary">
             {currentUser.plan}
           </span>
+          <button
+            onClick={() => {
+              onOpenMonitoring()
+              onMobileClose()
+            }}
+            tabIndex={tab}
+            aria-label="Monitoring"
+            title="Monitoring"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <Bell className="h-[17px] w-[17px]" />
+          </button>
           <button
             onClick={() => {
               onOpenSettings()

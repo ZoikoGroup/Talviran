@@ -360,3 +360,161 @@ export const getResearchEvidence = (messageId: string): Promise<EvidenceDetail> 
       asOf: i.as_of,
     })),
   }))
+
+// -------------------------------------------------------------- monitoring
+
+// The only two watchable metrics today (monitoring/rule_engine.py's own
+// SCALAR_VALUE_KEYS/CALCULATION_SCALAR_VALUE_KEYS) - a rule for anything
+// else is rejected server-side, so the picker only ever offers these two.
+export const WATCHABLE_METRICS = [
+  {
+    id: 'UK_GILT_NOMINAL_SPOT_CURVE',
+    label: 'UK gilt nominal spot curve (yield at a tenor)',
+    needs: 'tenor' as const,
+  },
+  {
+    id: 'MODEL_IMPLIED_CLEAN_PRICE',
+    label: 'Model-implied clean price (an instrument, by ISIN)',
+    needs: 'isin' as const,
+  },
+] as const
+
+export type WatchableMetricId = (typeof WATCHABLE_METRICS)[number]['id']
+
+interface PageWire<T> {
+  items: T[]
+  next_cursor: string | null
+  has_more: boolean
+}
+
+export interface Page<T> {
+  items: T[]
+  nextCursor: string | null
+  hasMore: boolean
+}
+
+interface RuleWire {
+  id: string
+  status: string
+  subject_type: string
+  subject_id: string
+  metric_id: string
+  predicate: string
+  threshold_value: string
+  rearm_threshold: string | null
+  debounce_seconds: number
+  effective_from: string
+  created_at: string
+}
+
+export interface Rule {
+  id: string
+  status: string
+  subjectType: string
+  subjectId: string
+  metricId: string
+  predicate: string
+  thresholdValue: string
+  rearmThreshold: string | null
+  debounceSeconds: number
+  effectiveFrom: string
+  createdAt: string
+}
+
+const toRule = (r: RuleWire): Rule => ({
+  id: r.id,
+  status: r.status,
+  subjectType: r.subject_type,
+  subjectId: r.subject_id,
+  metricId: r.metric_id,
+  predicate: r.predicate,
+  thresholdValue: r.threshold_value,
+  rearmThreshold: r.rearm_threshold,
+  debounceSeconds: r.debounce_seconds,
+  effectiveFrom: r.effective_from,
+  createdAt: r.created_at,
+})
+
+export interface CreateRuleInput {
+  metricId: WatchableMetricId
+  predicate: 'CROSSES_ABOVE' | 'CROSSES_BELOW'
+  thresholdValue: string
+  instrumentIsin?: string
+  tenorYears?: string
+  rearmThreshold?: string
+  debounceSeconds?: number
+}
+
+export const createRule = (input: CreateRuleInput): Promise<Rule> =>
+  apiFetch<RuleWire>('/api/v1/monitoring-rules', {
+    method: 'POST',
+    body: JSON.stringify({
+      metric_id: input.metricId,
+      predicate: input.predicate,
+      threshold_value: input.thresholdValue,
+      instrument_isin: input.instrumentIsin ?? null,
+      tenor_years: input.tenorYears ?? null,
+      rearm_threshold: input.rearmThreshold ?? null,
+      debounce_seconds: input.debounceSeconds ?? 0,
+    }),
+  }).then(toRule)
+
+export const listRules = (cursor?: string): Promise<Page<Rule>> =>
+  apiFetch<PageWire<RuleWire>>(
+    `/api/v1/monitoring-rules${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`
+  ).then((p) => ({
+    items: p.items.map(toRule),
+    nextCursor: p.next_cursor,
+    hasMore: p.has_more,
+  }))
+
+interface AlertWire {
+  id: string
+  rule_id: string
+  rule_version_id: string
+  evaluation_id: string
+  alert_type: string
+  subject_id: string
+  metric_id: string
+  observed_value: string
+  threshold_value: string
+  knowledge_time: string
+  evidence_bundle_id: string | null
+  status: string
+  created_at: string
+}
+
+export interface Alert {
+  id: string
+  ruleId: string
+  alertType: string
+  subjectId: string
+  metricId: string
+  observedValue: string
+  thresholdValue: string
+  knowledgeTime: string
+  status: string
+  createdAt: string
+}
+
+const toAlert = (a: AlertWire): Alert => ({
+  id: a.id,
+  ruleId: a.rule_id,
+  alertType: a.alert_type,
+  subjectId: a.subject_id,
+  metricId: a.metric_id,
+  observedValue: a.observed_value,
+  thresholdValue: a.threshold_value,
+  knowledgeTime: a.knowledge_time,
+  status: a.status,
+  createdAt: a.created_at,
+})
+
+export const listAlerts = (cursor?: string): Promise<Page<Alert>> =>
+  apiFetch<PageWire<AlertWire>>(
+    `/api/v1/alerts${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`
+  ).then((p) => ({
+    items: p.items.map(toAlert),
+    nextCursor: p.next_cursor,
+    hasMore: p.has_more,
+  }))

@@ -139,6 +139,16 @@ EQUITY_EOD_PRICE_FRESHNESS = FreshnessProfile(
     unavailable_after=dt.timedelta(days=30),
 )
 
+GILT_MARKET_CLOSE_PRICE_FRESHNESS = FreshnessProfile(
+    metric_id="GILT_MARKET_CLOSE_PRICE",
+    # Tradeweb publishes one EOD close per UK business day - same cadence
+    # as the curve/model-implied profiles it sits alongside in a reply.
+    freshness_slo=dt.timedelta(days=1),
+    delayed_after=dt.timedelta(days=3),
+    stale_after=dt.timedelta(days=7),
+    unavailable_after=dt.timedelta(days=30),
+)
+
 DEFAULT_PROFILES: dict[str, FreshnessProfile] = {
     profile.metric_id: profile
     for profile in (
@@ -149,6 +159,7 @@ DEFAULT_PROFILES: dict[str, FreshnessProfile] = {
         MACRO_GDP_FRESHNESS,
         MACRO_CPI_FRESHNESS,
         EQUITY_EOD_PRICE_FRESHNESS,
+        GILT_MARKET_CLOSE_PRICE_FRESHNESS,
     )
 }
 

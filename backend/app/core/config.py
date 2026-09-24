@@ -92,6 +92,18 @@ class Settings(BaseSettings):
     #: pipelines that use it need it.
     groq_api_key: str | None = None
 
+    #: Tradeweb Market InSite (market/connectors/tradeweb_gilts/client.py) -
+    #: real gilt closing prices (clean/dirty price, yield), not a
+    #: model-implied estimate. A real registered account, live-verified
+    #: 2026-09-23 (real login, real 972-row CSV export). Licensed for
+    #: "non-professional and non-commercial use" only (the export flow's
+    #: own terms-of-use dialog says so) - fine for development, not a
+    #: substitute for a real commercial data agreement before any paid
+    #: product launch. Optional, not required at boot: only the connector
+    #: itself needs it, and only when it actually runs.
+    tradeweb_username: str | None = None
+    tradeweb_password: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

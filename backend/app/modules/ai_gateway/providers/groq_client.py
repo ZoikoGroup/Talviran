@@ -26,6 +26,13 @@ neither assumed beforehand:
    `max_completion_tokens=4096`: the same prompt that returned empty
    content came back complete (`finish_reason: "stop"`,
    `reasoning_tokens: 1912` of the 4096 budget).
+4. (A6 hardening, 2026-09-23) `client.post` had no surrounding
+   try/except - a real network failure (timeout, DNS, connection reset)
+   raised a bare httpx exception that neither this module nor
+   gateway.py's `except (GeminiGenerationError, GroqGenerationError)`
+   caught, crashing the whole `invoke_model` call instead of gracefully
+   rejecting. Fixed by wrapping the call and re-raising as
+   GroqGenerationError.
 
 The corresponding AIModel row is now PRODUCTION (models.py's status
 lifecycle) - promoted only after this live proof, same governance
@@ -64,16 +71,23 @@ class GroqGenerationResult:
 async def generate_content(
     client: httpx.AsyncClient, *, model_key: str, prompt: str, api_key: str
 ) -> GroqGenerationResult:
-    response = await client.post(
-        f"{_API_BASE}/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={
-            "model": model_key,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_completion_tokens": _MAX_COMPLETION_TOKENS,
-        },
-        timeout=30.0,
-    )
+    try:
+        response = await client.post(
+            f"{_API_BASE}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": model_key,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_completion_tokens": _MAX_COMPLETION_TOKENS,
+            },
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        # Same reasoning as gemini_client.py's identical guard: without
+        # this, a timeout/DNS/connection failure crashes the whole
+        # invoke_model call instead of gracefully rejecting (needed for
+        # A3's "model unavailable -> alternate route" to fire at all).
+        raise GroqGenerationError(f"network error calling Groq: {type(exc).__name__}") from exc
     if response.status_code != 200:
         raise GroqGenerationError(
             f"Groq chat/completions returned {response.status_code}: {response.text[:500]}"

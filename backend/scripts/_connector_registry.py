@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.modules.market.connectors.base import Quarantined, validate_and_parse
+from app.modules.market.connectors.boe_fx.reference_connector import BoEFxConnector
 from app.modules.market.connectors.dbnomics_macro.mapping import MacroObservationCandidate
 from app.modules.market.connectors.dbnomics_macro.reference_connector import (
     DBnomicsMacroConnector,
@@ -55,6 +56,7 @@ from app.modules.market.pipeline.reconciliation_policy import (
 )
 from app.modules.rights.models import RightsProfile
 from scripts.seed_dev import (
+    BOE_FX_RIGHTS_PROFILE_CODE,
     DBNOMICS_MACRO_RIGHTS_PROFILE_CODE,
     FRANKFURTER_FX_RIGHTS_PROFILE_CODE,
     NSE_EXCHANGE_CODE,
@@ -62,11 +64,16 @@ from scripts.seed_dev import (
     TWELVE_DATA_EQUITY_RIGHTS_PROFILE_CODE,
 )
 
-#: (base currency, quote currencies) — covers the 4 pilot pairs (GBP/INR,
-#: USD/INR, USD/GBP, EUR/INR) across 3 acquisitions, since Frankfurter
-#: serves several quote currencies per base in one call.
+#: (base currency, quote currencies) — covers the 5 pilot pairs (GBP/INR,
+#: GBP/USD, USD/GBP, USD/INR, EUR/INR) across 3 acquisitions, since
+#: Frankfurter serves several quote currencies per base in one call.
+#: GBP->USD (added to the GBP query, not the existing USD->GBP one)
+#: deliberately matches boe_fx's own base/quote convention (GBP base, USD
+#: quote): fx_pair_subject_id is order-sensitive, USD->GBP and GBP->USD
+#: are different subjects, and only the GBP-base ordering is what boe_fx
+#: also feeds - only that one actually reconciles against it.
 FX_PILOT_QUERIES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("GBP", ("INR",)),
+    ("GBP", ("INR", "USD")),
     ("USD", ("GBP", "INR")),
     ("EUR", ("INR",)),
 )
@@ -110,12 +117,31 @@ async def _seed_source_artifact(
     media_type: str,
     raw_bytes: bytes,
 ) -> SourceArtifact:
-    source = Source(code=f"{source_code}-{uuid.uuid4().hex[:6]}", name=source_name)
-    session.add(source)
-    await session.flush()
-    dataset = Dataset(source_id=source.id, code=dataset_code, name=dataset_name)
-    session.add(dataset)
-    await session.flush()
+    # Stable, idempotent Source.code == source_code (find-or-create), not a
+    # randomized suffix per run - a real gap found while wiring boe_fx:
+    # ingest_and_reconcile's cross-source gathering now joins BACK through
+    # Source.code to resolve each sibling observation's source for
+    # reconciliation-policy precedence matching. A randomized code here
+    # would silently break that match (ordered_source_codes=("frankfurter",
+    # "boe") would never equal "frankfurter-a1b2c3"), even though nothing
+    # depended on this table's exact code before that gathering existed.
+    source = (
+        await session.execute(select(Source).where(Source.code == source_code))
+    ).scalar_one_or_none()
+    if source is None:
+        source = Source(code=source_code, name=source_name)
+        session.add(source)
+        await session.flush()
+
+    dataset = (
+        await session.execute(
+            select(Dataset).where(Dataset.source_id == source.id, Dataset.code == dataset_code)
+        )
+    ).scalar_one_or_none()
+    if dataset is None:
+        dataset = Dataset(source_id=source.id, code=dataset_code, name=dataset_name)
+        session.add(dataset)
+        await session.flush()
     artifact = SourceArtifact(
         dataset_id=dataset.id,
         sha256=hashlib.sha256(raw_bytes).hexdigest(),
@@ -181,6 +207,57 @@ async def ingest_fx_pilot(session: AsyncSession) -> None:
                     ingested += 1
             await session.commit()
             print(f"Frankfurter {base_currency}->{quotes}: ingested {ingested} rate(s).")
+
+
+async def ingest_boe_fx_pilot(session: AsyncSession) -> None:
+    """The second real FX_SPOT_RATE source (alongside frankfurter) - see
+    reconciliation_policy.FX_SPOT_RATE_POLICY's own docstring. Ingests
+    every day the feed returns (up to boe_fx.client._LOOKBACK_DAYS back),
+    not just the latest - each is its own day-scoped fact, same reasoning
+    as the BoE yield curve's own multi-point-per-acquisition handling.
+    """
+    rights_id = await _rights_profile_id(session, BOE_FX_RIGHTS_PROFILE_CODE)
+    async with httpx.AsyncClient() as client:
+        connector = BoEFxConnector(client)
+        try:
+            payload = await connector.acquire()
+        except httpx.HTTPError as exc:
+            print(f"BoE FX: live fetch failed ({exc}).")
+            return
+
+        candidates_or_quarantine = validate_and_parse(connector, payload)
+        if isinstance(candidates_or_quarantine, Quarantined):
+            print(f"BoE FX: quarantined ({candidates_or_quarantine.reasons}).")
+            return
+
+        artifact = await _seed_source_artifact(
+            session,
+            source_code="boe",
+            source_name="Bank of England (dev)",
+            dataset_code="fx-daily-spot-rates",
+            dataset_name="BoE Daily GBP/USD Spot Rate",
+            media_type="text/csv",
+            raw_bytes=payload.raw_bytes,
+        )
+        ingested = 0
+        for candidate in candidates_or_quarantine:
+            if not isinstance(candidate, FxRateCandidate):
+                continue
+            result = await ingest_fx_rate_candidate(
+                session,
+                candidate=candidate,
+                source_artifact_id=artifact.id,
+                source_code="boe",
+                dataset_code="fx-daily-spot-rates",
+                rights_profile_id=rights_id,
+                fetched_at=payload.fetched_at,
+            )
+            if isinstance(result, FxIngestSkipped):
+                print(f"  BoE FX {candidate.as_of}: skipped ({result.reason}).")
+            else:
+                ingested += 1
+        await session.commit()
+        print(f"BoE FX: ingested {ingested} day(s).")
 
 
 async def ingest_macro_pilot(session: AsyncSession) -> None:
@@ -303,5 +380,6 @@ async def ingest_equity_pilot(session: AsyncSession) -> None:
 
 async def ingest_all(session: AsyncSession) -> None:
     await ingest_fx_pilot(session)
+    await ingest_boe_fx_pilot(session)
     await ingest_macro_pilot(session)
     await ingest_equity_pilot(session)

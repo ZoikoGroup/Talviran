@@ -11,6 +11,7 @@ import datetime as dt
 import json
 import uuid
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import select
@@ -49,6 +50,51 @@ class ReconciliationOutcome:
 
 def _value_key(value: dict[str, Any]) -> str:
     return json.dumps(value, sort_keys=True, default=str)
+
+
+def _values_agree(a: dict[str, Any], b: dict[str, Any], policy: ReconciliationPolicy) -> bool:
+    """Exact match on every field when policy.tolerance is None (every
+    metric's behavior before this existed, and every metric that still has
+    no tolerance configured, e.g. reference terms). When both tolerance and
+    tolerance_field are set, only that one field gets numeric near-match -
+    every other field still requires an exact match. Found via a real gap:
+    FX_SPOT_RATE_POLICY declared a tolerance that reconcile_and_publish
+    never actually consulted, so two genuine sources for the same real
+    rate (which will almost never produce byte-identical decimal strings)
+    would have flagged CONFLICT every single day.
+    """
+    if policy.tolerance is None or policy.tolerance_field is None:
+        return _value_key(a) == _value_key(b)
+
+    field = policy.tolerance_field
+    a_rest = {k: v for k, v in a.items() if k != field}
+    b_rest = {k: v for k, v in b.items() if k != field}
+    if _value_key(a_rest) != _value_key(b_rest):
+        return False
+    try:
+        a_num = Decimal(str(a[field]))
+        b_num = Decimal(str(b[field]))
+    except (KeyError, InvalidOperation):
+        return False
+    return abs(a_num - b_num) <= policy.tolerance
+
+
+def _representative_value(
+    group: list[CandidateObservation], policy: ReconciliationPolicy
+) -> dict[str, Any]:
+    """Which candidate's exact value becomes the published fact when a
+    group agrees (exactly, or within tolerance) - policy.ordered_source_
+    codes precedence decides, same rule CONFLICT_ACTION_PREFER_ORDER
+    already uses to resolve a genuine disagreement. Falls back to the
+    first candidate only if none of the group's sources appear in the
+    policy's precedence list at all (shouldn't happen for a well-formed
+    policy, but never crash over it).
+    """
+    for code in policy.ordered_source_codes:
+        match = next((c for c in group if c.source_code == code), None)
+        if match is not None:
+            return match.value
+    return group[0].value
 
 
 async def _get_current_accepted_fact(
@@ -104,21 +150,87 @@ async def reconcile_and_publish(
     if not candidates:
         raise ValueError("reconcile_and_publish requires at least one candidate")
 
-    grouped: dict[str, list[CandidateObservation]] = {}
+    # A list of clusters, not a dict keyed by exact value, so that a
+    # tolerance-configured policy can group "near enough" values together
+    # (see _values_agree) rather than only byte-identical ones. With no
+    # tolerance configured this produces exactly the same clusters the old
+    # dict-based grouping did, just via pairwise comparison instead of a
+    # hash key — candidate counts are always tiny (one per source), so the
+    # O(n^2) comparison is irrelevant in practice.
+    groups: list[list[CandidateObservation]] = []
     for candidate in candidates:
-        grouped.setdefault(_value_key(candidate.value), []).append(candidate)
-
-    if len(grouped) > 1 and policy.conflict_action != CONFLICT_ACTION_PREFER_ORDER:
-        reason = f"{len(grouped)} disagreeing values across sources: {sorted(grouped.keys())}"
-        decision = ReconciliationDecision(
-            subject_id=subject_id, metric_id=metric_id, decision=DECISION_CONFLICT, reason=reason
+        matched_group = next(
+            (g for g in groups if _values_agree(g[0].value, candidate.value, policy)), None
         )
-        session.add(decision)
-        return ReconciliationOutcome(
-            decision=DECISION_CONFLICT, accepted_fact_id=None, reason=reason
+        if matched_group is not None:
+            matched_group.append(candidate)
+        else:
+            groups.append([candidate])
+
+    current = await _get_current_accepted_fact(session, subject_id, metric_id, valid_range)
+    current_observation_ids: set[uuid.UUID] = set()
+    if current is not None:
+        current_observation_ids = set(
+            (
+                await session.execute(
+                    select(FactObservationLink.source_observation_id).where(
+                        FactObservationLink.accepted_fact_id == current.id
+                    )
+                )
+            ).scalars()
         )
 
-    if len(grouped) > 1:
+    reason_override: str | None = None
+
+    if len(groups) > 1 and policy.conflict_action != CONFLICT_ACTION_PREFER_ORDER:
+        # A disagreement between two or more genuinely distinct authorities
+        # for this metric is a hard CONFLICT - as is any disagreement before
+        # a fact exists to give it lineage.
+        authoritative_sources = sorted(
+            set(policy.ordered_source_codes) & {c.source_code for c in candidates}
+        )
+        if current is None or len(authoritative_sources) >= 2:
+            values = sorted(_value_key(g[0].value) for g in groups)
+            reason = f"{len(groups)} disagreeing values across sources: {values}"
+            decision = ReconciliationDecision(
+                subject_id=subject_id, metric_id=metric_id, decision=DECISION_CONFLICT,
+                reason=reason,
+            )
+            session.add(decision)
+            return ReconciliationOutcome(
+                decision=DECISION_CONFLICT, accepted_fact_id=None, reason=reason
+            )
+
+        # A single-authority metric's disagreement where an observation
+        # already backing the published fact disagrees with a fresh
+        # observation for the same period is a same-source revision (e.g. a
+        # macro statistic restated), not a cross-source conflict - there is
+        # no second authority to disagree with, so the new value supersedes.
+        new_groups = [
+            g
+            for g in groups
+            if not any(c.observation_id in current_observation_ids for c in g)
+        ]
+        if len(new_groups) == 1:
+            chosen_group = new_groups[0]
+            candidate_value = _representative_value(chosen_group, policy)
+            observation_ids = [c.observation_id for c in chosen_group]
+            reason_override = (
+                "single authoritative source revised its value for this period; "
+                "new version published"
+            )
+        else:
+            values = sorted(_value_key(g[0].value) for g in groups)
+            reason = f"{len(groups)} disagreeing values across sources: {values}"
+            decision = ReconciliationDecision(
+                subject_id=subject_id, metric_id=metric_id, decision=DECISION_CONFLICT,
+                reason=reason,
+            )
+            session.add(decision)
+            return ReconciliationOutcome(
+                decision=DECISION_CONFLICT, accepted_fact_id=None, reason=reason
+            )
+    elif len(groups) > 1:
         # PREFER_ORDER: resolved by precedence, but still logged as a
         # conflict decision — never a silent, unexplained pick.
         winning_source = next(
@@ -127,25 +239,48 @@ async def reconcile_and_publish(
             if any(c.source_code == code for c in candidates)
         )
         chosen_group = next(
-            group
-            for group in grouped.values()
-            if any(c.source_code == winning_source for c in group)
+            group for group in groups if any(c.source_code == winning_source for c in group)
         )
-        candidate_value = chosen_group[0].value
+        candidate_value = _representative_value(chosen_group, policy)
         observation_ids = [c.observation_id for c in chosen_group]
-        conflict_reason: str | None = (
-            f"{len(grouped)} disagreeing values; "
+        reason_override = (
+            f"{len(groups)} disagreeing values; "
             f"resolved by precedence to source {winning_source!r}"
         )
     else:
-        only_group = next(iter(grouped.values()))
-        candidate_value = only_group[0].value
+        only_group = groups[0]
+        # Now that a group can genuinely hold more than one agreeing
+        # candidate (tolerance made real multi-source agreement reachable
+        # for the first time - see ingest_tail._gather_candidates), which
+        # one's exact value becomes canonical must be policy-driven, not
+        # whatever order the DB happened to return - same precedence rule
+        # the PREFER_ORDER conflict branch above already uses.
+        candidate_value = _representative_value(only_group, policy)
         observation_ids = [c.observation_id for c in only_group]
-        conflict_reason = None
 
-    current = await _get_current_accepted_fact(session, subject_id, metric_id, valid_range)
-
-    if current is not None and _value_key(current.value) == _value_key(candidate_value):
+    # NO_CHANGE only when the value is unchanged AND no NEW source has
+    # weighed in on it alongside the evidence already backing the fact. A
+    # second source agreeing within tolerance is real new evidence - it
+    # must be folded into a freshly published fact (with all agreeing
+    # observations linked), not swallowed by an exact-value match against
+    # the fact the first source alone produced. A re-served observation
+    # from a source that already backs the fact is NOT new evidence, and a
+    # lone fresh observation is just the same value re-stated, so neither
+    # republishes.
+    backed_present = any(c.observation_id in current_observation_ids for c in candidates)
+    backed_source_codes = {
+        c.source_code for c in candidates if c.observation_id in current_observation_ids
+    }
+    new_agreeing_source = backed_present and any(
+        c.observation_id not in current_observation_ids
+        and c.source_code not in backed_source_codes
+        for c in candidates
+    )
+    if (
+        current is not None
+        and _value_key(current.value) == _value_key(candidate_value)
+        and not new_agreeing_source
+    ):
         reason = "candidate matches current accepted fact"
         decision = ReconciliationDecision(
             subject_id=subject_id,
@@ -196,11 +331,14 @@ async def reconcile_and_publish(
             )
         )
 
-    reason = conflict_reason or (
-        "first accepted fact for this subject/metric"
-        if current is None
-        else "value changed, new version published"
-    )
+    if reason_override is not None:
+        reason = reason_override
+    elif current is None:
+        reason = "first accepted fact for this subject/metric"
+    elif _value_key(current.value) == _value_key(candidate_value):
+        reason = "agreeing source; fact published linking all agreeing observations"
+    else:
+        reason = "value changed, new version published"
     decision = ReconciliationDecision(
         subject_id=subject_id,
         metric_id=metric_id,

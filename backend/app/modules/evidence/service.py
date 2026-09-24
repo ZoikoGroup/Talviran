@@ -69,7 +69,8 @@ from app.modules.market.pipeline.curve_ingest import (
     SUBJECT_TYPE_YIELD_CURVE_POINT,
 )
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
-from app.modules.market.queries import current_accepted_fact_at
+from app.modules.market.pipeline.tradeweb_price_ingest import METRIC_GILT_MARKET_CLOSE_PRICE
+from app.modules.market.queries import current_accepted_fact_at, latest_accepted_fact
 from app.modules.policy.allowed_output_type import AllowedOutputType
 from app.modules.policy.pdp import PolicyContext, evaluate
 from app.modules.reference.models import Instrument, InstrumentAlias
@@ -88,7 +89,27 @@ _ADVICE_PATTERNS = [
     re.compile(r"\b(price target|fair value|rating|recommend)\b", re.I),
     re.compile(r"worth (buying|investing)", re.I),
 ]
-_GILT_PATTERN = re.compile(r"\bgilt|treasury gilt|2036\b", re.I)
+#: "glit" (a real typo hit live: "todays uk glit closing prices") sent a
+#: genuine live-price question past this pattern into the document-search
+#: catch-all instead of the real gilt-facts/Tradeweb-price branch it should
+#: have reached - a materially wrong answer (an unrelated 1999 DMO worked
+#: example), not just a missed match. One confirmed, explicit typo
+#: alternative added deliberately, not a general fuzzy-match expansion
+#: (DATA-002's "no fuzzy identity matching" is about instrument identity
+#: resolution specifically, not this kind of intent-vocabulary pattern).
+_GILT_PATTERN = re.compile(r"\bgilt|\bglit|treasury gilt|2036\b", re.I)
+# Checked BEFORE _GILT_PATTERN below - "Gilt-Edged Market Maker" contains
+# the substring "gilt", so without this a genuine market-structure/dealer
+# question was silently misrouted to the single-instrument facts branch
+# (found live, 2026-09-23, asking about GEMM obligations after the GEMM
+# Guidebook was added to the document corpus - it never reached the
+# document search that would have actually answered it). This pattern
+# doesn't try to be a general topic classifier, just to catch the one
+# real ambiguity "gilt" as a substring creates against this specific
+# document's own subject matter.
+_MARKET_STRUCTURE_PATTERN = re.compile(
+    r"market maker|\bgemm\b|primary dealer|going live|\bdmo\b.*(role|obligation)", re.I
+)
 _YEAR_PATTERN = re.compile(r"\b(19|20)\d{2}\b")
 _ACCRUED_PATTERN = re.compile(
     r"accrued|day count|convention|clean|dirty|act/act|ex[- ]?dividend", re.I
@@ -113,6 +134,18 @@ _HELP_PATTERN = re.compile(
 _GREETING_PATTERN = re.compile(
     r"^\s*(hi|hello|hey|hiya|yo|greetings|good (morning|afternoon|evening))\s*[!.]?\s*$", re.I
 )
+# Same whole-message-only reasoning as _GREETING_PATTERN - "thanks" as a
+# real word inside an actual question must never be mis-routed here. Before
+# this existed, "thank you" fell all the way through to the cold, generic
+# _default_reply ("doesn't yet have reconciled data covering this
+# question") - technically correct (no document matches "thank you") but
+# an unfriendly, un-conversational answer to what is obviously a closing
+# remark, not a data question.
+_CLOSING_PATTERN = re.compile(
+    r"^\s*(thanks?( you)?( (very|so) much)?|cheers|appreciate it|much appreciated|"
+    r"ok(ay)?,?\s*thanks?|great,?\s*thanks?|bye|goodbye|see you|that'?s all)\s*[!.]?\s*$",
+    re.I,
+)
 
 
 def _is_advice(text: str) -> bool:
@@ -127,8 +160,16 @@ def _is_greeting(text: str) -> bool:
     return bool(_GREETING_PATTERN.match(text))
 
 
+def _is_closing(text: str) -> bool:
+    return bool(_CLOSING_PATTERN.match(text))
+
+
 def _mentions_gilt(text: str) -> bool:
     return bool(_GILT_PATTERN.search(text))
+
+
+def _mentions_market_structure(text: str) -> bool:
+    return bool(_MARKET_STRUCTURE_PATTERN.search(text))
 
 
 def _mentioned_year(text: str) -> int | None:
@@ -192,20 +233,62 @@ def _advice_reply() -> ResearchAnswer:
     )
 
 
-def _help_reply() -> ResearchAnswer:
+_CAPABILITY_SUMMARY = (
+    "- UK gilt reference terms and real market prices — coupon, maturity, "
+    "day count and Tradeweb closing prices across the onboarded gilts\n"
+    "- The Bank of England's UK nominal gilt spot curve, and the "
+    "model-implied prices derived from it — their published interest-rate "
+    "curve, updated daily\n"
+    "- Accrued interest, clean vs dirty price, and ex-dividend methodology — "
+    "general explanations, not tied to live data\n\n"
+    "I never give investment recommendations, price targets, or buy/sell/hold "
+    "guidance — that's a structural limit of the platform, not a missing "
+    "feature."
+)
+
+
+def _greeting_reply() -> ResearchAnswer:
+    # Deliberately one short, conversational line, not the full bulleted
+    # _CAPABILITY_SUMMARY (that belongs in _help_reply, for someone who
+    # actually asked "what can you do") - a real complaint from live
+    # testing: a bulleted capability list with a compliance disclaimer
+    # front-loaded onto a bare "hi" reads as a scripted bot, not a chat.
+    # Deterministic text, not AI-composed - a greeting has no accepted
+    # facts to ground an AI Gateway call against (evidence_bundle_id is
+    # None here), and that grounding requirement is a real safety
+    # invariant, not something to route around for a friendlier "hi".
     return ResearchAnswer(
         text=(
-            "Right now I can answer from real, reconciled data on:\n\n"
-            "- UK gilt reference terms — currently the 4¼% Treasury Stock 2036 "
-            "(coupon, maturity, day count and other accepted facts)\n"
-            "- The Bank of England's UK nominal gilt spot curve — their published "
-            "interest-rate curve, updated daily\n"
-            "- Accrued interest, clean vs dirty price, and ex-dividend methodology — "
-            "general explanations, not tied to live data\n\n"
-            "I never give investment recommendations, price targets, or buy/sell/hold "
-            "guidance — that's a structural limit of the platform, not a missing "
-            "feature."
+            "Hey! I'm the Talvrin research assistant — ask me about a "
+            "gilt's terms or real price, the BoE yield curve, or how "
+            "accrued interest works. What would you like to look into?"
         ),
+        facts=None,
+        citations=[],
+        note=None,
+        allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
+        evidence_bundle_id=None,
+    )
+
+
+def _closing_reply() -> ResearchAnswer:
+    return ResearchAnswer(
+        text=(
+            "You're welcome! Come back anytime you want to check a gilt's "
+            "terms or price, the BoE yield curve, or how accrued interest "
+            "works."
+        ),
+        facts=None,
+        citations=[],
+        note=None,
+        allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
+        evidence_bundle_id=None,
+    )
+
+
+def _help_reply() -> ResearchAnswer:
+    return ResearchAnswer(
+        text=f"Right now I can answer from real, reconciled data on:\n\n{_CAPABILITY_SUMMARY}",
         facts=None,
         citations=[],
         note=None,
@@ -351,10 +434,37 @@ def _accrued_reply() -> ResearchAnswer:
 #: "what stocks should I buy") land at cosine distance 0.49-0.56;
 #: genuinely relevant ones ("accrued interest", "redemption yield
 #: calculation", a full paraphrased question) land at 0.23-0.33. 0.4 sits
-#: in the clear gap between them on every case tested - not a
-#: theoretical/guessed number, but it's calibrated on a five-chunk, one-
-#: document corpus, so revisit once the corpus is bigger and more varied.
+#: in the clear gap between them on every case tested.
+#:
+#: Re-measured 2026-09-23 after the corpus grew from one document/5
+#: chunks to two documents/31 chunks (the GEMM Guidebook added, a
+#: genuinely different topic - market structure/dealer obligations, not
+#: numeric yield-conversion methodology): the gap held. Relevant queries
+#: against EITHER document now land at 0.17-0.29; irrelevant queries at
+#: 0.49-0.57. 0.4 still sits cleanly in the middle with room either side
+#: - real evidence the threshold generalizes across topics, not just an
+#: artifact of the original single-document corpus. Still worth
+#: re-measuring again at the next real jump in corpus size/diversity.
 _MAX_SEMANTIC_MATCH_DISTANCE = 0.4
+
+#: Real found bug: a worked-examples table page (UK DMO's yldconv.pdf -
+#: settlement dates, quasi-coupon dates, decimal yield factors, all packed
+#: onto one line per row) dumped verbatim into chat as if it were prose -
+#: technically a real excerpt, not fabricated, but unreadable and
+#: unprofessional. Calibrated the same way as _MAX_SEMANTIC_MATCH_DISTANCE:
+#: measured digit-character density on real chunks (2026-09-24) - genuine
+#: prose (GEMM Guidebook, 5 chunks) lands at 0.6%-10.5%; the DMO's own
+#: worked-example tables (4 chunks) land at 41.6%-50.9%. 0.2 sits cleanly
+#: in the gap.
+_MAX_PROSE_DIGIT_RATIO = 0.2
+
+
+def _looks_like_a_data_table(text: str) -> bool:
+    nonspace = [ch for ch in text if not ch.isspace()]
+    if not nonspace:
+        return False
+    digit_ratio = sum(ch.isdigit() for ch in nonspace) / len(nonspace)
+    return digit_ratio > _MAX_PROSE_DIGIT_RATIO
 
 
 async def _document_backed_fallback_reply(
@@ -396,12 +506,22 @@ async def _document_backed_fallback_reply(
     if evidence is None:
         return None
 
-    return ResearchAnswer(
-        text=(
-            f'You asked: "{query_text}"\n\n'
+    excerpt = chunk.text_content.strip()
+    if _looks_like_a_data_table(excerpt):
+        page_ref = f", page {chunk.page_start}" if chunk.page_start is not None else ""
+        body = (
+            f"I don't have live reconciled data on this, but the closest match I found "
+            f"is a data table in {evidence.document.title}{page_ref} — not something I "
+            f"can read out cleanly here. Open the citation below to view it directly."
+        )
+    else:
+        body = (
             f"I don't have live reconciled data on this, but {evidence.document.title} "
-            f"covers it:\n\n{chunk.text_content.strip()}"
-        ),
+            f"covers it:\n\n{excerpt}"
+        )
+
+    return ResearchAnswer(
+        text=f'You asked: "{query_text}"\n\n{body}',
         facts=None,
         citations=[evidence.citation],
         note=(
@@ -440,53 +560,133 @@ async def _display_allowed(session: AsyncSession, rights_profile_code: str) -> b
     return decision is RightsDecision.ALLOW
 
 
-async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchAnswer:
-    instrument = (
+async def _gilts_maturing_in(
+    session: AsyncSession, *, year: int, now: dt.datetime
+) -> list[tuple[Instrument, AcceptedFact]]:
+    """Every onboarded gilt (scripts.onboard_all_gilts) whose CURRENT
+    GILT_REFERENCE_TERMS fact redeems in `year` - deterministic only
+    (doctrine: no fuzzy identity matching), and can genuinely return more
+    than one row: several real UK gilts often share a maturity year (e.g.
+    four different gilts mature in 2027), so the caller must handle that
+    as an honest disambiguation request, never pick one silently.
+    """
+    facts = (
         await session.execute(
-            select(Instrument)
-            .join(InstrumentAlias, InstrumentAlias.instrument_id == Instrument.id)
-            .where(
+            select(AcceptedFact).where(
+                AcceptedFact.subject_type == "INSTRUMENT",
+                AcceptedFact.metric_id == METRIC_GILT_REFERENCE_TERMS,
+                AcceptedFact.status == "ACTIVE",
+                AcceptedFact.valid_range.contains(now),
+                AcceptedFact.value["redemption_date"].astext.startswith(f"{year}-"),
+            )
+        )
+    ).scalars().all()
+    out: list[tuple[Instrument, AcceptedFact]] = []
+    for fact in facts:
+        instrument = await session.get(Instrument, fact.subject_id)
+        if instrument is not None:
+            out.append((instrument, fact))
+    return out
+
+
+async def _isin_for_instrument(session: AsyncSession, instrument_id: uuid.UUID) -> str | None:
+    alias = (
+        await session.execute(
+            select(InstrumentAlias).where(
+                InstrumentAlias.instrument_id == instrument_id,
                 InstrumentAlias.alias_type == "ISIN",
-                InstrumentAlias.alias_value == SEED_GILT_ISIN,
             )
         )
     ).scalar_one_or_none()
-    if instrument is None or not await _display_allowed(session, "uk-dmo.gilts"):
+    return alias.alias_value if alias is not None else None
+
+
+async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchAnswer:
+    if not await _display_allowed(session, "uk-dmo.gilts"):
         return _default_reply("gilt reference facts")
 
     now = dt.datetime.now(dt.UTC)
-    reference_fact = await current_accepted_fact_at(
-        session, subject_id=instrument.id, metric_id=METRIC_GILT_REFERENCE_TERMS, at=now
-    )
-    if reference_fact is None:
-        return _default_reply("gilt reference facts")
-
-    # Only one gilt exists in the platform right now, but the query pattern
-    # matches ANY "gilt" mention - without this check, asking about a
-    # completely different gilt (e.g. "the 2065 gilt") would silently show
-    # this one's facts as if they answered the question. That's worse than
-    # the honest "no data" default: it's actively misleading, not just
-    # unhelpful. A mentioned year that doesn't match this instrument's own
-    # maturity year means the question is about a DIFFERENT instrument.
     mentioned_year = _mentioned_year(query_text)
-    maturity_year = dt.date.fromisoformat(reference_fact.value["redemption_date"]).year
-    if mentioned_year is not None and mentioned_year != maturity_year:
-        return ResearchAnswer(
-            text=(
-                f"I don't have reconciled data for a gilt maturing in {mentioned_year} yet "
-                f"— currently only {reference_fact.value['instrument_name']} (maturing "
-                f"{maturity_year}) is live on the platform."
-            ),
-            facts=None,
-            citations=[],
-            note=None,
-            allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
-            evidence_bundle_id=None,
-        )
 
+    if mentioned_year is not None:
+        # A year was named - resolve among every onboarded gilt, not just
+        # the original seed instrument (scripts.onboard_all_gilts widened
+        # coverage beyond the single 2036 gilt this branch used to assume
+        # was the only one that could ever exist).
+        matches = await _gilts_maturing_in(session, year=mentioned_year, now=now)
+        if not matches:
+            return ResearchAnswer(
+                text=f"I don't have reconciled data for a gilt maturing in {mentioned_year}.",
+                facts=None, citations=[], note=None,
+                allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION, evidence_bundle_id=None,
+            )
+        if len(matches) > 1:
+            isin_by_instrument_id = {
+                inst.id: await _isin_for_instrument(session, inst.id) for inst, _ in matches
+            }
+            # A follow-up reply may repeat back one of the disambiguation
+            # options verbatim (its exact instrument_name or ISIN, as shown
+            # to the user) - a real bug found via live testing: asking about
+            # "2027" then answering "4 1/8% Treasury Gilt 2027" (copied
+            # straight from the options just offered) re-triggered the same
+            # ambiguous list instead of resolving, because only the year was
+            # ever extracted from the query. This is exact substring
+            # containment against the canonical name/ISIN, never fuzzy
+            # matching (DATA-002: deterministic identity resolution only).
+            query_lower = query_text.lower()
+            narrowed = []
+            for inst, fact in matches:
+                isin_for_inst = isin_by_instrument_id[inst.id]
+                if fact.value["instrument_name"].lower() in query_lower or (
+                    isin_for_inst is not None and isin_for_inst.lower() in query_lower
+                ):
+                    narrowed.append((inst, fact))
+            if len(narrowed) == 1:
+                instrument, reference_fact = narrowed[0]
+            else:
+                name_parts = [
+                    f"{fact.value['instrument_name']} ({isin_by_instrument_id[inst.id]})"
+                    for inst, fact in matches
+                ]
+                names = "; ".join(name_parts)
+                return ResearchAnswer(
+                    text=(
+                        f"More than one gilt matures in {mentioned_year}: {names}. "
+                        "Which one did you mean?"
+                    ),
+                    facts=None, citations=[], note=None,
+                    allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
+                    evidence_bundle_id=None,
+                )
+        else:
+            instrument, reference_fact = matches[0]
+    else:
+        # No year named - default to the original seed instrument, the
+        # same behavior this branch always had for a generic "tell me
+        # about the gilt" ask with nothing to disambiguate by.
+        seed_instrument = (
+            await session.execute(
+                select(Instrument)
+                .join(InstrumentAlias, InstrumentAlias.instrument_id == Instrument.id)
+                .where(
+                    InstrumentAlias.alias_type == "ISIN",
+                    InstrumentAlias.alias_value == SEED_GILT_ISIN,
+                )
+            )
+        ).scalar_one_or_none()
+        if seed_instrument is None:
+            return _default_reply("gilt reference facts")
+        seed_fact = await current_accepted_fact_at(
+            session, subject_id=seed_instrument.id, metric_id=METRIC_GILT_REFERENCE_TERMS, at=now
+        )
+        if seed_fact is None:
+            return _default_reply("gilt reference facts")
+        instrument, reference_fact = seed_instrument, seed_fact
+
+    isin = await _isin_for_instrument(session, instrument.id)
     rows: list[tuple[str, str]] = [
         ("Instrument", reference_fact.value["instrument_name"]),
-        ("ISIN", SEED_GILT_ISIN),
+        ("ISIN", isin or "unknown"),
         ("Coupon", f"{reference_fact.value['coupon_rate']}% semi-annual"),
         ("Maturity", reference_fact.value["redemption_date"]),
         ("Day count", "ACT/ACT (ICMA)"),
@@ -542,6 +742,42 @@ async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchA
                     evidence_bundle_id=bundle.id,
                     kind="CALCULATION",
                     calculation_result_id=model_price.id,
+                )
+            )
+
+    if await _display_allowed(session, "tradeweb.gilt-prices"):
+        market_fact = await latest_accepted_fact(
+            session, subject_id=instrument.id, metric_id=METRIC_GILT_MARKET_CLOSE_PRICE
+        )
+        if market_fact is not None:
+            rows.append(
+                (
+                    "Market close price (Tradeweb — real quote)",
+                    f"{float(market_fact.value['clean_price']):.2f}",
+                )
+            )
+            assert market_fact.knowledge_range.lower is not None  # our own rows always set this
+            market_knowledge_time = market_fact.knowledge_range.lower
+            citations.append(
+                Citation(
+                    label="Tradeweb Market InSite — gilt closing prices",
+                    meta=(
+                        f"As of {market_knowledge_time.isoformat()} — a real market "
+                        "quote, not a model estimate"
+                    ),
+                    pill=compute_freshness(
+                        metric_id=METRIC_GILT_MARKET_CLOSE_PRICE,
+                        knowledge_time=market_knowledge_time,
+                        now=now,
+                    ),
+                    kind="doc",
+                )
+            )
+            session.add(
+                EvidenceMember(
+                    evidence_bundle_id=bundle.id,
+                    kind="FACT",
+                    accepted_fact_id=market_fact.id,
                 )
             )
 
@@ -718,12 +954,24 @@ async def assemble_research_answer(
     """
     if _is_advice(query_text):
         answer = _advice_reply()
-    elif _is_greeting(query_text) or _is_help_request(query_text):
+    elif _is_greeting(query_text):
+        answer = _greeting_reply()
+    elif _is_closing(query_text):
+        answer = _closing_reply()
+    elif _is_help_request(query_text):
         answer = _help_reply()
     elif _mentions_accrued(query_text):
         answer = await _document_backed_accrued_reply(session) or _accrued_reply()
     elif _mentions_yield_curve(query_text):
         answer = await _yield_curve_reply(session)
+    elif _mentions_market_structure(query_text):
+        # Checked before _mentions_gilt - see _MARKET_STRUCTURE_PATTERN's
+        # own comment for the real "Gilt-Edged Market Maker" misroute
+        # this guards against.
+        answer = (
+            await _document_backed_fallback_reply(session, query_text, http)
+            or _default_reply(query_text)
+        )
     elif _mentions_gilt(query_text):
         answer = await _gilt_facts_reply(session, query_text)
     else:
