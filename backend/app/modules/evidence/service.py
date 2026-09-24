@@ -89,7 +89,15 @@ _ADVICE_PATTERNS = [
     re.compile(r"\b(price target|fair value|rating|recommend)\b", re.I),
     re.compile(r"worth (buying|investing)", re.I),
 ]
-_GILT_PATTERN = re.compile(r"\bgilt|treasury gilt|2036\b", re.I)
+#: "glit" (a real typo hit live: "todays uk glit closing prices") sent a
+#: genuine live-price question past this pattern into the document-search
+#: catch-all instead of the real gilt-facts/Tradeweb-price branch it should
+#: have reached - a materially wrong answer (an unrelated 1999 DMO worked
+#: example), not just a missed match. One confirmed, explicit typo
+#: alternative added deliberately, not a general fuzzy-match expansion
+#: (DATA-002's "no fuzzy identity matching" is about instrument identity
+#: resolution specifically, not this kind of intent-vocabulary pattern).
+_GILT_PATTERN = re.compile(r"\bgilt|\bglit|treasury gilt|2036\b", re.I)
 # Checked BEFORE _GILT_PATTERN below - "Gilt-Edged Market Maker" contains
 # the substring "gilt", so without this a genuine market-structure/dealer
 # question was silently misrouted to the single-instrument facts branch
@@ -439,6 +447,25 @@ def _accrued_reply() -> ResearchAnswer:
 #: re-measuring again at the next real jump in corpus size/diversity.
 _MAX_SEMANTIC_MATCH_DISTANCE = 0.4
 
+#: Real found bug: a worked-examples table page (UK DMO's yldconv.pdf -
+#: settlement dates, quasi-coupon dates, decimal yield factors, all packed
+#: onto one line per row) dumped verbatim into chat as if it were prose -
+#: technically a real excerpt, not fabricated, but unreadable and
+#: unprofessional. Calibrated the same way as _MAX_SEMANTIC_MATCH_DISTANCE:
+#: measured digit-character density on real chunks (2026-09-24) - genuine
+#: prose (GEMM Guidebook, 5 chunks) lands at 0.6%-10.5%; the DMO's own
+#: worked-example tables (4 chunks) land at 41.6%-50.9%. 0.2 sits cleanly
+#: in the gap.
+_MAX_PROSE_DIGIT_RATIO = 0.2
+
+
+def _looks_like_a_data_table(text: str) -> bool:
+    nonspace = [ch for ch in text if not ch.isspace()]
+    if not nonspace:
+        return False
+    digit_ratio = sum(ch.isdigit() for ch in nonspace) / len(nonspace)
+    return digit_ratio > _MAX_PROSE_DIGIT_RATIO
+
 
 async def _document_backed_fallback_reply(
     session: AsyncSession, query_text: str, http: httpx.AsyncClient | None
@@ -479,12 +506,22 @@ async def _document_backed_fallback_reply(
     if evidence is None:
         return None
 
-    return ResearchAnswer(
-        text=(
-            f'You asked: "{query_text}"\n\n'
+    excerpt = chunk.text_content.strip()
+    if _looks_like_a_data_table(excerpt):
+        page_ref = f", page {chunk.page_start}" if chunk.page_start is not None else ""
+        body = (
+            f"I don't have live reconciled data on this, but the closest match I found "
+            f"is a data table in {evidence.document.title}{page_ref} — not something I "
+            f"can read out cleanly here. Open the citation below to view it directly."
+        )
+    else:
+        body = (
             f"I don't have live reconciled data on this, but {evidence.document.title} "
-            f"covers it:\n\n{chunk.text_content.strip()}"
-        ),
+            f"covers it:\n\n{excerpt}"
+        )
+
+    return ResearchAnswer(
+        text=f'You asked: "{query_text}"\n\n{body}',
         facts=None,
         citations=[evidence.citation],
         note=(

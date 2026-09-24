@@ -425,6 +425,60 @@ async def test_catch_all_query_degrades_to_lexical_when_gemini_call_fails(
     assert answer.citations[0].label == document.title
 
 
+async def test_typo_glit_routes_to_gilt_facts_not_document_search(
+    db_session: AsyncSession,
+) -> None:
+    # Real bug found live: "glit" (a real typo for "gilt": "todays uk glit
+    # closing prices") didn't match _GILT_PATTERN, so a genuine live-price
+    # question fell through to the document-search catch-all instead of
+    # _gilt_facts_reply - landing on an unrelated DMO worked-example table
+    # instead of real data, a materially wrong answer, not just a miss.
+    await _seed_capability_and_jurisdiction(db_session)
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="todays uk glit closing prices",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert dict(answer.facts.rows)["ISIN"] == SEED_GILT_ISIN
+
+
+async def test_catch_all_query_with_a_dense_numeric_chunk_is_not_dumped_raw(
+    db_session: AsyncSession,
+) -> None:
+    # Real bug found live: a genuine, honestly-cited excerpt match (a DMO
+    # worked-example table - dates/decimals packed one row per line) got
+    # dumped verbatim into the chat reply. Real source, real citation, but
+    # unreadable and unprofessional - the fix points at the citation
+    # instead of inlining dense tabular text.
+    await _seed_capability_and_jurisdiction(db_session)
+    profile_id = await _seed_rights_profile(
+        db_session, code="test.doc-display-table", actions=["display"]
+    )
+    dense_text = (
+        "Scenario 1 2 3 4\nYield 0.04445 0.04445 0.04445 0.04445\n"
+        "Settlement date 24-May-99 26-May-99 27-May-99 07-Jun-99\n"
+        "Dirty Price 145.012268 145.047301 141.070132 141.257676"
+    )
+    document = await _seed_accrued_document_chunk(
+        db_session, rights_profile_id=profile_id, text_content=dense_text,
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the settlement date scenario",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.evidence_bundle_id is not None
+    assert answer.citations[0].label == document.title
+    assert dense_text not in answer.text
+    assert "not something I can read out cleanly" in answer.text
+
+
 async def test_default_query_has_no_facts(db_session: AsyncSession) -> None:
     await _seed_capability_and_jurisdiction(db_session)
     answer = await assemble_research_answer(
