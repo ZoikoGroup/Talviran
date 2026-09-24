@@ -11,6 +11,7 @@ import datetime as dt
 import json
 import uuid
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import select
@@ -49,6 +50,51 @@ class ReconciliationOutcome:
 
 def _value_key(value: dict[str, Any]) -> str:
     return json.dumps(value, sort_keys=True, default=str)
+
+
+def _values_agree(a: dict[str, Any], b: dict[str, Any], policy: ReconciliationPolicy) -> bool:
+    """Exact match on every field when policy.tolerance is None (every
+    metric's behavior before this existed, and every metric that still has
+    no tolerance configured, e.g. reference terms). When both tolerance and
+    tolerance_field are set, only that one field gets numeric near-match -
+    every other field still requires an exact match. Found via a real gap:
+    FX_SPOT_RATE_POLICY declared a tolerance that reconcile_and_publish
+    never actually consulted, so two genuine sources for the same real
+    rate (which will almost never produce byte-identical decimal strings)
+    would have flagged CONFLICT every single day.
+    """
+    if policy.tolerance is None or policy.tolerance_field is None:
+        return _value_key(a) == _value_key(b)
+
+    field = policy.tolerance_field
+    a_rest = {k: v for k, v in a.items() if k != field}
+    b_rest = {k: v for k, v in b.items() if k != field}
+    if _value_key(a_rest) != _value_key(b_rest):
+        return False
+    try:
+        a_num = Decimal(str(a[field]))
+        b_num = Decimal(str(b[field]))
+    except (KeyError, InvalidOperation):
+        return False
+    return abs(a_num - b_num) <= policy.tolerance
+
+
+def _representative_value(
+    group: list[CandidateObservation], policy: ReconciliationPolicy
+) -> dict[str, Any]:
+    """Which candidate's exact value becomes the published fact when a
+    group agrees (exactly, or within tolerance) - policy.ordered_source_
+    codes precedence decides, same rule CONFLICT_ACTION_PREFER_ORDER
+    already uses to resolve a genuine disagreement. Falls back to the
+    first candidate only if none of the group's sources appear in the
+    policy's precedence list at all (shouldn't happen for a well-formed
+    policy, but never crash over it).
+    """
+    for code in policy.ordered_source_codes:
+        match = next((c for c in group if c.source_code == code), None)
+        if match is not None:
+            return match.value
+    return group[0].value
 
 
 async def _get_current_accepted_fact(
@@ -104,12 +150,26 @@ async def reconcile_and_publish(
     if not candidates:
         raise ValueError("reconcile_and_publish requires at least one candidate")
 
-    grouped: dict[str, list[CandidateObservation]] = {}
+    # A list of clusters, not a dict keyed by exact value, so that a
+    # tolerance-configured policy can group "near enough" values together
+    # (see _values_agree) rather than only byte-identical ones. With no
+    # tolerance configured this produces exactly the same clusters the old
+    # dict-based grouping did, just via pairwise comparison instead of a
+    # hash key — candidate counts are always tiny (one per source), so the
+    # O(n^2) comparison is irrelevant in practice.
+    groups: list[list[CandidateObservation]] = []
     for candidate in candidates:
-        grouped.setdefault(_value_key(candidate.value), []).append(candidate)
+        matched_group = next(
+            (g for g in groups if _values_agree(g[0].value, candidate.value, policy)), None
+        )
+        if matched_group is not None:
+            matched_group.append(candidate)
+        else:
+            groups.append([candidate])
 
-    if len(grouped) > 1 and policy.conflict_action != CONFLICT_ACTION_PREFER_ORDER:
-        reason = f"{len(grouped)} disagreeing values across sources: {sorted(grouped.keys())}"
+    if len(groups) > 1 and policy.conflict_action != CONFLICT_ACTION_PREFER_ORDER:
+        values = sorted(_value_key(g[0].value) for g in groups)
+        reason = f"{len(groups)} disagreeing values across sources: {values}"
         decision = ReconciliationDecision(
             subject_id=subject_id, metric_id=metric_id, decision=DECISION_CONFLICT, reason=reason
         )
@@ -118,7 +178,7 @@ async def reconcile_and_publish(
             decision=DECISION_CONFLICT, accepted_fact_id=None, reason=reason
         )
 
-    if len(grouped) > 1:
+    if len(groups) > 1:
         # PREFER_ORDER: resolved by precedence, but still logged as a
         # conflict decision — never a silent, unexplained pick.
         winning_source = next(
@@ -127,19 +187,23 @@ async def reconcile_and_publish(
             if any(c.source_code == code for c in candidates)
         )
         chosen_group = next(
-            group
-            for group in grouped.values()
-            if any(c.source_code == winning_source for c in group)
+            group for group in groups if any(c.source_code == winning_source for c in group)
         )
-        candidate_value = chosen_group[0].value
+        candidate_value = _representative_value(chosen_group, policy)
         observation_ids = [c.observation_id for c in chosen_group]
         conflict_reason: str | None = (
-            f"{len(grouped)} disagreeing values; "
+            f"{len(groups)} disagreeing values; "
             f"resolved by precedence to source {winning_source!r}"
         )
     else:
-        only_group = next(iter(grouped.values()))
-        candidate_value = only_group[0].value
+        only_group = groups[0]
+        # Now that a group can genuinely hold more than one agreeing
+        # candidate (tolerance made real multi-source agreement reachable
+        # for the first time - see ingest_tail._gather_candidates), which
+        # one's exact value becomes canonical must be policy-driven, not
+        # whatever order the DB happened to return - same precedence rule
+        # the PREFER_ORDER conflict branch above already uses.
+        candidate_value = _representative_value(only_group, policy)
         observation_ids = [c.observation_id for c in only_group]
         conflict_reason = None
 

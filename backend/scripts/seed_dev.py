@@ -57,6 +57,11 @@ TWELVE_DATA_EQUITY_RIGHTS_PROFILE_CODE = "twelve-data.equity"
 #: doctrine means this restriction is enforced structurally, not by
 #: policy convention alone.
 TRADEWEB_GILT_PRICES_RIGHTS_PROFILE_CODE = "tradeweb.gilt-prices"
+#: A second, real, independent source for FX_SPOT_RATE (alongside
+#: frankfurter.fx) - same publisher/licence as BOE_YIELD_CURVE_RIGHTS_
+#: PROFILE_CODE (OGL v3.0), but its own profile code/dataset, per RIGHTS-
+#: 001's per-source (not per-publisher) doctrine.
+BOE_FX_RIGHTS_PROFILE_CODE = "boe.fx-rates"
 SEED_GILT_ISIN = "GB0032452392"
 
 #: (issuer name, NSE trading symbol) — the pilot equity list for the
@@ -287,6 +292,9 @@ async def seed() -> None:
         )
         await _seed_rights_profile(
             session, TRADEWEB_GILT_PRICES_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
+        )
+        await _seed_rights_profile(
+            session, BOE_FX_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
         )
         await _seed_gilt_reference_data(session)
         await _seed_equity_reference_data(session)

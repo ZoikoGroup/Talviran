@@ -31,6 +31,11 @@ class ReconciliationPolicy:
     # ordered_source_codes precedence, but still recorded as a conflict
     # decision for audit — never a silent, unexplained pick.
     conflict_action: str
+    # Which key in the metric's value dict `tolerance` applies to (e.g.
+    # "rate" for FX). Every other key in the value dict still requires an
+    # exact match regardless. Required when tolerance is set, ignored
+    # (values must match exactly) when tolerance is None.
+    tolerance_field: str | None = None
 
 
 GILT_REFERENCE_TERMS_POLICY = ReconciliationPolicy(
@@ -49,8 +54,23 @@ UK_GILT_NOMINAL_SPOT_CURVE_POLICY = ReconciliationPolicy(
 
 FX_SPOT_RATE_POLICY = ReconciliationPolicy(
     metric_id="FX_SPOT_RATE",
-    ordered_source_codes=("frankfurter",),
-    tolerance=None,
+    # Two genuinely independent real sources for the same pair (GBP/USD)
+    # for the first time in this codebase - boe_fx added specifically to
+    # give this policy something real to reconcile (previously every
+    # metric had exactly one source, so CONFLICT could only ever be
+    # exercised synthetically in tests).
+    ordered_source_codes=("frankfurter", "boe"),
+    # 0.01 on a ~1.33 GBP/USD rate is ~0.75% - generous enough to absorb
+    # normal cross-source snapshot-timing noise between two legitimate
+    # sources (BoE's daily fix vs Frankfurter's ECB-blended rate), tight
+    # enough to still flag a genuine disagreement. Not measured against
+    # real same-day data the way _MAX_SEMANTIC_MATCH_DISTANCE was - BoE's
+    # feed lags Frankfurter's by 1-2 business days, so a true same-day
+    # pair wasn't available to compare at build time - a documented
+    # judgment call, worth re-checking once real daily reconciliation
+    # decisions accumulate.
+    tolerance=Decimal("0.01"),
+    tolerance_field="rate",
     conflict_action=CONFLICT_ACTION_FLAG,
 )
 

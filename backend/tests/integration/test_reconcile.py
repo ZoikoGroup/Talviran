@@ -8,6 +8,7 @@ otherwise, in which case it's still logged, not silent.
 import datetime as dt
 import uuid
 from dataclasses import replace
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import select, text
@@ -331,6 +332,106 @@ async def test_same_day_correction_still_supersedes(db_session: AsyncSession) ->
     assert old_fact is not None and new_fact is not None
     assert old_fact.status == "SUPERSEDED"
     assert new_fact.status == "ACTIVE"
+
+
+async def test_within_tolerance_candidates_agree_not_conflict(db_session: AsyncSession) -> None:
+    """A real gap found and fixed: ReconciliationPolicy.tolerance was
+    declared but never actually consulted - two genuine sources reporting
+    slightly different decimal strings for the same real rate would have
+    flagged CONFLICT every time, even though they agree within any sane
+    tolerance. Two candidates 0.005 apart on a policy with tolerance=0.01
+    must be treated as agreeing.
+    """
+    subject_id = uuid.uuid4()
+    policy = replace(_POLICY, tolerance=Decimal("0.01"), tolerance_field="rate")
+
+    outcome = await reconcile_and_publish(
+        db_session, subject_type="FX_PAIR", subject_id=subject_id, metric_id="TEST_METRIC",
+        candidates=[
+            await _candidate(db_session, source_code="frankfurter", rate="1.3350"),
+            await _candidate(db_session, source_code="boe", rate="1.3400"),
+        ],
+        policy=policy, valid_range=_VALID_RANGE, knowledge_time=dt.datetime.now(dt.UTC),
+    )
+    await db_session.commit()
+
+    assert outcome.decision == "ACCEPTED"
+    fact = await db_session.get(AcceptedFact, outcome.accepted_fact_id)
+    assert fact is not None
+    assert fact.value["rate"] == "1.3350", "first-seen candidate is the representative value"
+
+
+async def test_within_tolerance_agreement_picks_representative_by_precedence(
+    db_session: AsyncSession,
+) -> None:
+    """A group can now genuinely hold more than one agreeing candidate
+    (tolerance made that reachable for the first time) - which one's exact
+    value gets published must be policy.ordered_source_codes precedence,
+    not whichever candidate happened to be first in the list. Precedence
+    here is ("source-b", "source-a"), so source-b's value must win even
+    though source-a's candidate is constructed first.
+    """
+    subject_id = uuid.uuid4()
+    policy = replace(
+        _POLICY, ordered_source_codes=("source-b", "source-a"),
+        tolerance=Decimal("0.01"), tolerance_field="rate",
+    )
+
+    outcome = await reconcile_and_publish(
+        db_session, subject_type="FX_PAIR", subject_id=subject_id, metric_id="TEST_METRIC",
+        candidates=[
+            await _candidate(db_session, source_code="source-a", rate="1.3350"),
+            await _candidate(db_session, source_code="source-b", rate="1.3348"),
+        ],
+        policy=policy, valid_range=_VALID_RANGE, knowledge_time=dt.datetime.now(dt.UTC),
+    )
+    await db_session.commit()
+
+    assert outcome.decision == "ACCEPTED"
+    fact = await db_session.get(AcceptedFact, outcome.accepted_fact_id)
+    assert fact is not None
+    assert fact.value["rate"] == "1.3348", "source-b has precedence in this policy"
+
+
+async def test_outside_tolerance_candidates_still_conflict(db_session: AsyncSession) -> None:
+    subject_id = uuid.uuid4()
+    policy = replace(_POLICY, tolerance=Decimal("0.01"), tolerance_field="rate")
+
+    outcome = await reconcile_and_publish(
+        db_session, subject_type="FX_PAIR", subject_id=subject_id, metric_id="TEST_METRIC",
+        candidates=[
+            await _candidate(db_session, source_code="frankfurter", rate="1.3350"),
+            await _candidate(db_session, source_code="boe", rate="1.4000"),
+        ],
+        policy=policy, valid_range=_VALID_RANGE, knowledge_time=dt.datetime.now(dt.UTC),
+    )
+    await db_session.commit()
+
+    assert outcome.decision == "CONFLICT"
+    assert outcome.accepted_fact_id is None
+
+
+async def test_tolerance_never_activates_when_policy_leaves_it_unset(
+    db_session: AsyncSession,
+) -> None:
+    """Every existing policy (tolerance=None) must keep requiring an exact
+    match, even on a field named the same as some other policy's
+    tolerance_field - _values_agree falls back to exact comparison whenever
+    tolerance or tolerance_field is missing, not just when both are.
+    """
+    subject_id = uuid.uuid4()
+
+    outcome = await reconcile_and_publish(
+        db_session, subject_type="INSTRUMENT", subject_id=subject_id, metric_id="TEST_METRIC",
+        candidates=[
+            await _candidate(db_session, source_code="source-a", coupon_rate="4.2500"),
+            await _candidate(db_session, source_code="source-b", coupon_rate="4.2501"),
+        ],
+        policy=_POLICY, valid_range=_VALID_RANGE, knowledge_time=dt.datetime.now(dt.UTC),
+    )
+    await db_session.commit()
+
+    assert outcome.decision == "CONFLICT", "tolerance=None must require an exact match"
 
 
 async def test_gist_exclusion_constraint_rejects_overlapping_ranges_at_db_level(
