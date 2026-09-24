@@ -240,11 +240,20 @@ _CAPABILITY_SUMMARY = (
 
 
 def _greeting_reply() -> ResearchAnswer:
+    # Deliberately one short, conversational line, not the full bulleted
+    # _CAPABILITY_SUMMARY (that belongs in _help_reply, for someone who
+    # actually asked "what can you do") - a real complaint from live
+    # testing: a bulleted capability list with a compliance disclaimer
+    # front-loaded onto a bare "hi" reads as a scripted bot, not a chat.
+    # Deterministic text, not AI-composed - a greeting has no accepted
+    # facts to ground an AI Gateway call against (evidence_bundle_id is
+    # None here), and that grounding requirement is a real safety
+    # invariant, not something to route around for a friendlier "hi".
     return ResearchAnswer(
         text=(
-            f"Hi there! I'm Talvrin's research assistant. Here's what I can "
-            f"help with today:\n\n{_CAPABILITY_SUMMARY}\n\n"
-            "What would you like to look into?"
+            "Hey! I'm the Talvrin research assistant — ask me about a "
+            "gilt's terms or real price, the BoE yield curve, or how "
+            "accrued interest works. What would you like to look into?"
         ),
         facts=None,
         citations=[],

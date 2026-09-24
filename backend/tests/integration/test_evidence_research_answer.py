@@ -855,13 +855,18 @@ async def test_help_query_lists_real_current_topics(db_session: AsyncSession) ->
     assert answer.evidence_bundle_id is None
 
 
-async def test_bare_greeting_gets_the_capability_reply_not_the_cold_default(
+async def test_bare_greeting_gets_a_short_conversational_reply_not_the_cold_default(
     db_session: AsyncSession,
 ) -> None:
     """A real bug found via live UI testing: "hi" used to fall all the way
     through to the generic "no data" default, identical to a genuinely
     failed lookup - a poor first impression and not actually "no data",
-    just no *query* to look anything up for.
+    just no *query* to look anything up for. A second real complaint after
+    that fix: routing "hi" to the full bulleted _CAPABILITY_SUMMARY (with
+    its recommendation-disclaimer front-loaded) read as a scripted bot
+    reply, not a chat - the greeting reply is now a short, plain sentence
+    instead, and the full list stays reserved for an explicit "what can
+    you do" (_help_reply, see test_help_query_lists_real_current_topics).
     """
     await _seed_capability_and_jurisdiction(db_session)
 
@@ -870,8 +875,9 @@ async def test_bare_greeting_gets_the_capability_reply_not_the_cold_default(
             db_session, query_text=greeting, principal_id=None, account_id=None,
         )
         assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
-        assert "gilt reference terms" in answer.text.lower(), greeting
         assert not answer.text.startswith('You asked:'), greeting
+        assert "-" not in answer.text, f"greeting reply must not be a bulleted list: {greeting}"
+        assert len(answer.text) < 220, f"greeting reply must stay short: {greeting}"
 
 
 async def test_closing_remark_gets_a_warm_reply_not_the_cold_default(
