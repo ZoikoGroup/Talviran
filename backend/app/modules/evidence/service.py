@@ -126,6 +126,18 @@ _HELP_PATTERN = re.compile(
 _GREETING_PATTERN = re.compile(
     r"^\s*(hi|hello|hey|hiya|yo|greetings|good (morning|afternoon|evening))\s*[!.]?\s*$", re.I
 )
+# Same whole-message-only reasoning as _GREETING_PATTERN - "thanks" as a
+# real word inside an actual question must never be mis-routed here. Before
+# this existed, "thank you" fell all the way through to the cold, generic
+# _default_reply ("doesn't yet have reconciled data covering this
+# question") - technically correct (no document matches "thank you") but
+# an unfriendly, un-conversational answer to what is obviously a closing
+# remark, not a data question.
+_CLOSING_PATTERN = re.compile(
+    r"^\s*(thanks?( you)?( (very|so) much)?|cheers|appreciate it|much appreciated|"
+    r"ok(ay)?,?\s*thanks?|great,?\s*thanks?|bye|goodbye|see you|that'?s all)\s*[!.]?\s*$",
+    re.I,
+)
 
 
 def _is_advice(text: str) -> bool:
@@ -138,6 +150,10 @@ def _is_help_request(text: str) -> bool:
 
 def _is_greeting(text: str) -> bool:
     return bool(_GREETING_PATTERN.match(text))
+
+
+def _is_closing(text: str) -> bool:
+    return bool(_CLOSING_PATTERN.match(text))
 
 
 def _mentions_gilt(text: str) -> bool:
@@ -209,20 +225,53 @@ def _advice_reply() -> ResearchAnswer:
     )
 
 
-def _help_reply() -> ResearchAnswer:
+_CAPABILITY_SUMMARY = (
+    "- UK gilt reference terms and real market prices — coupon, maturity, "
+    "day count and Tradeweb closing prices across the onboarded gilts\n"
+    "- The Bank of England's UK nominal gilt spot curve, and the "
+    "model-implied prices derived from it — their published interest-rate "
+    "curve, updated daily\n"
+    "- Accrued interest, clean vs dirty price, and ex-dividend methodology — "
+    "general explanations, not tied to live data\n\n"
+    "I never give investment recommendations, price targets, or buy/sell/hold "
+    "guidance — that's a structural limit of the platform, not a missing "
+    "feature."
+)
+
+
+def _greeting_reply() -> ResearchAnswer:
     return ResearchAnswer(
         text=(
-            "Right now I can answer from real, reconciled data on:\n\n"
-            "- UK gilt reference terms — currently the 4¼% Treasury Stock 2036 "
-            "(coupon, maturity, day count and other accepted facts)\n"
-            "- The Bank of England's UK nominal gilt spot curve — their published "
-            "interest-rate curve, updated daily\n"
-            "- Accrued interest, clean vs dirty price, and ex-dividend methodology — "
-            "general explanations, not tied to live data\n\n"
-            "I never give investment recommendations, price targets, or buy/sell/hold "
-            "guidance — that's a structural limit of the platform, not a missing "
-            "feature."
+            f"Hi there! I'm Talvrin's research assistant. Here's what I can "
+            f"help with today:\n\n{_CAPABILITY_SUMMARY}\n\n"
+            "What would you like to look into?"
         ),
+        facts=None,
+        citations=[],
+        note=None,
+        allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
+        evidence_bundle_id=None,
+    )
+
+
+def _closing_reply() -> ResearchAnswer:
+    return ResearchAnswer(
+        text=(
+            "You're welcome! Come back anytime you want to check a gilt's "
+            "terms or price, the BoE yield curve, or how accrued interest "
+            "works."
+        ),
+        facts=None,
+        citations=[],
+        note=None,
+        allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
+        evidence_bundle_id=None,
+    )
+
+
+def _help_reply() -> ResearchAnswer:
+    return ResearchAnswer(
+        text=f"Right now I can answer from real, reconciled data on:\n\n{_CAPABILITY_SUMMARY}",
         facts=None,
         citations=[],
         note=None,
@@ -834,7 +883,11 @@ async def assemble_research_answer(
     """
     if _is_advice(query_text):
         answer = _advice_reply()
-    elif _is_greeting(query_text) or _is_help_request(query_text):
+    elif _is_greeting(query_text):
+        answer = _greeting_reply()
+    elif _is_closing(query_text):
+        answer = _closing_reply()
+    elif _is_help_request(query_text):
         answer = _help_reply()
     elif _mentions_accrued(query_text):
         answer = await _document_backed_accrued_reply(session) or _accrued_reply()

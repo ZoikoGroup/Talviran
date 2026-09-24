@@ -820,6 +820,41 @@ async def test_bare_greeting_gets_the_capability_reply_not_the_cold_default(
         assert not answer.text.startswith('You asked:'), greeting
 
 
+async def test_closing_remark_gets_a_warm_reply_not_the_cold_default(
+    db_session: AsyncSession,
+) -> None:
+    """"thank you" used to fall all the way through the document-search
+    fallback (no chunk is actually about "thank you") to the same cold,
+    generic "no data" default a genuinely failed lookup gets - technically
+    correct, but an unfriendly answer to what's obviously a closing remark,
+    not a data question.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+
+    for closing in ("thanks", "thank you", "Thank you so much!", "cheers", "bye", "ok thanks"):
+        answer = await assemble_research_answer(
+            db_session, query_text=closing, principal_id=None, account_id=None,
+        )
+        assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
+        assert "you're welcome" in answer.text.lower(), closing
+        assert not answer.text.startswith('You asked:'), closing
+
+
+async def test_closing_pattern_does_not_false_positive_on_real_questions(
+    db_session: AsyncSession,
+) -> None:
+    """Whole-message match only - "thanks"/"bye" as real words inside an
+    actual question must never be mis-routed to the closing branch.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="thanks to the ex-dividend convention, what is accrued interest",
+        principal_id=None, account_id=None,
+    )
+    assert "you're welcome" not in answer.text.lower()
+
+
 async def test_greeting_pattern_does_not_false_positive_on_real_questions(
     db_session: AsyncSession,
 ) -> None:
