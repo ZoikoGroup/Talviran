@@ -647,6 +647,60 @@ async def test_gilt_query_with_ambiguous_year_asks_which_one(db_session: AsyncSe
     assert "which one" in answer.text.lower()
 
 
+async def test_ambiguous_year_follow_up_naming_one_option_resolves_it(
+    db_session: AsyncSession,
+) -> None:
+    # A real bug found via live testing: asking about "2027"/"2036" gets an
+    # ambiguous-year list back, and replying with one of the EXACT options
+    # just offered (its instrument_name, copied verbatim) must resolve to
+    # that gilt, not repeat the same ambiguous list - "2036" is still
+    # present in the follow-up, so only the year-based lookup ran before.
+    await _seed_capability_and_jurisdiction(db_session)
+    seed_instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, seed_instrument.id)
+    await _seed_another_gilt(
+        db_session, isin="GB00BWBR1N39", name="4 7/8% Treasury Gilt 2036",
+        redemption_date="2036-07-31", coupon_rate="4.875",
+    )
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="4 7/8% Treasury Gilt 2036",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["ISIN"] == "GB00BWBR1N39"
+    assert rows["Coupon"] == "4.875% semi-annual"
+
+
+async def test_ambiguous_year_follow_up_naming_an_isin_resolves_it(
+    db_session: AsyncSession,
+) -> None:
+    # ISIN alone never carries a year token _mentioned_year can extract
+    # (no word boundary inside a contiguous alphanumeric string), so this
+    # only exercises the narrowing branch when the year is repeated too -
+    # a natural follow-up like "the 2036 one, GB00BWBR1N39".
+    await _seed_capability_and_jurisdiction(db_session)
+    seed_instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, seed_instrument.id)
+    await _seed_another_gilt(
+        db_session, isin="GB00BWBR1N39", name="4 7/8% Treasury Gilt 2036",
+        redemption_date="2036-07-31", coupon_rate="4.875",
+    )
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="the 2036 one, GB00BWBR1N39",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["ISIN"] == "GB00BWBR1N39"
+
+
 async def test_gilt_query_with_no_year_mentioned_shows_the_one_seeded_gilt(
     db_session: AsyncSession,
 ) -> None:

@@ -575,20 +575,45 @@ async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchA
                 allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION, evidence_bundle_id=None,
             )
         if len(matches) > 1:
-            name_parts = []
+            isin_by_instrument_id = {
+                inst.id: await _isin_for_instrument(session, inst.id) for inst, _ in matches
+            }
+            # A follow-up reply may repeat back one of the disambiguation
+            # options verbatim (its exact instrument_name or ISIN, as shown
+            # to the user) - a real bug found via live testing: asking about
+            # "2027" then answering "4 1/8% Treasury Gilt 2027" (copied
+            # straight from the options just offered) re-triggered the same
+            # ambiguous list instead of resolving, because only the year was
+            # ever extracted from the query. This is exact substring
+            # containment against the canonical name/ISIN, never fuzzy
+            # matching (DATA-002: deterministic identity resolution only).
+            query_lower = query_text.lower()
+            narrowed = []
             for inst, fact in matches:
-                isin_for_inst = await _isin_for_instrument(session, inst.id)
-                name_parts.append(f"{fact.value['instrument_name']} ({isin_for_inst})")
-            names = "; ".join(name_parts)
-            return ResearchAnswer(
-                text=(
-                    f"More than one gilt matures in {mentioned_year}: {names}. "
-                    "Which one did you mean?"
-                ),
-                facts=None, citations=[], note=None,
-                allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION, evidence_bundle_id=None,
-            )
-        instrument, reference_fact = matches[0]
+                isin_for_inst = isin_by_instrument_id[inst.id]
+                if fact.value["instrument_name"].lower() in query_lower or (
+                    isin_for_inst is not None and isin_for_inst.lower() in query_lower
+                ):
+                    narrowed.append((inst, fact))
+            if len(narrowed) == 1:
+                instrument, reference_fact = narrowed[0]
+            else:
+                name_parts = [
+                    f"{fact.value['instrument_name']} ({isin_by_instrument_id[inst.id]})"
+                    for inst, fact in matches
+                ]
+                names = "; ".join(name_parts)
+                return ResearchAnswer(
+                    text=(
+                        f"More than one gilt matures in {mentioned_year}: {names}. "
+                        "Which one did you mean?"
+                    ),
+                    facts=None, citations=[], note=None,
+                    allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
+                    evidence_bundle_id=None,
+                )
+        else:
+            instrument, reference_fact = matches[0]
     else:
         # No year named - default to the original seed instrument, the
         # same behavior this branch always had for a generic "tell me
