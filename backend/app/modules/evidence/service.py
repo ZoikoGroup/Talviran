@@ -63,17 +63,20 @@ from app.modules.evidence.models import (
 from app.modules.evidence.pipeline.embed import search_chunks_by_semantic_query
 from app.modules.evidence.queries import search_chunks_by_text
 from app.modules.market.freshness import compute_freshness
-from app.modules.market.models import AcceptedFact
+from app.modules.market.models import AcceptedFact, FactObservationLink, SourceObservation
 from app.modules.market.pipeline.curve_ingest import (
     METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
     SUBJECT_TYPE_YIELD_CURVE_POINT,
 )
+from app.modules.market.pipeline.equity_ingest import METRIC_EQUITY_EOD_PRICE
+from app.modules.market.pipeline.fx_ingest import METRIC_FX_SPOT_RATE, fx_pair_subject_id
+from app.modules.market.pipeline.macro_ingest import macro_series_subject_id
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
 from app.modules.market.pipeline.tradeweb_price_ingest import METRIC_GILT_MARKET_CLOSE_PRICE
 from app.modules.market.queries import current_accepted_fact_at, latest_accepted_fact
 from app.modules.policy.allowed_output_type import AllowedOutputType
 from app.modules.policy.pdp import PolicyContext, evaluate
-from app.modules.reference.models import Instrument, InstrumentAlias
+from app.modules.reference.models import Instrument, InstrumentAlias, Issuer
 from app.modules.rights.engine import RightsDecision, evaluate_action
 from app.modules.rights.models import RightsProfile
 
@@ -117,6 +120,40 @@ _ACCRUED_PATTERN = re.compile(
 _YIELD_CURVE_PATTERN = re.compile(
     r"yield curve|spot curve|interest rates?\b|bank of england|\bboe\b", re.I
 )
+# Requires either the unambiguous phrase "exchange rate", or BOTH a
+# GBP-side and a USD-side term (either order) - never a single currency
+# word alone, which would false-positive on "the dollar cost of..." or
+# similar. Only one pair is actually cross-source reconciled today
+# (GBP/USD, frankfurter + boe - see reconciliation_policy.FX_SPOT_RATE_
+# POLICY), so this deliberately doesn't try to parse an arbitrary pair out
+# of free text; _fx_rate_reply always answers with that one canonical pair.
+_GBP_TERMS = r"\bgbp\b|\bpound\b|\bpounds\b|\bsterling\b"
+_USD_TERMS = r"\busd\b|\bdollar\b|\bdollars\b"
+_FX_PATTERN = re.compile(
+    rf"exchange rate|(?:{_GBP_TERMS}).*(?:{_USD_TERMS})|(?:{_USD_TERMS}).*(?:{_GBP_TERMS})", re.I
+)
+# Requires BOTH a metric term (GDP or CPI/inflation) AND a country term -
+# only UK/USA are in scope (see memory: an earlier India/NSE equity list
+# was a real, flagged scope inconsistency; MACRO_PILOT_SERIES in scripts/
+# _connector_registry.py still has 2 India series too, same kind of
+# pre-existing leftover, left alone here since nothing routes to them).
+# Deliberately no bare "\bus\b" - "us" as a pronoun ("tell us about...")
+# would false-positive constantly; "usa"/"united states"/"america" are
+# unambiguous instead.
+_MACRO_METRIC_TERMS: dict[str, str] = {
+    "MACRO_GDP": r"\bgdp\b|gross domestic product",
+    "MACRO_CPI": r"\bcpi\b|inflation|consumer price",
+}
+_MACRO_COUNTRY_TERMS: dict[str, str] = {
+    "GBR": r"\buk\b|united kingdom|\bbritain\b|\bbritish\b",
+    "USA": r"\busa\b|united states|\bamerica\b|american",
+}
+_MACRO_SERIES_CODES: dict[tuple[str, str], str] = {
+    ("MACRO_GDP", "GBR"): "A-NY.GDP.MKTP.CD-GBR",
+    ("MACRO_CPI", "GBR"): "A-FP.CPI.TOTL.ZG-GBR",
+    ("MACRO_GDP", "USA"): "A-NY.GDP.MKTP.CD-USA",
+    ("MACRO_CPI", "USA"): "A-FP.CPI.TOTL.ZG-USA",
+}
 # Deliberately specific phrasings only (not a bare "help") - a genuine data
 # question like "can you help me understand accrued interest" must still
 # reach the accrued-interest branch, not this one ("help me [do something]"
@@ -179,6 +216,24 @@ def _mentioned_year(text: str) -> int | None:
 
 def _mentions_yield_curve(text: str) -> bool:
     return bool(_YIELD_CURVE_PATTERN.search(text))
+
+
+def _mentions_fx(text: str) -> bool:
+    return bool(_FX_PATTERN.search(text))
+
+
+def _mentioned_macro_series(text: str) -> tuple[str, str] | None:
+    metric_id = next(
+        (m for m, pattern in _MACRO_METRIC_TERMS.items() if re.search(pattern, text, re.I)), None
+    )
+    if metric_id is None:
+        return None
+    country = next(
+        (c for c, pattern in _MACRO_COUNTRY_TERMS.items() if re.search(pattern, text, re.I)), None
+    )
+    if country is None:
+        return None
+    return metric_id, country
 
 
 def _mentions_accrued(text: str) -> bool:
@@ -911,6 +966,273 @@ async def _yield_curve_reply(session: AsyncSession) -> ResearchAnswer:
     )
 
 
+async def _confirming_source_count(session: AsyncSession, accepted_fact_id: uuid.UUID) -> int:
+    """How many independently-rights-profiled sources actually back this
+    fact - distinct rights_profile_id across its linked observations, since
+    every real source in this codebase is seeded under its own RightsProfile
+    (frankfurter.fx vs boe.fx-rates, never shared). FactObservationLink's
+    own `role` column can't be used for this: reconcile.py writes every
+    link as role="PRIMARY" unconditionally, whether the observation was the
+    sole source or one of several agreeing ones in the same group, so role
+    alone doesn't distinguish "the source" from "a confirming source".
+    """
+    observation_ids = (
+        await session.execute(
+            select(FactObservationLink.source_observation_id).where(
+                FactObservationLink.accepted_fact_id == accepted_fact_id
+            )
+        )
+    ).scalars().all()
+    if not observation_ids:
+        return 0
+    rights_profile_ids = (
+        await session.execute(
+            select(SourceObservation.rights_profile_id).where(
+                SourceObservation.id.in_(observation_ids)
+            )
+        )
+    ).scalars().all()
+    return len(set(rights_profile_ids))
+
+
+async def _fx_rate_reply(session: AsyncSession) -> ResearchAnswer:
+    """GBP/USD only, deliberately - the one pair with a real second source
+    (see _FX_PATTERN's own comment). Rights-gated on frankfurter.fx, the
+    primary source in FX_SPOT_RATE_POLICY.ordered_source_codes - same
+    "gate on the primary source" convention _gilt_facts_reply already uses
+    for its own primary reference-terms row.
+    """
+    if not await _display_allowed(session, "frankfurter.fx"):
+        return _default_reply("GBP/USD exchange rate")
+
+    now = dt.datetime.now(dt.UTC)
+    subject_id = fx_pair_subject_id("GBP", "USD")
+    fact = await latest_accepted_fact(session, subject_id=subject_id, metric_id=METRIC_FX_SPOT_RATE)
+    if fact is None:
+        return _default_reply("GBP/USD exchange rate")
+
+    assert fact.knowledge_range.lower is not None  # our own rows always set this
+    knowledge_time = fact.knowledge_range.lower
+    rate = Decimal(fact.value["rate"])
+    source_count = await _confirming_source_count(session, fact.id) or 1
+
+    rows = [
+        ("Currency pair", f"{fact.value['base_currency']}/{fact.value['quote_currency']}"),
+        ("Spot rate", f"{rate:.4f}"),
+        ("Confirmed by", f"{source_count} independent source{'s' if source_count != 1 else ''}"),
+    ]
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION", knowledge_time=now, status="ASSEMBLING"
+    )
+    session.add(bundle)
+    await session.flush()
+    session.add(EvidenceMember(evidence_bundle_id=bundle.id, kind="FACT", accepted_fact_id=fact.id))
+
+    label = (
+        "Frankfurter (ECB-blended) + Bank of England"
+        if source_count > 1
+        else "Frankfurter — ECB-blended exchange rates"
+    )
+    return ResearchAnswer(
+        text=(
+            f"GBP/USD spot rate: {rate:.4f}, confirmed by {source_count} independent "
+            f"source{'s' if source_count != 1 else ''}."
+        ),
+        facts=FactTable(title="GBP/USD exchange rate", rows=rows),
+        citations=[
+            Citation(
+                label=label,
+                meta=f"As of {knowledge_time.isoformat()}",
+                pill=compute_freshness(
+                    metric_id=METRIC_FX_SPOT_RATE, knowledge_time=knowledge_time, now=now
+                ),
+                kind="link",
+            )
+        ],
+        note=None,
+        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        evidence_bundle_id=bundle.id,
+    )
+
+
+async def _match_equity_instrument(
+    session: AsyncSession, query_text: str
+) -> tuple[Instrument, str] | None:
+    """Deterministic containment only (DATA-002: no fuzzy identity
+    matching), same doctrine _gilt_facts_reply's own name/ISIN matching
+    follows - checks every real onboarded equity's ticker or issuer's
+    first word (e.g. "Apple" from "Apple Inc.") for a whole-word match in
+    the query text, never a similarity/embedding match. Returns None for
+    zero or ambiguous (>1) matches - an ambiguous mention is a disambig-
+    uation case not yet built for equities, not something to guess at.
+
+    The ticker check is case-SENSITIVE (issuer-name words stay case-
+    insensitive) - a real, plausible collision found while building this:
+    "BP" is also common finance jargon for "basis points" ("what's 10 bp
+    mean"), and a case-insensitive match would route that straight into a
+    BP stock-price reply. Real tickers are conventionally typed in caps
+    ("BP", "AAPL"); jargon isn't, so requiring exact case filters out the
+    jargon case without losing genuine ticker mentions.
+    """
+    rows = (
+        await session.execute(
+            select(Instrument, InstrumentAlias.alias_value, Issuer.name)
+            .join(InstrumentAlias, InstrumentAlias.instrument_id == Instrument.id)
+            .join(Issuer, Issuer.id == Instrument.issuer_id)
+            .where(
+                InstrumentAlias.alias_type == "TICKER",
+                Instrument.instrument_type == "EQUITY_COMMON",
+            )
+        )
+    ).all()
+
+    matches: list[tuple[Instrument, str]] = []
+    for instrument, alias_value, issuer_name in rows:
+        symbol = alias_value.split(":")[-1]
+        issuer_first_word = issuer_name.split()[0]
+        # "BP p.l.c." starts with its own ticker ("BP") - the exact-case
+        # requirement has to apply to this path too, not just the ticker
+        # check above, or the same jargon collision reopens through here.
+        issuer_word_needs_exact_case = issuer_first_word.upper() == symbol.upper()
+        issuer_flags = 0 if issuer_word_needs_exact_case else re.I
+        if re.search(rf"\b{re.escape(symbol)}\b", query_text) or re.search(
+            rf"\b{re.escape(issuer_first_word)}\b", query_text, issuer_flags
+        ):
+            matches.append((instrument, alias_value))
+
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+async def _equity_price_reply(session: AsyncSession, query_text: str) -> ResearchAnswer | None:
+    """Returns None (never a reply) when the query doesn't deterministically
+    match exactly one onboarded equity - the caller falls through to the
+    next intent branch rather than treating "no company mentioned" as a
+    data gap worth a NEUTRAL_EDUCATION reply of its own.
+    """
+    match = await _match_equity_instrument(session, query_text)
+    if match is None:
+        return None
+    instrument, alias_value = match
+
+    if not await _display_allowed(session, "twelve-data.equity"):
+        return _default_reply(f"{instrument.name} share price")
+
+    now = dt.datetime.now(dt.UTC)
+    fact = await latest_accepted_fact(
+        session, subject_id=instrument.id, metric_id=METRIC_EQUITY_EOD_PRICE
+    )
+    if fact is None:
+        return _default_reply(f"{instrument.name} share price")
+
+    assert fact.knowledge_range.lower is not None  # our own rows always set this
+    knowledge_time = fact.knowledge_range.lower
+    close_price = fact.value["close_price"]
+    currency_code = fact.value["currency_code"]
+
+    rows = [
+        ("Instrument", instrument.name),
+        ("Ticker", alias_value),
+        ("Close price", f"{close_price} {currency_code}"),
+    ]
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION", knowledge_time=now, status="ASSEMBLING"
+    )
+    session.add(bundle)
+    await session.flush()
+    session.add(EvidenceMember(evidence_bundle_id=bundle.id, kind="FACT", accepted_fact_id=fact.id))
+
+    return ResearchAnswer(
+        text=f"{instrument.name} ({alias_value}) closed at {close_price} {currency_code}.",
+        facts=FactTable(title=f"{instrument.name} — end-of-day price", rows=rows),
+        citations=[
+            Citation(
+                label="Twelve Data — end-of-day equity price",
+                meta=f"As of {knowledge_time.isoformat()}",
+                pill=compute_freshness(
+                    metric_id=METRIC_EQUITY_EOD_PRICE, knowledge_time=knowledge_time, now=now
+                ),
+                kind="link",
+            )
+        ],
+        note=None,
+        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        evidence_bundle_id=bundle.id,
+    )
+
+
+_MACRO_INDICATOR_LABELS: dict[str, str] = {
+    "MACRO_GDP": "GDP (current US$)",
+    "MACRO_CPI": "Inflation, consumer prices (annual %)",
+}
+_MACRO_COUNTRY_LABELS: dict[str, str] = {"GBR": "United Kingdom", "USA": "United States"}
+
+
+def _format_macro_value(metric_id: str, raw_value: str) -> str:
+    value = Decimal(raw_value)
+    if metric_id == "MACRO_CPI":
+        return f"{value:.2f}%"
+    return f"${value:,.0f}"
+
+
+async def _macro_reply(session: AsyncSession, metric_id: str, country: str) -> ResearchAnswer:
+    """WB/WDI series only, via DBnomics - the same (provider, dataset,
+    series) triple scripts._connector_registry.MACRO_PILOT_SERIES actually
+    ingests, so macro_series_subject_id here must derive the identical
+    subject_id that pipeline wrote facts under.
+    """
+    if not await _display_allowed(session, "dbnomics.macro"):
+        return _default_reply(f"{_MACRO_INDICATOR_LABELS[metric_id]} — {country}")
+
+    series_code = _MACRO_SERIES_CODES[(metric_id, country)]
+    now = dt.datetime.now(dt.UTC)
+    subject_id = macro_series_subject_id("WB", "WDI", series_code)
+    fact = await latest_accepted_fact(session, subject_id=subject_id, metric_id=metric_id)
+    if fact is None:
+        return _default_reply(f"{_MACRO_INDICATOR_LABELS[metric_id]} — {country}")
+
+    assert fact.knowledge_range.lower is not None  # our own rows always set this
+    knowledge_time = fact.knowledge_range.lower
+    indicator_label = _MACRO_INDICATOR_LABELS[metric_id]
+    country_label = _MACRO_COUNTRY_LABELS[country]
+    formatted_value = _format_macro_value(metric_id, fact.value["value"])
+
+    rows = [
+        ("Country", country_label),
+        ("Indicator", indicator_label),
+        ("Period", fact.value["period"]),
+        ("Value", formatted_value),
+    ]
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION", knowledge_time=now, status="ASSEMBLING"
+    )
+    session.add(bundle)
+    await session.flush()
+    session.add(EvidenceMember(evidence_bundle_id=bundle.id, kind="FACT", accepted_fact_id=fact.id))
+
+    return ResearchAnswer(
+        text=(
+            f"{country_label} {indicator_label}, {fact.value['period']}: {formatted_value}."
+        ),
+        facts=FactTable(title=f"{country_label} — {indicator_label}", rows=rows),
+        citations=[
+            Citation(
+                label="World Bank — World Development Indicators (via DBnomics)",
+                meta=f"As of {knowledge_time.isoformat()}",
+                pill=compute_freshness(metric_id=metric_id, knowledge_time=knowledge_time, now=now),
+                kind="link",
+            )
+        ],
+        note=None,
+        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        evidence_bundle_id=bundle.id,
+    )
+
+
 async def _pdp_permits(
     session: AsyncSession,
     *,
@@ -964,6 +1286,12 @@ async def assemble_research_answer(
         answer = await _document_backed_accrued_reply(session) or _accrued_reply()
     elif _mentions_yield_curve(query_text):
         answer = await _yield_curve_reply(session)
+    elif _mentions_fx(query_text):
+        answer = await _fx_rate_reply(session)
+    elif (macro_match := _mentioned_macro_series(query_text)) is not None:
+        answer = await _macro_reply(session, *macro_match)
+    elif (equity_answer := await _equity_price_reply(session, query_text)) is not None:
+        answer = equity_answer
     elif _mentions_market_structure(query_text):
         # Checked before _mentions_gilt - see _MARKET_STRUCTURE_PATTERN's
         # own comment for the real "Gilt-Edged Market Maker" misroute

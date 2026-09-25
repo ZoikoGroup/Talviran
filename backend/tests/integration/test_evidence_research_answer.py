@@ -30,12 +30,22 @@ from app.modules.evidence.models import (
     ParsedDocumentVersion,
 )
 from app.modules.evidence.service import SEED_GILT_ISIN, assemble_research_answer
-from app.modules.market.models import AcceptedFact, Dataset, Source, SourceArtifact
+from app.modules.market.models import (
+    AcceptedFact,
+    Dataset,
+    FactObservationLink,
+    Source,
+    SourceArtifact,
+    SourceObservation,
+)
 from app.modules.market.pipeline.curve_ingest import (
     METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
     SUBJECT_TYPE_YIELD_CURVE_POINT,
     curve_point_subject_id,
 )
+from app.modules.market.pipeline.equity_ingest import METRIC_EQUITY_EOD_PRICE
+from app.modules.market.pipeline.fx_ingest import METRIC_FX_SPOT_RATE, fx_pair_subject_id
+from app.modules.market.pipeline.macro_ingest import macro_series_subject_id
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
 from app.modules.market.pipeline.tradeweb_price_ingest import METRIC_GILT_MARKET_CLOSE_PRICE
 from app.modules.policy.allowed_output_type import AllowedOutputType
@@ -277,6 +287,388 @@ async def _seed_market_close_price(
         )
     )
     await session.flush()
+
+
+async def _seed_fx_fact(
+    session: AsyncSession, *, rate: str = "1.3350", knowledge_time: dt.datetime | None = None
+) -> AcceptedFact:
+    fact = AcceptedFact(
+        subject_type="FX_PAIR", subject_id=fx_pair_subject_id("GBP", "USD"),
+        metric_id=METRIC_FX_SPOT_RATE, valid_range=_CURVE_DAY_RANGE,
+        knowledge_range=Range(
+            lower=knowledge_time or dt.datetime.now(dt.UTC), upper=None, bounds="[)"
+        ),
+        value={"base_currency": "GBP", "quote_currency": "USD", "rate": rate},
+        status="ACTIVE",
+    )
+    session.add(fact)
+    await session.flush()
+    return fact
+
+
+async def _link_fact_to_new_observation(
+    session: AsyncSession, *, fact: AcceptedFact, rights_profile_id: uuid.UUID
+) -> None:
+    """A real observation, linked via FactObservationLink, backed by its
+    own distinct rights_profile_id - the exact shape _confirming_source_
+    count counts, mirroring how a real second source (e.g. boe) actually
+    gets linked in production by reconcile.py.
+    """
+    source = Source(code=f"test-source-{uuid.uuid4().hex[:8]}", name="Test Source")
+    session.add(source)
+    await session.flush()
+    dataset = Dataset(source_id=source.id, code="rates", name="Test Rates")
+    session.add(dataset)
+    await session.flush()
+    artifact = SourceArtifact(
+        dataset_id=dataset.id, sha256=uuid.uuid4().hex + uuid.uuid4().hex,
+        storage_ref="test://fx-fixture", media_type="application/json", byte_length=1,
+        retrieved_at=dt.datetime.now(dt.UTC),
+    )
+    session.add(artifact)
+    await session.flush()
+    observation = SourceObservation(
+        source_artifact_id=artifact.id, rights_profile_id=rights_profile_id,
+        subject_type=fact.subject_type, subject_id=fact.subject_id, metric_id=fact.metric_id,
+        semantic_observation_key=str(uuid.uuid4()), raw_value=fact.value,
+        observed_at=dt.datetime.now(dt.UTC),
+    )
+    session.add(observation)
+    await session.flush()
+    session.add(
+        FactObservationLink(
+            accepted_fact_id=fact.id, source_observation_id=observation.id, role="PRIMARY"
+        )
+    )
+    await session.flush()
+
+
+async def _seed_equity(
+    session: AsyncSession, *, issuer_name: str, symbol: str, exchange: str = "NASDAQ",
+) -> Instrument:
+    issuer = Issuer(name=issuer_name, country_code="US", status="ACTIVE")
+    session.add(issuer)
+    await session.flush()
+    instrument = Instrument(
+        issuer_id=issuer.id, instrument_type="EQUITY_COMMON", name=issuer_name,
+        currency_code="USD", status="ACTIVE",
+    )
+    session.add(instrument)
+    await session.flush()
+    session.add(
+        InstrumentAlias(
+            instrument_id=instrument.id, alias_type="TICKER", alias_value=f"{exchange}:{symbol}"
+        )
+    )
+    await session.flush()
+    return instrument
+
+
+async def _seed_equity_fact(
+    session: AsyncSession, *, instrument_id: uuid.UUID, close_price: str = "335.92",
+    symbol: str = "AAPL", exchange: str = "NASDAQ", knowledge_time: dt.datetime | None = None,
+) -> None:
+    session.add(
+        AcceptedFact(
+            subject_type="INSTRUMENT", subject_id=instrument_id, metric_id=METRIC_EQUITY_EOD_PRICE,
+            valid_range=_CURVE_DAY_RANGE,
+            knowledge_range=Range(
+                lower=knowledge_time or dt.datetime.now(dt.UTC), upper=None, bounds="[)"
+            ),
+            value={
+                "symbol": symbol, "exchange": exchange, "close_price": close_price,
+                "currency_code": "USD",
+            },
+            status="ACTIVE",
+        )
+    )
+    await session.flush()
+
+
+async def test_fx_query_returns_real_rate_confirmed_by_two_sources(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    frankfurter_rights = await _seed_rights_profile(
+        db_session, code="frankfurter.fx", actions=["display"]
+    )
+    boe_rights = await _seed_rights_profile(db_session, code="boe.fx-rates", actions=["display"])
+    fact = await _seed_fx_fact(db_session)
+    await _link_fact_to_new_observation(db_session, fact=fact, rights_profile_id=frankfurter_rights)
+    await _link_fact_to_new_observation(db_session, fact=fact, rights_profile_id=boe_rights)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the gbp to usd exchange rate",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.FACTUAL_EVIDENCE
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["Spot rate"] == "1.3350"
+    assert rows["Confirmed by"] == "2 independent sources"
+    assert "2 independent sources" in answer.text
+    assert answer.evidence_bundle_id is not None
+
+
+async def test_fx_query_with_one_source_reports_singular(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    frankfurter_rights = await _seed_rights_profile(
+        db_session, code="frankfurter.fx", actions=["display"]
+    )
+    fact = await _seed_fx_fact(db_session)
+    await _link_fact_to_new_observation(db_session, fact=fact, rights_profile_id=frankfurter_rights)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="exchange rate please", principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["Confirmed by"] == "1 independent source"
+
+
+async def test_fx_query_without_display_rights_falls_back(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    fact = await _seed_fx_fact(db_session)
+    profile_id = await _seed_rights_profile(
+        db_session, code="frankfurter.fx", actions=["retrieve"]
+    )
+    await _link_fact_to_new_observation(db_session, fact=fact, rights_profile_id=profile_id)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the gbp usd exchange rate",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+
+
+async def test_fx_query_with_no_data_falls_back(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="frankfurter.fx", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the gbp usd exchange rate",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+
+
+async def test_equity_query_matches_by_uppercase_ticker(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="twelve-data.equity", actions=["display"])
+    instrument = await _seed_equity(db_session, issuer_name="Apple Inc.", symbol="AAPL")
+    await _seed_equity_fact(db_session, instrument_id=instrument.id, close_price="335.92")
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what's AAPL trading at", principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.FACTUAL_EVIDENCE
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["Close price"] == "335.92 USD"
+    assert rows["Ticker"] == "NASDAQ:AAPL"
+    assert answer.evidence_bundle_id is not None
+
+
+async def test_equity_query_matches_by_lowercase_company_name(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="twelve-data.equity", actions=["display"])
+    instrument = await _seed_equity(db_session, issuer_name="Apple Inc.", symbol="AAPL")
+    await _seed_equity_fact(db_session, instrument_id=instrument.id, close_price="335.92")
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what's apple's stock price today",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert dict(answer.facts.rows)["Close price"] == "335.92 USD"
+
+
+async def test_equity_query_bp_ticker_does_not_false_positive_on_basis_points(
+    db_session: AsyncSession,
+) -> None:
+    """A real collision found while building this: "BP" is also common
+    finance jargon for "basis points". Lowercase "bp" in that context must
+    never be mistaken for the BP p.l.c. ticker - only exact-case "BP"
+    should match.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="twelve-data.equity", actions=["display"])
+    instrument = await _seed_equity(
+        db_session, issuer_name="BP p.l.c.", symbol="BP", exchange="NYSE",
+    )
+    await _seed_equity_fact(
+        db_session, instrument_id=instrument.id, close_price="35.10", symbol="BP", exchange="NYSE",
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what does a 10 bp move in yield mean",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None, "lowercase 'bp' jargon must not match the BP ticker"
+
+
+async def test_equity_query_bp_uppercase_ticker_does_match(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="twelve-data.equity", actions=["display"])
+    instrument = await _seed_equity(
+        db_session, issuer_name="BP p.l.c.", symbol="BP", exchange="NYSE",
+    )
+    await _seed_equity_fact(
+        db_session, instrument_id=instrument.id, close_price="35.10", symbol="BP", exchange="NYSE",
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is BP's share price", principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert dict(answer.facts.rows)["Close price"] == "35.10 USD"
+
+
+async def test_equity_query_with_no_company_mentioned_falls_through(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="twelve-data.equity", actions=["display"])
+    instrument = await _seed_equity(db_session, issuer_name="Apple Inc.", symbol="AAPL")
+    await _seed_equity_fact(db_session, instrument_id=instrument.id)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what's the capital of France?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
+
+
+async def test_equity_query_without_display_rights_falls_back(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="twelve-data.equity", actions=["retrieve"])
+    instrument = await _seed_equity(db_session, issuer_name="Apple Inc.", symbol="AAPL")
+    await _seed_equity_fact(db_session, instrument_id=instrument.id)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="AAPL price", principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+
+
+async def _seed_macro_fact(
+    session: AsyncSession, *, metric_id: str, series_code: str, period: str = "2023",
+    value: str = "3340032380668.04", knowledge_time: dt.datetime | None = None,
+) -> None:
+    subject_id = macro_series_subject_id("WB", "WDI", series_code)
+    period_start = dt.datetime(int(period), 1, 1, tzinfo=dt.UTC)
+    period_end = dt.datetime(int(period) + 1, 1, 1, tzinfo=dt.UTC)
+    session.add(
+        AcceptedFact(
+            subject_type="MACRO_SERIES", subject_id=subject_id, metric_id=metric_id,
+            valid_range=Range(lower=period_start, upper=period_end, bounds="[)"),
+            knowledge_range=Range(
+                lower=knowledge_time or dt.datetime.now(dt.UTC), upper=None, bounds="[)"
+            ),
+            value={
+                "provider_code": "WB", "dataset_code": "WDI", "series_code": series_code,
+                "period": period, "value": value,
+            },
+            status="ACTIVE",
+        )
+    )
+    await session.flush()
+
+
+async def test_macro_gdp_query_for_uk_returns_real_value(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="dbnomics.macro", actions=["display"])
+    await _seed_macro_fact(
+        db_session, metric_id="MACRO_GDP", series_code="A-NY.GDP.MKTP.CD-GBR",
+        period="2023", value="3340032380668.04",
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the UK's GDP", principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.FACTUAL_EVIDENCE
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["Country"] == "United Kingdom"
+    assert rows["Period"] == "2023"
+    assert rows["Value"] == "$3,340,032,380,668"
+    assert answer.evidence_bundle_id is not None
+
+
+async def test_macro_cpi_query_for_usa_returns_real_value(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="dbnomics.macro", actions=["display"])
+    await _seed_macro_fact(
+        db_session, metric_id="MACRO_CPI", series_code="A-FP.CPI.TOTL.ZG-USA",
+        period="2023", value="4.11633838374488",
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what's the inflation rate in america",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["Country"] == "United States"
+    assert rows["Value"] == "4.12%"
+
+
+async def test_macro_query_without_country_falls_through(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="dbnomics.macro", actions=["display"])
+    await _seed_macro_fact(
+        db_session, metric_id="MACRO_GDP", series_code="A-NY.GDP.MKTP.CD-GBR",
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is GDP", principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
+
+
+async def test_macro_query_without_display_rights_falls_back(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="dbnomics.macro", actions=["retrieve"])
+    await _seed_macro_fact(
+        db_session, metric_id="MACRO_GDP", series_code="A-NY.GDP.MKTP.CD-GBR",
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the UK's GDP", principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+
+
+async def test_macro_query_with_no_data_falls_back(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="dbnomics.macro", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the UK's GDP", principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
 
 
 async def test_advice_query_is_redirected(db_session: AsyncSession) -> None:
