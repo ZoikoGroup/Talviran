@@ -103,10 +103,10 @@ class AIModelExecution(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     task_type: Mapped[str] = mapped_column(String(32), index=True)
     provider_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("ai_gateway.ai_provider.id")
+        PGUUID(as_uuid=True), ForeignKey("ai_gateway.ai_provider.id"), index=True
     )
     model_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("ai_gateway.ai_model.id")
+        PGUUID(as_uuid=True), ForeignKey("ai_gateway.ai_model.id"), index=True
     )
     # Not a FK to evidence.evidence_bundle - same cross-schema convention
     # policy/models.py documents for research.message: the owning module

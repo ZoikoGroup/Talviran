@@ -36,7 +36,12 @@ _GROUNDING_INSTRUCTION = (
     "the evidence does not contain enough information to answer, say so "
     "explicitly rather than drawing on outside knowledge. Do not state or "
     "imply any investment recommendation, price target, ranking, or "
-    "suitability conclusion under any circumstances."
+    "suitability conclusion under any circumstances. "
+    "Format your response professionally: use bold headings for different sections, "
+    "write in structured paragraphs instead of raw bullet lists, "
+    "and round long decimals to 4 decimal places for readability. "
+    "DO NOT output markdown tables; the system already renders a structured facts "
+    "table separately, so provide only a brief prose summary."
 )
 
 # ~5k tokens at a conservative 4 chars/token - a policy bound, see module

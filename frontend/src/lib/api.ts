@@ -257,6 +257,7 @@ export interface ResearchCitation {
   meta?: string
   pill: Freshness
   kind: CiteKind
+  url?: string
 }
 
 export interface ResearchFacts {
@@ -284,7 +285,7 @@ interface ResearchWire {
   message_id: string
   text: string
   facts: { title: string; rows: [string, string][] } | null
-  citations: { label: string; meta: string | null; pill: string; kind: string }[]
+  citations: { label: string; meta: string | null; pill: string; kind: string; url: string | null }[]
   note: string | null
 }
 
@@ -310,6 +311,7 @@ export const postResearch = (conversationId: string, query: string): Promise<Res
       meta: c.meta ?? undefined,
       pill: c.pill as Freshness,
       kind: c.kind as CiteKind,
+      url: c.url ?? undefined,
     })),
     note: r.note,
   }))

@@ -154,7 +154,7 @@ class ReconciliationDecision(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     decision: Mapped[str] = mapped_column(String(16))  # ACCEPTED | CONFLICT | NO_CHANGE
     reason: Mapped[str] = mapped_column(String(500))
     accepted_fact_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("market.accepted_fact.id"), default=None
+        PGUUID(as_uuid=True), ForeignKey("market.accepted_fact.id"), index=True, default=None
     )
 
 
