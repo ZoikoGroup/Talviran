@@ -257,18 +257,18 @@ class EvidenceMember(UUIDPrimaryKeyMixin, Base):
     kind: Mapped[str] = mapped_column(String(32))  # FACT | CALCULATION | DOCUMENT_SPAN | ...
 
     accepted_fact_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("market.accepted_fact.id"), default=None
+        PGUUID(as_uuid=True), ForeignKey("market.accepted_fact.id"), index=True, default=None
     )
     # No FK yet — calculation.calculation_result doesn't exist until week 11.
     calculation_result_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), default=None
+        PGUUID(as_uuid=True), index=True, default=None
     )
     document_chunk_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("evidence.document_chunk.id"), default=None
+        PGUUID(as_uuid=True), ForeignKey("evidence.document_chunk.id"), index=True, default=None
     )
     citation_locator_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("evidence.citation_locator.id"), default=None
+        PGUUID(as_uuid=True), ForeignKey("evidence.citation_locator.id"), index=True, default=None
     )
     source_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("market.source_artifact.id"), default=None
+        PGUUID(as_uuid=True), ForeignKey("market.source_artifact.id"), index=True, default=None
     )

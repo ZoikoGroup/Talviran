@@ -194,7 +194,16 @@ async def invoke_model(
                 return InvokeRejected(
                     reason=f"no adapter registered for provider {provider.code!r}"
                 )
-        except (GeminiGenerationError, GroqGenerationError) as exc:
+        except (GeminiGenerationError, GroqGenerationError, httpx.HTTPError) as exc:
+            # httpx.HTTPError (DNS failure, connection reset, the 30s
+            # timeout actually elapsing) is exactly "provider down" - the
+            # module docstring's stated invariant ("AI is fully removable
+            # ... the platform must keep answering correctly with the
+            # Gateway turned off") only holds if a transport failure is
+            # handled the same way as the providers' own GenerationError,
+            # not left to propagate as a raw httpx exception that would
+            # 500 the request instead of falling back to the rule-based
+            # answer.
             session.add(
                 AIModelExecution(
                     task_type=task_type, provider_id=provider.id, model_id=model.id,

@@ -24,15 +24,24 @@ class GeminiEmbeddingError(Exception):
 
 
 async def embed_text(client: httpx.AsyncClient, *, text: str, api_key: str) -> list[float]:
-    response = await client.post(
-        f"{_API_BASE}/models/{EMBEDDING_MODEL}:embedContent",
-        params={"key": api_key},
-        json={
-            "content": {"parts": [{"text": text}]},
-            "outputDimensionality": EMBEDDING_DIMENSIONS,
-        },
-        timeout=30.0,
-    )
+    try:
+        response = await client.post(
+            f"{_API_BASE}/models/{EMBEDDING_MODEL}:embedContent",
+            params={"key": api_key},
+            json={
+                "content": {"parts": [{"text": text}]},
+                "outputDimensionality": EMBEDDING_DIMENSIONS,
+            },
+            timeout=30.0,
+        )
+    except httpx.HTTPError as exc:
+        # A transport failure (DNS, connection reset, the 30s timeout
+        # actually elapsing) is "network", one of the reasons this
+        # class's own docstring already claims - wrapping it here fixes
+        # both of this function's callers (embed_chunk and
+        # search_chunks_by_semantic_query) in one place, rather than each
+        # having to know to catch a bare httpx exception separately.
+        raise GeminiEmbeddingError(f"Gemini embedContent request failed: {exc}") from exc
     if response.status_code != 200:
         raise GeminiEmbeddingError(
             f"Gemini embedContent returned {response.status_code}: {response.text[:500]}"

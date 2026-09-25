@@ -795,10 +795,43 @@ async def _resolve_bundle_items(
         )
     ).scalars().all()
 
+    # Batched (WHERE id IN (...)) rather than one session.get() per member -
+    # a bundle backing an AI-composed answer can have many members, and
+    # this function is on the /research request path (via
+    # get_evidence_bundle_items -> ai_gateway.evidence_path), not just a
+    # script. Facts/results are looked up in a dict afterward so the
+    # per-member loop below still emits items in the SAME order as
+    # `members` - citation indices elsewhere are positional, so this must
+    # never reorder.
+    fact_ids = {
+        m.accepted_fact_id for m in members if m.kind == "FACT" and m.accepted_fact_id is not None
+    }
+    result_ids = {
+        m.calculation_result_id
+        for m in members
+        if m.kind == "CALCULATION" and m.calculation_result_id is not None
+    }
+
+    facts_by_id: dict[uuid.UUID, AcceptedFact] = {}
+    if fact_ids:
+        fact_rows = (
+            await session.execute(select(AcceptedFact).where(AcceptedFact.id.in_(fact_ids)))
+        ).scalars().all()
+        facts_by_id = {fact.id: fact for fact in fact_rows}
+
+    results_by_id: dict[uuid.UUID, CalculationResult] = {}
+    if result_ids:
+        result_rows = (
+            await session.execute(
+                select(CalculationResult).where(CalculationResult.id.in_(result_ids))
+            )
+        ).scalars().all()
+        results_by_id = {result.id: result for result in result_rows}
+
     items: list[EvidenceItem] = []
     for member in members:
         if member.kind == "FACT" and member.accepted_fact_id is not None:
-            fact = await session.get(AcceptedFact, member.accepted_fact_id)
+            fact = facts_by_id.get(member.accepted_fact_id)
             if fact is not None:
                 assert fact.knowledge_range.lower is not None  # our own rows always set this
                 items.append(
@@ -812,7 +845,7 @@ async def _resolve_bundle_items(
                     )
                 )
         elif member.kind == "CALCULATION" and member.calculation_result_id is not None:
-            result = await session.get(CalculationResult, member.calculation_result_id)
+            result = results_by_id.get(member.calculation_result_id)
             if result is not None:
                 items.append(
                     EvidenceItem(

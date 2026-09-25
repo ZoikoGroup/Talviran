@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { PanelLeft } from 'lucide-react'
+import { PanelLeft, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import Sidebar, { type Chat, type Project } from '@/components/Sidebar'
 import Message from '@/components/Message'
@@ -99,8 +99,19 @@ export default function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const { theme, setTheme } = useTheme()
   const [showSettings, setShowSettings] = useState(false)
+  // Surfaces a failed background sync (rename/move/delete) instead of
+  // silently leaving the UI showing something the backend never actually
+  // accepted - paired with rolling the optimistic change back in the
+  // handler that set this, so the two stay consistent with each other.
+  const [syncError, setSyncError] = useState<string | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  // Guards selectChat against firing a second GET for the same chat while
+  // the first is still in flight (e.g. a double-click, or clicking away
+  // and back before the first request resolves) - messagesLoaded only
+  // flips to true once the response lands, so without this a rapid
+  // re-select would otherwise start a duplicate request.
+  const pendingChatLoads = useRef<Set<string>>(new Set())
   const active = chats.find((c) => c.id === activeId) ?? chats[0]
   const isLoadingActive = Boolean(active.backendId) && !active.messagesLoaded
   const isEmpty = !isLoadingActive && active.messages.length === 0
@@ -152,6 +163,14 @@ export default function App() {
     localStorage.setItem('talvrin-sidebar', collapsed ? 'collapsed' : 'open')
   }, [collapsed])
 
+  // A sync-failure toast clears itself so one stale error doesn't linger
+  // forever if the user doesn't notice it.
+  useEffect(() => {
+    if (!syncError) return
+    const timer = setTimeout(() => setSyncError(null), 5000)
+    return () => clearTimeout(timer)
+  }, [syncError])
+
   // Keep the newest message in view.
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -176,6 +195,8 @@ export default function App() {
 
     const target = chats.find((c) => c.id === id)
     if (!target?.backendId || target.messagesLoaded) return
+    if (pendingChatLoads.current.has(id)) return
+    pendingChatLoads.current.add(id)
 
     void (async () => {
       try {
@@ -198,6 +219,8 @@ export default function App() {
           return
         }
         // Leave messagesLoaded false so reselecting the chat retries.
+      } finally {
+        pendingChatLoads.current.delete(id)
       }
     })()
   }
@@ -347,19 +370,37 @@ export default function App() {
 
   /** Move a chat into a project, or back out to the flat history (`null`). */
   const moveChat = (chatId: string, projectId: string | null) => {
-    setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, projectId } : c)))
     const target = chats.find((c) => c.id === chatId)
-    if (target?.backendId) void patchChat(target.backendId, { projectId }).catch(() => {})
+    const previousProjectId = target?.projectId ?? null
+    setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, projectId } : c)))
+    if (!target?.backendId) return
+    void patchChat(target.backendId, { projectId }).catch(() => {
+      setChats((prev) =>
+        prev.map((c) => (c.id === chatId ? { ...c, projectId: previousProjectId } : c))
+      )
+      setSyncError("Couldn't move that chat. Please try again.")
+    })
   }
 
   const renameChat = (chatId: string, title: string) => {
-    setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, title } : c)))
     const target = chats.find((c) => c.id === chatId)
-    if (target?.backendId) void patchChat(target.backendId, { title }).catch(() => {})
+    const previousTitle = target?.title
+    setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, title } : c)))
+    if (!target?.backendId) return
+    void patchChat(target.backendId, { title }).catch(() => {
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === chatId && previousTitle !== undefined ? { ...c, title: previousTitle } : c
+        )
+      )
+      setSyncError("Couldn't rename that chat. Please try again.")
+    })
   }
 
   const deleteChat = (chatId: string) => {
     const target = chats.find((c) => c.id === chatId)
+    const previousChats = chats
+    const previousActiveId = activeId
     const next = chats.filter((c) => c.id !== chatId)
     // The app always needs somewhere to type, so never leave zero chats.
     if (next.length === 0) {
@@ -370,27 +411,60 @@ export default function App() {
       setChats(next)
       if (chatId === activeId) setActiveId(next[0].id)
     }
-    if (target?.backendId) void apiDeleteChat(target.backendId).catch(() => {})
+    if (!target?.backendId) return
+    void apiDeleteChat(target.backendId).catch(() => {
+      setChats(previousChats)
+      setActiveId(previousActiveId)
+      setSyncError("Couldn't delete that chat. Please try again.")
+    })
   }
 
   const renameProject = (projectId: string, name: string) => {
+    const previousName = projects.find((p) => p.id === projectId)?.name
     setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, name } : p)))
-    void patchProject(projectId, name).catch(() => {})
+    void patchProject(projectId, name).catch(() => {
+      setProjects((prev) =>
+        prev.map((p) => (p.id === projectId && previousName ? { ...p, name: previousName } : p))
+      )
+      setSyncError("Couldn't rename that project. Please try again.")
+    })
   }
 
   /** Deleting a project keeps its chats — they fall back to the flat history. */
   const deleteProject = (projectId: string) => {
+    const previousProjects = projects
+    const previousChats = chats
     setProjects((prev) => prev.filter((p) => p.id !== projectId))
     setChats((prev) =>
       prev.map((c) => (c.projectId === projectId ? { ...c, projectId: null } : c))
     )
-    void apiDeleteProject(projectId).catch(() => {})
+    void apiDeleteProject(projectId).catch(() => {
+      setProjects(previousProjects)
+      setChats(previousChats)
+      setSyncError("Couldn't delete that project. Please try again.")
+    })
   }
 
   return (
     <div className="relative flex h-full overflow-hidden bg-background">
       {/* Painted first so the sidebar's backdrop-filter samples it. */}
       <div aria-hidden className="app-ambient" />
+
+      {syncError && (
+        <div
+          role="alert"
+          className="fixed inset-x-0 top-3 z-50 mx-auto flex w-fit max-w-[90vw] items-center gap-3 rounded-full border border-destructive/40 bg-destructive/10 px-4 py-2 text-[13px] text-destructive shadow-lg backdrop-blur"
+        >
+          <span>{syncError}</span>
+          <button
+            onClick={() => setSyncError(null)}
+            aria-label="Dismiss"
+            className="text-destructive/70 hover:text-destructive"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       <Sidebar
         collapsed={collapsed}
