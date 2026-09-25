@@ -25,6 +25,7 @@ export interface Citation {
   meta?: string
   pill: Freshness
   kind: CiteKind
+  url?: string
 }
 
 export interface FactTable {

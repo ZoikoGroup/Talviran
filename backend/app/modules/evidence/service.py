@@ -150,6 +150,7 @@ class Citation:
     meta: str | None
     pill: str  # CURRENT | DELAYED | STALE | UNAVAILABLE | SOURCE - mirrors frontend's Freshness
     kind: str  # doc | book | link
+    url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -334,6 +335,7 @@ def _accrued_reply() -> ResearchAnswer:
                 meta="Accrued interest & ex-dividend, 18 Dec 2024",
                 pill="SOURCE",
                 kind="book",
+                url="https://www.dmo.gov.uk/media/pnklmbn3/gilt-formulae.pdf",
             )
         ],
         note=_ACCRUED_EXPLANATION_NOTE,
@@ -504,6 +506,7 @@ async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchA
                 now=now,
             ),
             kind="doc",
+            url="https://www.dmo.gov.uk/data/pdfdatareport?reportCode=D1A",
         ),
     ]
 
@@ -535,6 +538,7 @@ async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchA
                     meta=f"As of {model_price.as_of_date.isoformat()} — not a market quote",
                     pill="SOURCE",
                     kind="link",
+                    url="https://www.bankofengland.co.uk/statistics/yield-curves",
                 )
             )
             session.add(
@@ -667,6 +671,7 @@ async def _yield_curve_reply(session: AsyncSession) -> ResearchAnswer:
                     knowledge_time=oldest_knowledge_time,
                 ),
                 kind="doc",
+                url="https://www.bankofengland.co.uk/statistics/yield-curves",
             )
         ],
         note=None,
