@@ -22,8 +22,8 @@ from app.modules.market.pipeline.ingest_tail import IngestOutcome
 from app.modules.reference.models import Instrument, InstrumentAlias, Issuer
 from app.modules.rights.models import RightsGrant, RightsProfile
 
-SEED_SYMBOL = "TATAMOTORS"
-SEED_EXCHANGE = "NSE"
+SEED_SYMBOL = "VOD"
+SEED_EXCHANGE = "LSE"
 
 
 async def _seed_reference_and_rights(session: AsyncSession) -> tuple[uuid.UUID, uuid.UUID]:
@@ -31,15 +31,17 @@ async def _seed_reference_and_rights(session: AsyncSession) -> tuple[uuid.UUID, 
     this test's own session/transaction — same pattern as the gilt
     pipeline's own integration test.
     """
-    issuer = Issuer(name="Tata Motors Limited", country_code="IN", status="ACTIVE")
+    issuer = Issuer(
+        name="Vodafone Group Public Limited Company", country_code="GB", status="ACTIVE"
+    )
     session.add(issuer)
     await session.flush()
 
     instrument = Instrument(
         issuer_id=issuer.id,
         instrument_type="EQUITY_COMMON",
-        name="Tata Motors Limited",
-        currency_code="INR",
+        name="Vodafone Group Public Limited Company",
+        currency_code="GBP",
         status="ACTIVE",
     )
     session.add(instrument)
@@ -87,7 +89,7 @@ async def _seed_source_artifact(session: AsyncSession) -> SourceArtifact:
 def _candidate(trade_date: dt.date = dt.date(2026, 9, 17)) -> EquityEodPriceCandidate:
     return EquityEodPriceCandidate(
         symbol=SEED_SYMBOL, exchange=SEED_EXCHANGE, trade_date=trade_date,
-        close_price=Decimal("695.25"), currency_code="INR",
+        close_price=Decimal("69.25"), currency_code="GBP",
     )
 
 
@@ -116,8 +118,8 @@ async def test_resolved_ticker_flows_through_to_an_accepted_fact(db_session: Asy
     assert fact.subject_type == "INSTRUMENT"
     assert fact.subject_id == instrument_id
     assert fact.value == {
-        "symbol": "TATAMOTORS", "exchange": "NSE", "close_price": "695.25",
-        "currency_code": "INR",
+        "symbol": "VOD", "exchange": "LSE", "close_price": "69.25",
+        "currency_code": "GBP",
     }
 
 
