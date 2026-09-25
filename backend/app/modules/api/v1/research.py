@@ -197,7 +197,7 @@ async def create_research_answer(
 
         import json
         full_content = answer.text
-        metadata = {}
+        metadata: dict[str, Any] = {}
         if answer.facts is not None:
             metadata["facts"] = {"title": answer.facts.title, "rows": answer.facts.rows}
         if answer.citations:
