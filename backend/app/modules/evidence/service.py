@@ -294,6 +294,9 @@ _CAPABILITY_SUMMARY = (
     "- The Bank of England's UK nominal gilt spot curve, and the "
     "model-implied prices derived from it — their published interest-rate "
     "curve, updated daily\n"
+    "- GBP/USD exchange rates, US-listed equity prices, and UK/US "
+    "macroeconomic indicators (GDP, inflation) — all from real, reconciled "
+    "data\n"
     "- Accrued interest, clean vs dirty price, and ex-dividend methodology — "
     "general explanations, not tied to live data\n\n"
     "I never give investment recommendations, price targets, or buy/sell/hold "
@@ -442,7 +445,9 @@ async def _document_backed_accrued_reply(session: AsyncSession) -> ResearchAnswe
     # (confirmed against the live-acquired DMO document: "ex-dividend" as
     # a literal token doesn't appear on the page that covers accrued
     # interest worked examples, even though the concept does).
-    chunks = await search_chunks_by_text(session, query_text="accrued interest", limit=1)
+    chunks = await search_chunks_by_text(
+        session, query_text="accrued interest", limit=1, min_rank=_MIN_LEXICAL_MATCH_RANK
+    )
     if not chunks:
         return None
     evidence = await _assemble_chunk_evidence(session, chunks[0])
@@ -513,6 +518,21 @@ _MAX_SEMANTIC_MATCH_DISTANCE = 0.4
 #: in the gap.
 _MAX_PROSE_DIGIT_RATIO = 0.2
 
+#: Real found bug (2026-09-25): "Lexical AND-matching is its own relevance
+#: filter" (this module's own prior assumption, see the comment this
+#: replaced) turned out false - plainto_tsquery ANDs on whatever's left
+#: after English stopword removal, and a short query can reduce to one
+#: common word ("what's your name" -> just "name", "inflation rate" ->
+#: "rate"), which then matches ANY chunk containing that word. Two real
+#: false positives found live: both questions confidently returned an
+#: unrelated GEMM application-form excerpt instead of admitting no match.
+#: Calibrated the same way as _MAX_SEMANTIC_MATCH_DISTANCE and
+#: _MAX_PROSE_DIGIT_RATIO: measured ts_rank against the real corpus -
+#: genuine on-topic matches land at 0.19-0.82; the two real false
+#: positives (plus 2 more synthetic bad-query checks) land at 0.002-0.094.
+#: 0.15 sits cleanly in the gap.
+_MIN_LEXICAL_MATCH_RANK = 0.15
+
 
 def _looks_like_a_data_table(text: str) -> bool:
     nonspace = [ch for ch in text if not ch.isspace()]
@@ -548,11 +568,9 @@ async def _document_backed_fallback_reply(
         except GeminiEmbeddingError:
             chunks = []
     if not chunks:
-        # Lexical AND-matching is its own relevance filter (every query
-        # word must be literally present), so no separate distance
-        # threshold is needed here the way vector nearest-neighbour needs
-        # one.
-        chunks = await search_chunks_by_text(session, query_text=query_text, limit=1)
+        chunks = await search_chunks_by_text(
+            session, query_text=query_text, limit=1, min_rank=_MIN_LEXICAL_MATCH_RANK
+        )
     if not chunks:
         return None
 
@@ -594,8 +612,9 @@ def _default_reply(query: str) -> ResearchAnswer:
             f'You asked: "{query}"\n\n'
             "Talvrin only answers from accepted facts and deterministic "
             "calculations, and doesn't yet have reconciled data covering this "
-            "question — currently only UK gilt reference terms and BoE-curve-implied "
-            "pricing for one seeded instrument are live."
+            "question — currently live: UK gilt terms and real market prices, "
+            "the BoE yield curve, GBP/USD exchange rates, US equity prices, and "
+            "UK/US macroeconomic indicators."
         ),
         facts=None,
         citations=[],
@@ -1331,6 +1350,11 @@ class EvidenceItem:
     value: dict[str, object] | None
     basis: str | None
     as_of: str | None
+    # DOCUMENT_SPAN only - a fact/calculation item is self-describing via
+    # metric_id/value, but a document excerpt needs its own source title
+    # and text to be renderable at all (see _resolve_bundle_items).
+    document_title: str | None = None
+    text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1355,15 +1379,46 @@ async def is_message_visible(session: AsyncSession, *, message_id: uuid.UUID) ->
     return row is not None
 
 
+async def _resolve_document_span_item(
+    session: AsyncSession, document_chunk_id: uuid.UUID
+) -> EvidenceItem | None:
+    """DOCUMENT_SPAN rendering - a document excerpt has no metric_id/value
+    to be self-describing with, so its document title (+ page, when known)
+    stands in for that, and the chunk's own text is what a reader (or an
+    AI Gateway prompt) actually needs. Returns None if the chunk or its
+    document chain can't be resolved - never a placeholder item, matching
+    _assemble_chunk_evidence's own "degrade to no citation, never a
+    guessed one" rule.
+    """
+    chunk = await session.get(DocumentChunk, document_chunk_id)
+    if chunk is None:
+        return None
+    parsed = await session.get(ParsedDocumentVersion, chunk.parsed_document_version_id)
+    version = await session.get(DocumentVersion, parsed.document_version_id) if parsed else None
+    document = await session.get(Document, version.document_id) if version else None
+    if document is None:
+        return None
+
+    title = f"{document.title}, page {chunk.page_start}" if chunk.page_start else document.title
+    return EvidenceItem(
+        kind="DOCUMENT_SPAN",
+        subject_type=None,
+        metric_id=None,
+        value=None,
+        basis=None,
+        as_of=None,
+        document_title=title,
+        text=chunk.text_content,
+    )
+
+
 async def _resolve_bundle_items(
     session: AsyncSession, bundle_id: uuid.UUID
 ) -> list[EvidenceItem]:
-    """FACT/CALCULATION rendering shared by every bundle reader - keyed on
-    bundle_id, not research_message_id, so a bundle can be read before (or
-    without ever) being attached to a persisted message. DOCUMENT_SPAN
-    members aren't rendered here yet - existing callers only ever read
-    FACT/CALCULATION bundles; extend this when a caller needs document-span
-    evidence back out in this shape.
+    """FACT/CALCULATION/DOCUMENT_SPAN rendering shared by every bundle
+    reader - keyed on bundle_id, not research_message_id, so a bundle can
+    be read before (or without ever) being attached to a persisted
+    message.
     """
     members = (
         await session.execute(
@@ -1400,6 +1455,10 @@ async def _resolve_bundle_items(
                         as_of=result.as_of_date.isoformat(),
                     )
                 )
+        elif member.kind == "DOCUMENT_SPAN" and member.document_chunk_id is not None:
+            item = await _resolve_document_span_item(session, member.document_chunk_id)
+            if item is not None:
+                items.append(item)
     return items
 
 

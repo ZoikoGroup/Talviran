@@ -19,7 +19,7 @@ from app.modules.evidence.models import (
 
 
 async def search_chunks_by_text(
-    session: AsyncSession, *, query_text: str, limit: int = 10
+    session: AsyncSession, *, query_text: str, limit: int = 10, min_rank: float | None = None
 ) -> list[DocumentChunk]:
     """Lexical retrieval - EVID-001 §12.1's launch full-text-search
     implementation, ranked by ts_rank against the stored search_vector
@@ -30,6 +30,19 @@ async def search_chunks_by_text(
     Superseded versions are NOT excluded here: they remain valid
     historical evidence, unlike withdrawn/quarantined content the
     platform has already marked unusable.
+
+    min_rank filters out weak matches - a real gap found live (2026-09-25):
+    "AND-matching is its own relevance filter" was the original assumption
+    here, but plainto_tsquery ANDs on whatever's LEFT after English
+    stopword removal, and a short query can reduce to a single common
+    word ("what's your name" -> just "name", "inflation rate" -> "rate"),
+    which then matches ANY chunk containing that word, however unrelated.
+    Measured against the real corpus: genuine on-topic matches land at
+    ts_rank 0.19-0.82; the two real false positives found live land at
+    0.002 and 0.087 - the same "measure the real gap, pick a value in the
+    middle" approach _MAX_SEMANTIC_MATCH_DISTANCE used for semantic
+    search. None (the default) means no filtering, matching
+    search_chunks_by_vector's own max_distance convention.
     """
     tsquery = func.plainto_tsquery("english", query_text)
     rank = func.ts_rank(DocumentChunk.search_vector, tsquery)
@@ -48,6 +61,8 @@ async def search_chunks_by_text(
         .order_by(rank.desc())
         .limit(limit)
     )
+    if min_rank is not None:
+        stmt = stmt.where(rank >= min_rank)
     return list((await session.execute(stmt)).scalars().all())
 
 

@@ -79,6 +79,8 @@ class EvidenceItemOut(BaseModel):
     value: dict[str, Any] | None
     basis: str | None
     as_of: str | None
+    document_title: str | None
+    text: str | None
 
 
 class EvidenceOut(BaseModel):
@@ -279,6 +281,8 @@ async def get_research_evidence(
                 value=i.value,
                 basis=i.basis,
                 as_of=i.as_of,
+                document_title=i.document_title,
+                text=i.text,
             )
             for i in detail.items
         ],

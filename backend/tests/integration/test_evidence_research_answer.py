@@ -871,6 +871,32 @@ async def test_catch_all_query_with_a_dense_numeric_chunk_is_not_dumped_raw(
     assert "not something I can read out cleanly" in answer.text
 
 
+async def test_catch_all_query_reducing_to_one_common_word_does_not_false_positive(
+    db_session: AsyncSession,
+) -> None:
+    # Real bug found live: "what's your name" reduces (after English
+    # stopword removal) to just "name", which then confidently matched a
+    # document chunk containing an unrelated form field ("Name of firm:
+    # ___") instead of admitting no real match exists. The lexical
+    # fallback's own relevance floor (added to fix this) must now filter
+    # it out, same as the semantic path's distance cutoff already does.
+    await _seed_capability_and_jurisdiction(db_session)
+    profile_id = await _seed_rights_profile(
+        db_session, code="test.doc-display-form", actions=["display"]
+    )
+    await _seed_accrued_document_chunk(
+        db_session, rights_profile_id=profile_id,
+        text_content="Name of firm: ___________ Address: ___________ Date of application: ___",
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what's your name", principal_id=None, account_id=None,
+    )
+
+    assert answer.evidence_bundle_id is None
+    assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
+
+
 async def test_default_query_has_no_facts(db_session: AsyncSession) -> None:
     await _seed_capability_and_jurisdiction(db_session)
     answer = await assemble_research_answer(
@@ -880,6 +906,22 @@ async def test_default_query_has_no_facts(db_session: AsyncSession) -> None:
     assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
     assert answer.facts is None
     assert answer.evidence_bundle_id is None
+
+
+async def test_default_reply_capability_text_is_not_stale(db_session: AsyncSession) -> None:
+    # Real gap found live 2026-09-25: this text still said "only ... one
+    # seeded instrument" long after 70 gilts, real Tradeweb prices, FX,
+    # equity and macro data all shipped - a genuinely misleading "sorry,
+    # no data" message.
+    await _seed_capability_and_jurisdiction(db_session)
+    answer = await assemble_research_answer(
+        db_session, query_text="what's the capital of France?",
+        principal_id=None, account_id=None,
+    )
+    assert "one seeded instrument" not in answer.text
+    assert "exchange rate" in answer.text.lower()
+    assert "equity" in answer.text.lower()
+    assert "macroeconomic" in answer.text.lower()
 
 
 async def test_market_maker_question_reaches_document_search_not_instrument_facts(
@@ -1297,6 +1339,8 @@ async def test_help_query_lists_real_current_topics(db_session: AsyncSession) ->
     assert "gilt reference terms" in answer.text.lower()
     assert "spot curve" in answer.text.lower()
     assert "accrued" in answer.text.lower()
+    assert "exchange rate" in answer.text.lower()
+    assert "macroeconomic" in answer.text.lower()
     assert answer.facts is None
     assert answer.evidence_bundle_id is None
 

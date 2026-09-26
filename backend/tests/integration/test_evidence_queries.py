@@ -132,3 +132,41 @@ async def test_search_respects_the_limit(db_session: AsyncSession) -> None:
     results = await search_chunks_by_text(db_session, query_text="accrued interest", limit=2)
 
     assert len(results) == 2
+
+
+async def test_min_rank_excludes_a_weak_incidental_match(db_session: AsyncSession) -> None:
+    """A real gap found live: "what's your name" reduces (after English
+    stopword removal) to just "name", which then matched ANY chunk
+    containing that one common word - here, a form field, not a real
+    answer to the question. Without min_rank this still "matches"
+    (weakly); with the calibrated floor it must not.
+    """
+    await _seed_chunk(
+        db_session,
+        text_content="Name of firm: ___________ Address: ___________ Date of application: ___",
+    )
+    await db_session.commit()
+
+    unfiltered = await search_chunks_by_text(db_session, query_text="what's your name")
+    assert len(unfiltered) == 1, "sanity check: this really is a weak-but-real lexical match"
+
+    filtered = await search_chunks_by_text(
+        db_session, query_text="what's your name", min_rank=0.15
+    )
+    assert filtered == []
+
+
+async def test_min_rank_still_returns_a_strong_genuine_match(db_session: AsyncSession) -> None:
+    relevant = await _seed_chunk(
+        db_session,
+        text_content="Accrued interest is calculated using the Actual/Actual (ICMA) "
+        "day count convention for conventional gilts.",
+    )
+    await db_session.commit()
+
+    results = await search_chunks_by_text(
+        db_session, query_text="accrued interest day count", min_rank=0.15
+    )
+
+    assert len(results) == 1
+    assert results[0].id == relevant.id

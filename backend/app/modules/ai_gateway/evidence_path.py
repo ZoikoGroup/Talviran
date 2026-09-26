@@ -50,6 +50,14 @@ class BundleTooLarge(Exception):
 
 
 def _render_item(index: int, item: EvidenceItem) -> str:
+    if item.kind == "DOCUMENT_SPAN":
+        # No metric_id/value to be self-describing with (see
+        # evidence.service.EvidenceItem's own comment) - the document
+        # title/page and the excerpt itself are what a model actually
+        # needs to answer a document-backed question, previously
+        # impossible to compose over at all (this kind was never
+        # rendered here before - see _resolve_bundle_items).
+        return f"[{index}] {item.kind} — {item.document_title}: {item.text}"
     value_text = ", ".join(f"{k}: {v}" for k, v in (item.value or {}).items())
     basis = f" (basis: {item.basis})" if item.basis else ""
     return f"[{index}] {item.kind} — {item.metric_id}{basis}, as of {item.as_of}: {value_text}"
