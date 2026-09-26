@@ -119,7 +119,7 @@ class CalculationJob(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     __table_args__ = {"schema": "calculation"}
 
     calculation_specification_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("calculation.calculation_specification.id")
+        PGUUID(as_uuid=True), ForeignKey("calculation.calculation_specification.id"), index=True
     )
     subject_type: Mapped[str] = mapped_column(String(32))
     subject_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), index=True)

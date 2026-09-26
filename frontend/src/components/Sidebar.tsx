@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bell,
   Check,
@@ -120,9 +120,28 @@ export default function Sidebar({
   const isDesktop = useIsDesktop()
 
   // A chat only enters the history once it has actually been asked something,
-  // so an untouched "New chat" never litters the list.
-  const started = chats.filter((c) => c.hasMessages)
-  const history = groupByRecency(started.filter((c) => c.projectId === null))
+  // so an untouched "New chat" never litters the list. Memoized because
+  // this filters/sorts the full chat list and Sidebar re-renders on every
+  // App state change (e.g. each composer keystroke), not just when
+  // `chats` itself actually changes.
+  const started = useMemo(() => chats.filter((c) => c.hasMessages), [chats])
+  const history = useMemo(
+    () => groupByRecency(started.filter((c) => c.projectId === null)),
+    [started]
+  )
+  // One pass building every project's chat list, instead of re-filtering
+  // and re-sorting `started` once per project inside the render loop below.
+  const chatsByProjectId = useMemo(() => {
+    const map = new Map<string, Chat[]>()
+    for (const c of started) {
+      if (c.projectId === null) continue
+      const bucket = map.get(c.projectId)
+      if (bucket) bucket.push(c)
+      else map.set(c.projectId, [c])
+    }
+    for (const bucket of map.values()) bucket.sort((a, b) => b.createdAt - a.createdAt)
+    return map
+  }, [started])
 
   const [openProjects, setOpenProjects] = useState<string[]>([])
   const [naming, setNaming] = useState(false)
@@ -608,9 +627,7 @@ export default function Sidebar({
 
           {projects.map((p) => {
             const open = openProjects.includes(p.id)
-            const inProject = started
-              .filter((c) => c.projectId === p.id)
-              .sort((a, b) => b.createdAt - a.createdAt)
+            const inProject = chatsByProjectId.get(p.id) ?? []
 
             if (renaming?.id === p.id)
               return <div key={p.id}>{renameRow('project')}</div>

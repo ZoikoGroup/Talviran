@@ -53,6 +53,7 @@ class CitationOut(BaseModel):
     meta: str | None
     pill: str
     kind: str
+    url: str | None = None
 
 
 class FactTableOut(BaseModel):
@@ -196,12 +197,25 @@ async def create_research_answer(
             http=http,
         )
 
+        import json
+        full_content = answer.text
+        metadata: dict[str, Any] = {}
+        if answer.facts is not None:
+            metadata["facts"] = {"title": answer.facts.title, "rows": answer.facts.rows}
+        if answer.citations:
+            metadata["citations"] = [
+                {"label": c.label, "meta": c.meta, "pill": c.pill, "kind": c.kind, "url": c.url}
+                for c in answer.citations
+            ]
+        if metadata:
+            full_content += f"\n\n<!--METADATA\n{json.dumps(metadata)}\n-->"
+
         assistant_message = await research_service.append_message(
             db,
             account_id=identity.account_id,
             conversation_id=body.conversation_id,
             role=research_service.ROLE_ASSISTANT,
-            content=answer.text,
+            content=full_content,
             dek=dek,
         )
 
@@ -226,7 +240,7 @@ async def create_research_answer(
                 else None
             ),
             citations=[
-                CitationOut(label=c.label, meta=c.meta, pill=c.pill, kind=c.kind)
+                CitationOut(label=c.label, meta=c.meta, pill=c.pill, kind=c.kind, url=c.url)
                 for c in answer.citations
             ],
             note=answer.note,
