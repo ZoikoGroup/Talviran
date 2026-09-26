@@ -59,7 +59,6 @@ from scripts.seed_dev import (
     BOE_FX_RIGHTS_PROFILE_CODE,
     DBNOMICS_MACRO_RIGHTS_PROFILE_CODE,
     FRANKFURTER_FX_RIGHTS_PROFILE_CODE,
-    NSE_EXCHANGE_CODE,
     PILOT_EQUITIES,
     TWELVE_DATA_EQUITY_RIGHTS_PROFILE_CODE,
 )
@@ -328,11 +327,11 @@ async def ingest_equity_pilot(session: AsyncSession) -> None:
 
     rights_id = await _rights_profile_id(session, TWELVE_DATA_EQUITY_RIGHTS_PROFILE_CODE)
     async with httpx.AsyncClient() as client:
-        for _issuer_name, symbol in PILOT_EQUITIES:
+        for _issuer_name, symbol, exchange_code, _country_code, _currency_code in PILOT_EQUITIES:
             connector = TwelveDataEquityConnector(
                 client,
                 symbol=symbol,
-                exchange=NSE_EXCHANGE_CODE,
+                exchange=exchange_code,
                 api_key=settings.twelve_data_api_key,
             )
             try:

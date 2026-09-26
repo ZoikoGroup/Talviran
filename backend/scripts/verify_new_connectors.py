@@ -21,7 +21,7 @@ from app.modules.market.pipeline.macro_ingest import macro_series_subject_id
 from app.modules.market.queries import latest_accepted_fact
 from app.modules.reference.models import InstrumentAlias
 from scripts._connector_registry import MACRO_PILOT_SERIES
-from scripts.seed_dev import NSE_EXCHANGE_CODE, PILOT_EQUITIES
+from scripts.seed_dev import PILOT_EQUITIES
 
 
 async def _print_fact(
@@ -61,8 +61,8 @@ async def verify_macro(session: AsyncSession) -> None:
 
 async def verify_equities(session: AsyncSession) -> None:
     print("Equity EOD prices (Twelve Data):")
-    for issuer_name, symbol in PILOT_EQUITIES:
-        alias_value = equity_alias_value(NSE_EXCHANGE_CODE, symbol)
+    for issuer_name, symbol, exchange_code, _country_code, _currency_code in PILOT_EQUITIES:
+        alias_value = equity_alias_value(exchange_code, symbol)
         instrument_id = (
             await session.execute(
                 select(InstrumentAlias.instrument_id).where(

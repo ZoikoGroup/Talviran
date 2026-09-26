@@ -2,12 +2,15 @@
 
 test_twelvedata_aapl_demo.json is real: captured 2026-09-18 from Twelve
 Data's live, public "demo" key. The demo key only ever serves a small US
-large-cap whitelist (AAPL and similar), never an NSE-listed symbol, so
-there is no live-captured NSE response to test against yet — the NSE
-cases below are hand-built to Twelve Data's own documented field shape
-(same meta/values/status structure the real AAPL response shows), and
-should be re-checked against one real NSE response the first time a real
-API key is available (see mapping.py's module docstring).
+large-cap whitelist (AAPL and similar), never an LSE-listed symbol, so
+there is no live-captured LSE response to test against yet — the LSE
+(VOD, GBP-quoted) cases below are hand-built to Twelve Data's own
+documented field shape (same meta/values/status structure the real AAPL
+response shows; symbol/exchange/currency re-confirmed live via the
+key-free /symbol_search endpoint 2026-09-24 - see seed_dev.py's
+PILOT_EQUITIES), and should be re-checked against one real LSE response
+the first time a real API key is available (see mapping.py's module
+docstring).
 """
 
 import datetime as dt
@@ -44,24 +47,24 @@ def test_parses_real_demo_response() -> None:
     ]
 
 
-def test_parses_hand_built_nse_shaped_response() -> None:
+def test_parses_hand_built_lse_shaped_response() -> None:
     payload = {
         "meta": {
-            "symbol": "TATAMOTORS", "interval": "1day", "currency": "INR",
-            "exchange_timezone": "Asia/Kolkata", "exchange": "NSE",
-            "mic_code": "XNSE", "type": "Common Stock",
+            "symbol": "VOD", "interval": "1day", "currency": "GBP",
+            "exchange_timezone": "Europe/London", "exchange": "LSE",
+            "mic_code": "XLON", "type": "Common Stock",
         },
         "values": [
-            {"datetime": "2026-09-17", "open": "690.00", "high": "698.50",
-             "low": "685.10", "close": "695.25", "volume": "9876543"},
+            {"datetime": "2026-09-17", "open": "69.00", "high": "69.85",
+             "low": "68.51", "close": "69.25", "volume": "9876543"},
         ],
         "status": "ok",
     }
-    candidates = parse_time_series(payload, symbol="TATAMOTORS", exchange="NSE")
+    candidates = parse_time_series(payload, symbol="VOD", exchange="LSE")
     assert candidates == [
         EquityEodPriceCandidate(
-            symbol="TATAMOTORS", exchange="NSE", trade_date=dt.date(2026, 9, 17),
-            close_price=Decimal("695.25"), currency_code="INR",
+            symbol="VOD", exchange="LSE", trade_date=dt.date(2026, 9, 17),
+            close_price=Decimal("69.25"), currency_code="GBP",
         )
     ]
 
@@ -71,15 +74,15 @@ def test_error_status_is_a_record_issue_not_a_crash() -> None:
     # (code/message/status) — Twelve Data documents the same envelope for
     # symbol-level errors too, sometimes via HTTP 200.
     payload = {"code": 400, "message": "**symbol** not found", "status": "error"}
-    result = parse_time_series(payload, symbol="NOTREAL", exchange="NSE")
+    result = parse_time_series(payload, symbol="NOTREAL", exchange="LSE")
     assert len(result) == 1
     assert isinstance(result[0], RecordIssue)
     assert "Twelve Data error" in result[0].reason
 
 
 def test_missing_values_array_is_a_record_issue() -> None:
-    payload = {"meta": {"currency": "INR"}, "status": "ok"}
-    result = parse_time_series(payload, symbol="TATAMOTORS", exchange="NSE")
+    payload = {"meta": {"currency": "GBP"}, "status": "ok"}
+    result = parse_time_series(payload, symbol="VOD", exchange="LSE")
     assert len(result) == 1
     assert isinstance(result[0], RecordIssue)
     assert "values" in result[0].reason
@@ -87,7 +90,7 @@ def test_missing_values_array_is_a_record_issue() -> None:
 
 def test_missing_currency_is_a_record_issue() -> None:
     payload = {"meta": {}, "values": [], "status": "ok"}
-    result = parse_time_series(payload, symbol="TATAMOTORS", exchange="NSE")
+    result = parse_time_series(payload, symbol="VOD", exchange="LSE")
     assert len(result) == 1
     assert isinstance(result[0], RecordIssue)
     assert "currency" in result[0].reason
@@ -95,11 +98,11 @@ def test_missing_currency_is_a_record_issue() -> None:
 
 def test_missing_close_field_is_a_record_issue_not_a_guess() -> None:
     payload = {
-        "meta": {"currency": "INR"},
-        "values": [{"datetime": "2026-09-17", "open": "690.00"}],
+        "meta": {"currency": "GBP"},
+        "values": [{"datetime": "2026-09-17", "open": "69.00"}],
         "status": "ok",
     }
-    result = parse_time_series(payload, symbol="TATAMOTORS", exchange="NSE")
+    result = parse_time_series(payload, symbol="VOD", exchange="LSE")
     assert len(result) == 1
     assert isinstance(result[0], RecordIssue)
     assert "close" in result[0].reason
@@ -107,11 +110,11 @@ def test_missing_close_field_is_a_record_issue_not_a_guess() -> None:
 
 def test_non_positive_close_is_a_record_issue() -> None:
     payload = {
-        "meta": {"currency": "INR"},
+        "meta": {"currency": "GBP"},
         "values": [{"datetime": "2026-09-17", "close": "0"}],
         "status": "ok",
     }
-    result = parse_time_series(payload, symbol="TATAMOTORS", exchange="NSE")
+    result = parse_time_series(payload, symbol="VOD", exchange="LSE")
     assert len(result) == 1
     assert isinstance(result[0], RecordIssue)
     assert "non-positive" in result[0].reason
@@ -119,14 +122,14 @@ def test_non_positive_close_is_a_record_issue() -> None:
 
 def test_one_bad_row_does_not_drop_the_others() -> None:
     payload = {
-        "meta": {"currency": "INR"},
+        "meta": {"currency": "GBP"},
         "values": [
-            {"datetime": "2026-09-17", "close": "695.25"},
+            {"datetime": "2026-09-17", "close": "69.25"},
             {"datetime": "2026-09-16", "close": "not-a-number"},
         ],
         "status": "ok",
     }
-    result = parse_time_series(payload, symbol="TATAMOTORS", exchange="NSE")
+    result = parse_time_series(payload, symbol="VOD", exchange="LSE")
     assert len(result) == 2
     assert isinstance(result[0], EquityEodPriceCandidate)
     assert isinstance(result[1], RecordIssue)

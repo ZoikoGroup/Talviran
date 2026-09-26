@@ -64,17 +64,30 @@ TRADEWEB_GILT_PRICES_RIGHTS_PROFILE_CODE = "tradeweb.gilt-prices"
 BOE_FX_RIGHTS_PROFILE_CODE = "boe.fx-rates"
 SEED_GILT_ISIN = "GB0032452392"
 
-#: (issuer name, NSE trading symbol) — the pilot equity list for the
-#: Twelve Data connector. Twelve Data's own symbol/exchange format was
-#: confirmed live via its key-free /symbol_search endpoint (2026-09-18):
-#: each resolves to symbol=<SYMBOL>, exchange="NSE", not a dotted suffix.
-NSE_EXCHANGE_CODE = "NSE"
-PILOT_EQUITIES: tuple[tuple[str, str], ...] = (
-    ("Tata Motors Limited", "TATAMOTORS"),
-    ("Tata Consultancy Services Limited", "TCS"),
-    ("Reliance Industries Limited", "RELIANCE"),
-    ("Infosys Limited", "INFY"),
-    ("HDFC Bank Limited", "HDFCBANK"),
+#: (issuer name, trading symbol, exchange, issuer country_code,
+#: instrument currency_code) — the pilot equity list for the Twelve Data
+#: connector. Talvrin's scope is UK and USA only (see memory: an earlier
+#: version of this list was 5 Indian NSE stocks - a real, flagged scope
+#: inconsistency, replaced here). Twelve Data's own symbol/exchange format
+#: (separate params, not a dotted suffix, e.g. symbol="AAPL",
+#: exchange="NASDAQ") was re-confirmed live via its key-free /symbol_search
+#: endpoint (2026-09-24) for every symbol below, same convention originally
+#: confirmed for NSE on 2026-09-18.
+#:
+#: The three UK names are their NASDAQ/NYSE-listed US ADRs, not their LSE
+#: primary listings - a real constraint found via a real live ingest run
+#: (2026-09-25): Twelve Data's free tier serves US-exchange symbols only,
+#: LSE symbols 404 with "available starting with the Grow or Venture
+#: plan". Still genuinely UK companies (Issuer.country_code stays "GB"),
+#: just accessed through their USD-quoted US listing, which also sidesteps
+#: LSE's pence-vs-pound quoting quirk entirely (no GBp normalisation
+#: question to worry about).
+PILOT_EQUITIES: tuple[tuple[str, str, str, str, str], ...] = (
+    ("Apple Inc.", "AAPL", "NASDAQ", "US", "USD"),
+    ("Microsoft Corporation", "MSFT", "NASDAQ", "US", "USD"),
+    ("Vodafone Group Public Limited Company", "VOD", "NASDAQ", "GB", "USD"),
+    ("BP p.l.c.", "BP", "NYSE", "GB", "USD"),
+    ("AstraZeneca PLC", "AZN", "NASDAQ", "GB", "USD"),
 )
 
 
@@ -199,8 +212,8 @@ async def _seed_equity_reference_data(session: AsyncSession) -> None:
     right now; static attributes (sector, etc.) are a later addition if
     the similarity/recommendation work ever needs them.
     """
-    for issuer_name, symbol in PILOT_EQUITIES:
-        alias_value = equity_alias_value(NSE_EXCHANGE_CODE, symbol)
+    for issuer_name, symbol, exchange_code, country_code, currency_code in PILOT_EQUITIES:
+        alias_value = equity_alias_value(exchange_code, symbol)
         existing_alias = (
             await session.execute(
                 select(InstrumentAlias).where(
@@ -216,16 +229,16 @@ async def _seed_equity_reference_data(session: AsyncSession) -> None:
             await session.execute(select(Issuer).where(Issuer.name == issuer_name))
         ).scalar_one_or_none()
         if issuer is None:
-            issuer = Issuer(name=issuer_name, country_code="IN", status="ACTIVE")
+            issuer = Issuer(name=issuer_name, country_code=country_code, status="ACTIVE")
             session.add(issuer)
             await session.flush()
-            print(f"  + issuer {issuer_name} (IN)")
+            print(f"  + issuer {issuer_name} ({country_code})")
 
         instrument = Instrument(
             issuer_id=issuer.id,
             instrument_type="EQUITY_COMMON",
             name=issuer_name,
-            currency_code="INR",
+            currency_code=currency_code,
             status="ACTIVE",
         )
         session.add(instrument)

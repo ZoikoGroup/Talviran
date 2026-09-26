@@ -510,6 +510,17 @@
             ],
             "title": "Basis"
           },
+          "document_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Title"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -536,6 +547,17 @@
             ],
             "title": "Subject Type"
           },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
           "value": {
             "anyOf": [
               {
@@ -555,7 +577,9 @@
           "metric_id",
           "value",
           "basis",
-          "as_of"
+          "as_of",
+          "document_title",
+          "text"
         ],
         "title": "EvidenceItemOut",
         "type": "object"
