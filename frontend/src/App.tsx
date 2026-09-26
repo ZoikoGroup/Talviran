@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
-import { PanelLeft, X } from 'lucide-react'
+import { PanelLeft } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { Toaster, toast } from 'sonner'
 import Sidebar, { type Chat, type Project } from '@/components/Sidebar'
 import Message from '@/components/Message'
 import Composer from '@/components/Composer'
@@ -108,11 +109,6 @@ export default function App() {
   const { theme, setTheme } = useTheme()
   const [showSettings, setShowSettings] = useState(false)
   const [showMonitoring, setShowMonitoring] = useState(false)
-  // Surfaces a failed background sync (rename/move/delete) instead of
-  // silently leaving the UI showing something the backend never actually
-  // accepted - paired with rolling the optimistic change back in the
-  // handler that set this, so the two stay consistent with each other.
-  const [syncError, setSyncError] = useState<string | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   // Guards selectChat against firing a second GET for the same chat while
@@ -172,14 +168,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('talvrin-sidebar', collapsed ? 'collapsed' : 'open')
   }, [collapsed])
-
-  // A sync-failure toast clears itself so one stale error doesn't linger
-  // forever if the user doesn't notice it.
-  useEffect(() => {
-    if (!syncError) return
-    const timer = setTimeout(() => setSyncError(null), 5000)
-    return () => clearTimeout(timer)
-  }, [syncError])
 
   // Keep the newest message in view.
   useEffect(() => {
@@ -351,6 +339,7 @@ export default function App() {
       ...chatIds.map((id) => apiDeleteChat(id).catch(() => {})),
       ...projectIds.map((id) => apiDeleteProject(id).catch(() => {})),
     ])
+    toast.success('Workspace cleared permanently')
   }
 
   /** Downloads everything this account has, pulling down any chat whose
@@ -387,6 +376,7 @@ export default function App() {
     a.download = `talvrin-workspace-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
     URL.revokeObjectURL(url)
+    toast.success('Workspace exported successfully')
   }
 
   /** Move a chat into a project, or back out to the flat history (`null`). */
@@ -399,7 +389,7 @@ export default function App() {
       setChats((prev) =>
         prev.map((c) => (c.id === chatId ? { ...c, projectId: previousProjectId } : c))
       )
-      setSyncError("Couldn't move that chat. Please try again.")
+      toast.error("Couldn't move that chat. Please try again.")
     })
   }
 
@@ -414,7 +404,7 @@ export default function App() {
           c.id === chatId && previousTitle !== undefined ? { ...c, title: previousTitle } : c
         )
       )
-      setSyncError("Couldn't rename that chat. Please try again.")
+      toast.error("Couldn't rename that chat. Please try again.")
     })
   }
 
@@ -436,7 +426,7 @@ export default function App() {
     void apiDeleteChat(target.backendId).catch(() => {
       setChats(previousChats)
       setActiveId(previousActiveId)
-      setSyncError("Couldn't delete that chat. Please try again.")
+      toast.error("Couldn't delete that chat. Please try again.")
     })
   }
 
@@ -447,7 +437,7 @@ export default function App() {
       setProjects((prev) =>
         prev.map((p) => (p.id === projectId && previousName ? { ...p, name: previousName } : p))
       )
-      setSyncError("Couldn't rename that project. Please try again.")
+      toast.error("Couldn't rename that project. Please try again.")
     })
   }
 
@@ -462,7 +452,7 @@ export default function App() {
     void apiDeleteProject(projectId).catch(() => {
       setProjects(previousProjects)
       setChats(previousChats)
-      setSyncError("Couldn't delete that project. Please try again.")
+      toast.error("Couldn't delete that project. Please try again.")
     })
   }
 
@@ -470,22 +460,8 @@ export default function App() {
     <div className="relative flex h-full overflow-hidden bg-background">
       {/* Painted first so the sidebar's backdrop-filter samples it. */}
       <div aria-hidden className="app-ambient" />
-
-      {syncError && (
-        <div
-          role="alert"
-          className="fixed inset-x-0 top-3 z-50 mx-auto flex w-fit max-w-[90vw] items-center gap-3 rounded-full border border-destructive/40 bg-destructive/10 px-4 py-2 text-[13px] text-destructive shadow-lg backdrop-blur"
-        >
-          <span>{syncError}</span>
-          <button
-            onClick={() => setSyncError(null)}
-            aria-label="Dismiss"
-            className="text-destructive/70 hover:text-destructive"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+      
+      <Toaster position="top-center" theme={theme === 'dark' ? 'dark' : 'light'} />
 
       <Sidebar
         collapsed={collapsed}

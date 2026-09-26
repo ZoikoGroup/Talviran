@@ -416,6 +416,8 @@ function DataSection({
   onExportWorkspace,
 }: Pick<SettingsPageProps, 'stats' | 'onClearWorkspace' | 'onExportWorkspace'>) {
   const [confirming, setConfirming] = useState(false)
+  const [confirmingAccount, setConfirmingAccount] = useState(false)
+  const { deleteAccount } = useAuth()
 
   return (
     <Panel
@@ -472,7 +474,33 @@ function DataSection({
           label="Delete your account"
           hint="Removes the account across primary and derived stores, subject to legal retention."
         >
-          <NotYet>Not yet available</NotYet>
+          {confirmingAccount ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setConfirmingAccount(false)}
+                className="rounded-full border border-border px-3 py-1.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-accent"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  void deleteAccount()
+                  setConfirmingAccount(false)
+                }}
+                className="rounded-full bg-destructive/15 px-3.5 py-1.5 text-[12.5px] font-medium text-destructive transition-colors hover:bg-destructive/25"
+              >
+                Permanently Delete
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmingAccount(true)}
+              className="flex items-center gap-2 rounded-full border border-destructive/40 px-3.5 py-1.5 text-[12.5px] text-destructive transition-colors hover:bg-destructive/10"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete Account
+            </button>
+          )}
         </Row>
       </Card>
     </Panel>

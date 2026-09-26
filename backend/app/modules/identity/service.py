@@ -394,3 +394,40 @@ async def revoke_session(session: AsyncSession, *, token: str) -> None:
         ),
         {"id": row.session_id},
     )
+
+
+async def delete_account(
+    session: AsyncSession,
+    *,
+    identity: Identity,
+    http: httpx.AsyncClient,
+    settings: Settings | None = None,
+) -> None:
+    cfg = settings or get_settings()
+    
+    row = (await session.execute(
+        text("SELECT supabase_user_id FROM identity.principal WHERE id = :pid"),
+        {"pid": identity.principal_id}
+    )).first()
+    
+    if row and row.supabase_user_id and cfg.supabase_service_role_key:
+        await supabase_auth.delete_user(http, user_id=row.supabase_user_id, settings=cfg)
+        
+    await apply_rls_context(
+        session, account_id=identity.account_id, principal_id=identity.principal_id
+    )
+    await session.execute(
+        text("UPDATE identity.principal SET status = 'DELETED' WHERE id = :pid"),
+        {"pid": identity.principal_id}
+    )
+    await session.execute(
+        text("UPDATE identity.account SET status = 'DELETED' WHERE id = :aid"),
+        {"aid": identity.account_id}
+    )
+    await session.execute(
+        text(
+            "UPDATE identity.session SET revoked_at = now() "
+            "WHERE principal_id = :pid AND revoked_at IS NULL"
+        ),
+        {"pid": identity.principal_id}
+    )

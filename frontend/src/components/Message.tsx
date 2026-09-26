@@ -1,30 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import {
   ShieldCheck,
   Link2,
   FileText,
   BookOpen,
-  Table2,
   ChevronDown,
   Info,
   Loader2,
-  Download,
-  BarChart3,
-  PieChart as PieChartIcon,
-  LineChart as LineChartIcon,
-  Activity,
-  Target,
 } from 'lucide-react'
-import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import { cn } from '@/lib/utils'
 import { getResearchEvidence, type EvidenceItem } from '@/lib/api'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
 import type {
   ChatMessage,
   Citation,
-  FactTable,
   Freshness,
 } from '@/data/mockReply'
+
+const Facts = lazy(() => import('./Facts'))
 
 const CITE_ICON = { doc: FileText, book: BookOpen, link: Link2 } as const
 
@@ -53,171 +46,7 @@ function RichText({ children }: { children: string }) {
   )
 }
 
-function Facts({ title, rows }: FactTable) {
-  const isChartable =
-    rows.length >= 3 &&
-    rows.every(([_, v]) => !isNaN(parseFloat(v.replace(/[%$,]/g, ''))))
 
-  const [view, setView] = useState<'table' | 'chart'>(isChartable ? 'chart' : 'table')
-  const [chartType, setChartType] = useState<'area' | 'bar' | 'pie' | 'line' | 'radar'>('area')
-
-  const handleDownloadCSV = () => {
-    const csvContent = rows.map(([k, v]) => `"${k}","${v}"`).join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', `${title.replace(/\s+/g, '_').toLowerCase()}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
-
-  const chartData = isChartable
-    ? rows.map(([k, v]) => ({
-        name: k,
-        value: parseFloat(v.replace(/[%$,]/g, '')),
-      }))
-    : []
-
-  const minValue = isChartable ? Math.min(...chartData.map(d => d.value)) : 0
-  const maxValue = isChartable ? Math.max(...chartData.map(d => d.value)) : 0
-  const avgValue = isChartable ? (chartData.reduce((a, b) => a + b.value, 0) / chartData.length).toFixed(4) : 0
-
-  const COLORS = ['hsl(var(--primary))', '#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#a4de6c', '#d0ed57', '#83a6ed']
-
-  return (
-    <div className="mt-3.5 overflow-hidden rounded-xl border border-border bg-card">
-      <div className="flex items-center gap-2 border-b border-border bg-secondary/60 px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <div className="flex items-center gap-2 flex-1">
-          {view === 'table' ? <Table2 className="h-3.5 w-3.5" /> : <BarChart3 className="h-3.5 w-3.5" />}
-          {title}
-        </div>
-        
-        <div className="flex items-center gap-2">
-          {isChartable && view === 'chart' && (
-            <div className="flex items-center gap-1 mr-2 border-r border-border pr-2">
-              <button onClick={() => setChartType('area')} className={cn("p-1 rounded transition-colors", chartType === 'area' ? "bg-primary/20 text-primary" : "hover:bg-secondary")} title="Area Chart">
-                <LineChartIcon className="h-3 w-3" />
-              </button>
-              <button onClick={() => setChartType('line')} className={cn("p-1 rounded transition-colors", chartType === 'line' ? "bg-primary/20 text-primary" : "hover:bg-secondary")} title="Line Chart">
-                <Activity className="h-3 w-3" />
-              </button>
-              <button onClick={() => setChartType('bar')} className={cn("p-1 rounded transition-colors", chartType === 'bar' ? "bg-primary/20 text-primary" : "hover:bg-secondary")} title="Bar Chart">
-                <BarChart3 className="h-3 w-3" />
-              </button>
-              <button onClick={() => setChartType('pie')} className={cn("p-1 rounded transition-colors", chartType === 'pie' ? "bg-primary/20 text-primary" : "hover:bg-secondary")} title="Pie Chart">
-                <PieChartIcon className="h-3 w-3" />
-              </button>
-              <button onClick={() => setChartType('radar')} className={cn("p-1 rounded transition-colors", chartType === 'radar' ? "bg-primary/20 text-primary" : "hover:bg-secondary")} title="Radar Chart">
-                <Target className="h-3 w-3" />
-              </button>
-            </div>
-          )}
-          {isChartable && (
-            <button
-              onClick={() => setView(v => v === 'table' ? 'chart' : 'table')}
-              className="flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-semibold transition-colors hover:bg-secondary hover:text-foreground"
-            >
-              {view === 'table' ? 'View Chart' : 'View Table'}
-            </button>
-          )}
-          <button
-            onClick={handleDownloadCSV}
-            className="flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-semibold transition-colors hover:bg-secondary hover:text-foreground"
-            title="Download CSV"
-          >
-            <Download className="h-3 w-3" />
-            CSV
-          </button>
-        </div>
-      </div>
-      
-      {view === 'table' ? (
-        <div className="flex flex-col">
-          {rows.map(([k, v]) => (
-            <div
-              key={k}
-              className="flex items-baseline gap-3 border-b border-border px-3.5 py-2.5 text-[13.5px] last:border-b-0"
-            >
-              <span className="basis-[42%] text-muted-foreground">{k}</span>
-              <span className="font-mono text-[13px] font-medium">{v}</span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="flex flex-col w-full bg-card/40">
-          <div className="grid grid-cols-3 gap-3 p-4 pb-0">
-            <div className="bg-secondary/50 rounded-lg p-3 border border-border/60 shadow-sm">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Minimum</div>
-              <div className="text-xl text-primary font-mono font-bold mt-0.5">{minValue}</div>
-            </div>
-            <div className="bg-secondary/50 rounded-lg p-3 border border-border/60 shadow-sm">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Maximum</div>
-              <div className="text-xl text-primary font-mono font-bold mt-0.5">{maxValue}</div>
-            </div>
-            <div className="bg-secondary/50 rounded-lg p-3 border border-border/60 shadow-sm">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Average</div>
-              <div className="text-xl text-primary font-mono font-bold mt-0.5">{avgValue}</div>
-            </div>
-          </div>
-          <div className="h-64 w-full p-4 pt-6">
-            <ResponsiveContainer width="100%" height="100%">
-              {chartType === 'area' ? (
-                <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.5} />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} dy={10} />
-                  <YAxis domain={['auto', 'auto']} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} dx={-10} />
-                  <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px', fontSize: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} itemStyle={{ color: 'hsl(var(--foreground))', fontWeight: 600 }} />
-                  <Area type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
-                </AreaChart>
-              ) : chartType === 'bar' ? (
-                <BarChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.5} />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} dy={10} />
-                  <YAxis domain={['auto', 'auto']} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} dx={-10} />
-                  <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px', fontSize: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} itemStyle={{ color: 'hsl(var(--foreground))', fontWeight: 600 }} cursor={{ fill: 'hsl(var(--secondary))' }} />
-                  <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={30} />
-                </BarChart>
-              ) : chartType === 'line' ? (
-                <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.5} />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} dy={10} />
-                  <YAxis domain={['auto', 'auto']} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} dx={-10} />
-                  <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px', fontSize: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} itemStyle={{ color: 'hsl(var(--foreground))', fontWeight: 600 }} />
-                  <Line type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={3} dot={{ fill: 'hsl(var(--primary))', r: 4, strokeWidth: 2, stroke: 'hsl(var(--background))' }} activeDot={{ r: 6 }} />
-                </LineChart>
-              ) : chartType === 'radar' ? (
-                <RadarChart cx="50%" cy="50%" outerRadius="80%" data={chartData}>
-                  <PolarGrid stroke="hsl(var(--border))" />
-                  <PolarAngleAxis dataKey="name" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }} />
-                  <PolarRadiusAxis angle={30} domain={['auto', 'auto']} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} />
-                  <Radar name="Value" dataKey="value" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.4} />
-                  <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px', fontSize: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} itemStyle={{ color: 'hsl(var(--foreground))', fontWeight: 600 }} />
-                </RadarChart>
-              ) : (
-                <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                  <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={85} paddingAngle={2} label={({ name, percent }) => `${name} (${((percent || 0) * 100).toFixed(0)}%)`} labelLine={false}>
-                    {chartData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px', fontSize: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} itemStyle={{ color: 'hsl(var(--foreground))', fontWeight: 600 }} />
-                </PieChart>
-              )}
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 /** The resolved fact/calculation behind a citation - fetched on demand from
  * GET /research/{id}/evidence, not embedded in the reply itself (that
@@ -295,11 +124,11 @@ function Evidence({
   const [open, setOpen] = useState(false)
 
   return (
-    <div className="mt-3.5 overflow-hidden rounded-xl border border-border bg-card">
+    <div className="mt-3.5 animate-rise overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-all hover:shadow-md">
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-[11.5px] font-semibold text-muted-foreground transition-colors hover:bg-secondary/60"
+        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-[11.5px] font-semibold text-muted-foreground transition-all duration-200 hover:bg-secondary/80 hover:text-foreground active:scale-[0.99]"
       >
         <ShieldCheck className="h-3.5 w-3.5" />
         Evidence
@@ -318,28 +147,29 @@ function Evidence({
             return (
               <div
                 key={i}
-                className="flex items-center gap-2.5 border-b border-border px-3.5 py-2.5 text-[13px] last:border-b-0"
+                className="group flex animate-in fade-in slide-in-from-top-2 items-center gap-2.5 border-b border-border px-3.5 py-2.5 text-[13px] transition-colors hover:bg-secondary/40 last:border-b-0"
+                style={{ animationDelay: `${i * 60}ms` }}
               >
-                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-primary/15 text-primary">
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-primary/15 text-primary transition-transform group-hover:scale-110">
                   <Ico className="h-3.5 w-3.5" />
                 </span>
                 <span className="min-w-0 flex-1">
                   {c.url ? (
-                    <a href={c.url} target="_blank" rel="noreferrer" className="block truncate font-medium text-indigo-400 hover:underline">
+                    <a href={c.url} target="_blank" rel="noreferrer" className="block truncate font-medium text-indigo-400 transition-colors hover:text-indigo-300 hover:underline">
                       {c.label}
                     </a>
                   ) : (
-                    <span className="block truncate">{c.label}</span>
+                    <span className="block truncate font-medium transition-colors group-hover:text-primary">{c.label}</span>
                   )}
                   {c.meta && (
-                    <span className="mt-0.5 block text-[11.5px] text-muted-foreground/70">
+                    <span className="mt-0.5 block text-[11.5px] text-muted-foreground/70 transition-colors group-hover:text-muted-foreground">
                       {c.meta}
                     </span>
                   )}
                 </span>
                 <span
                   className={cn(
-                    'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider',
+                    'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-all group-hover:brightness-110',
                     PILL_STYLE[c.pill]
                   )}
                 >
@@ -414,7 +244,11 @@ export default function Message({
         </div>
 
         {parsedCitations.length > 0 && <Evidence citations={parsedCitations} messageId={messageId} />}
-        {parsedFacts && <Facts {...parsedFacts} />}
+        {parsedFacts && (
+          <Suspense fallback={<div className="mt-3.5 h-[280px] animate-pulse rounded-xl bg-secondary/30" />}>
+            <Facts {...parsedFacts} />
+          </Suspense>
+        )}
 
         {note && (
           <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2.5 text-[12.25px] leading-relaxed text-muted-foreground">

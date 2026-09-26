@@ -21,6 +21,7 @@ interface AuthValue {
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  deleteAccount: () => Promise<void>
   rename: (name: string) => void
   /** Re-checks /me and updates `session` to match. Needed after anything
    * that establishes a session cookie without going through signIn/signUp
@@ -87,6 +88,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const deleteAccount = useCallback(async () => {
+    try {
+      await api.deleteAccount()
+    } finally {
+      clearDisplayNameOverride()
+      setSession(null)
+    }
+  }, [])
+
   /** Display only - there is no backend profile/display-name endpoint yet
    * (see session.ts's module docstring). */
   const rename = useCallback((name: string) => {
@@ -97,8 +107,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ session, loading, signIn, signUp, signOut, rename, refresh }),
-    [session, loading, signIn, signUp, signOut, rename, refresh]
+    () => ({ session, loading, signIn, signUp, signOut, deleteAccount, rename, refresh }),
+    [session, loading, signIn, signUp, signOut, deleteAccount, rename, refresh]
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

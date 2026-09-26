@@ -95,6 +95,9 @@ export const logout = (): Promise<void> =>
 export const me = (): Promise<Principal> =>
   apiFetch<PrincipalWire>('/api/v1/auth/me').then(toPrincipal)
 
+export const deleteAccount = (): Promise<void> =>
+  apiFetch<void>('/api/v1/auth/me', { method: 'DELETE' })
+
 /** Always resolves — the backend itself never reveals whether the address
  * has an account (SEC-001 §7.1). A thrown ApiError means the request itself
  * failed, not that the email was rejected. */

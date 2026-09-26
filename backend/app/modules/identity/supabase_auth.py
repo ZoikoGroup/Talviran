@@ -250,3 +250,24 @@ async def request_password_reset(
         )
     except httpx.HTTPError as exc:
         raise SupabaseUnavailable(f"password reset request failed: {exc}") from exc
+
+
+async def delete_user(
+    client: httpx.AsyncClient, *, user_id: uuid.UUID, settings: Settings
+) -> None:
+    """Deletes a user from Supabase GoTrue via the admin API."""
+    if not settings.supabase_service_role_key:
+        return
+    try:
+        resp = await client.delete(
+            f"{settings.supabase_url}/auth/v1/admin/users/{user_id}",
+            headers={
+                "apikey": settings.supabase_service_role_key,
+                "Authorization": f"Bearer {settings.supabase_service_role_key}",
+                "Content-Type": "application/json",
+            },
+        )
+    except httpx.HTTPError as exc:
+        raise SupabaseUnavailable(f"delete user request failed: {exc}") from exc
+    if resp.status_code >= 400:
+        raise SupabaseUnavailable(f"delete user failed ({resp.status_code})")

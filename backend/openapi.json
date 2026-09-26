@@ -1683,6 +1683,18 @@
       }
     },
     "/api/v1/auth/me": {
+      "delete": {
+        "operationId": "delete_me_api_v1_auth_me_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Delete Me",
+        "tags": [
+          "auth"
+        ]
+      },
       "get": {
         "operationId": "me_api_v1_auth_me_get",
         "responses": {

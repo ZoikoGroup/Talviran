@@ -268,3 +268,19 @@ async def me(request: Request, db: SessionDep) -> PrincipalOut:
         )
     await db.commit()
     return _principal_out(identity)
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_me(request: Request, response: Response, db: SessionDep, http: HttpDep) -> None:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    identity = (
+        await service.resolve_session(db, token=token) if token else None
+    )
+    if identity is None:
+        raise TalvrinAPIError(
+            code=ErrorCode.UNAUTHENTICATED, message="Not signed in."
+        )
+    await service.delete_account(db, identity=identity, http=http)
+    await db.commit()
+    clear_session_cookie(response, policy=_cookie_policy())
+

@@ -72,8 +72,12 @@ export default {
           to: { height: '0' },
         },
         rise: {
-          from: { opacity: '0', transform: 'translateY(8px)' },
+          from: { opacity: '0', transform: 'translateY(12px) scale(0.98)' },
           to: { opacity: '1', transform: 'none' },
+        },
+        'fade-in': {
+          from: { opacity: '0' },
+          to: { opacity: '1' },
         },
         'glow-pulse': {
           '0%, 100%': { opacity: '0.85', transform: 'translateX(-50%) scale(1)' },
@@ -83,7 +87,8 @@ export default {
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
-        rise: 'rise 0.32s cubic-bezier(0.22,0.61,0.36,1) both',
+        rise: 'rise 0.4s cubic-bezier(0.16, 1, 0.3, 1) both',
+        'fade-in': 'fade-in 0.3s ease-out both',
         'glow-pulse': 'glow-pulse 9s ease-in-out infinite',
       },
     },
