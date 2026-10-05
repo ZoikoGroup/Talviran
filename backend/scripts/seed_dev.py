@@ -326,6 +326,18 @@ async def seed() -> None:
                 "MODEL_IMPLIED basis, never a market quote."
             ),
         )
+        await _seed_calculation_specification(
+            session,
+            code="gilt_risk_metrics_v1",
+            version="1",
+            description=(
+                "Conventional-gilt Macaulay duration, modified duration, DV01, "
+                "and convexity (FIN-001 §11). No external published source for "
+                "these metrics exists; FIN-001 §26 FIN-O3 (Product+Methodology "
+                "sign-off on the customer-facing definition) is not yet resolved "
+                "- stays DRAFT until it is."
+            ),
+        )
         await session.commit()
     print("Seed complete.")
 
