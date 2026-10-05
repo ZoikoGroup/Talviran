@@ -478,7 +478,7 @@ def _accrued_reply() -> ResearchAnswer:
                 meta="Accrued interest & ex-dividend, 18 Dec 2024",
                 pill="SOURCE",
                 kind="book",
-                url="https://www.dmo.gov.uk/media/pnklmbn3/gilt-formulae.pdf",
+                url="https://www.dmo.gov.uk/media/334d05fo/yldeqns_v4.pdf",
             )
         ],
         note=_ACCRUED_EXPLANATION_NOTE,
