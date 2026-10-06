@@ -1,0 +1,6 @@
+{
+  "version": "v1",
+  "sha256": "59b6d85c578e77fcbca557e804c72e7ad9788e90377bbc87a9760d794b24b586",
+  "reason": "Initial corpus: 8 real DMO-sourced bond scenarios (inputs reused from gilt_price_yield_v1's golden corpus), with duration/DV01/convexity expected values derived from this spec's own analytical implementation since no external published source exists for these metrics (see FIN-001 SS11, SS26 FIN-O3).",
+  "created_at": "2026-09-28T04:28:23.843355+00:00"
+}

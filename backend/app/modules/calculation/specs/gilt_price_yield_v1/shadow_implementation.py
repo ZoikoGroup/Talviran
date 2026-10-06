@@ -7,6 +7,13 @@ transcription error in either (e.g. the closed form's `(1-v^(n-1))/(1-v)`
 identity, or an off-by-one in this module's cash-flow list) shows up as a
 disagreement between them, not just a shared bug.
 
+`discount_factor`/`cash_flow_schedule` are exported (not `_`-prefixed)
+because gilt_risk_metrics_v1's own shadow implementation reuses this exact
+schedule to time-weight each cash flow for duration/convexity - the same
+"share pure data/date structure, never the calculation being dual-
+implemented" boundary schedule.py already draws between
+gilt_price_yield_v1 and gilt_price_from_curve_v1.
+
 Honest limitation: both implementations were authored by the same agent in
 the same session, not by a second engineer working independently from the
 DMO document as FIN-001 envisions. This still catches real bugs (a wrong
@@ -24,11 +31,11 @@ from app.modules.calculation.specs.gilt_price_yield_v1.implementation import (
 _PRECISION = 50
 
 
-def _discount_factor(yield_decimal: Decimal, f: int) -> Decimal:
+def discount_factor(yield_decimal: Decimal, f: int) -> Decimal:
     return 1 / (1 + yield_decimal / f)
 
 
-def _cash_flow_schedule(inputs: ConventionalGiltInputs) -> list[Decimal]:
+def cash_flow_schedule(inputs: ConventionalGiltInputs) -> list[Decimal]:
     """cash_flows[k] is the amount due at discount exponent k (i.e. k full
     quasi-coupon periods beyond the initial r/s stub) — index 0 is d1, index
     1 is d2, indices 2..n-1 are the regular coupon, and index n carries the
@@ -50,13 +57,13 @@ def dirty_price_from_yield(inputs: ConventionalGiltInputs, yield_decimal: Decima
         r = Decimal(inputs.days_to_next_quasi_coupon)
         s = Decimal(inputs.days_in_quasi_coupon_period)
         n = inputs.full_quasi_coupon_periods_remaining
-        v = _discount_factor(yield_decimal, f)
+        v = discount_factor(yield_decimal, f)
 
         if n == 0:
             return v ** (r / s) * (inputs.next_cash_flow + 100)
 
         stub_factor = v ** (r / s)
-        schedule = _cash_flow_schedule(inputs)
+        schedule = cash_flow_schedule(inputs)
         total = sum(
             (cash_flow * v**exponent for exponent, cash_flow in enumerate(schedule)),
             start=Decimal(0),

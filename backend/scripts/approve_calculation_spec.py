@@ -34,6 +34,7 @@ from app.modules.calculation.models import (
 _GOLDEN_TEST_PATHS: dict[str, str] = {
     "gilt_price_yield_v1": "tests/golden/test_gilt_price_yield_v1_golden.py",
     "gilt_price_from_curve_v1": "tests/golden/test_gilt_price_from_curve_v1_golden.py",
+    "gilt_risk_metrics_v1": "tests/golden/test_gilt_risk_metrics_v1_golden.py",
 }
 
 
