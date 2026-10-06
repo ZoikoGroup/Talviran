@@ -38,18 +38,29 @@ from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.db import get_session_factory
+from app.modules.calculation.models import CalculationSpecification
+from app.modules.calculation.pipeline.job_queue import (
+    enqueue_gilt_risk_metrics_job,
+    run_next_job,
+)
 from app.modules.market.connectors.tradeweb_gilts.client import (
     TradewebAuthError,
     fetch_gilt_closing_prices_csv,
 )
 from app.modules.market.connectors.tradeweb_gilts.mapping import RecordIssue, parse_rows
 from app.modules.market.models import Dataset, Source, SourceArtifact
+from app.modules.market.pipeline.identity_resolution import (
+    ResolvedIdentity,
+    resolve_instrument_by_isin,
+)
 from app.modules.market.pipeline.tradeweb_price_ingest import (
     TradewebIngestSkipped,
     ingest_tradeweb_price_candidate,
 )
 from app.modules.rights.models import RightsProfile
 from scripts.seed_dev import TRADEWEB_GILT_PRICES_RIGHTS_PROFILE_CODE
+
+_GILT_RISK_METRICS_SPEC_CODE = "gilt_risk_metrics_v1"
 
 _IN_SCOPE_TYPE = "Conventional"
 _SOURCE_CODE = "tradeweb"
@@ -119,6 +130,23 @@ async def main() -> None:
         await session.flush()
         await session.commit()
 
+        # Looked up once, not per-row: a missing/unapproved spec means the
+        # risk-metrics job is skipped for every row below, but price
+        # ingestion itself must still complete - this script's primary job
+        # is the real market price, not the derived analytic.
+        risk_metrics_spec = (
+            await session.execute(
+                select(CalculationSpecification).where(
+                    CalculationSpecification.code == _GILT_RISK_METRICS_SPEC_CODE
+                )
+            )
+        ).scalar_one_or_none()
+        if risk_metrics_spec is None:
+            print(
+                f"No {_GILT_RISK_METRICS_SPEC_CODE} calculation_specification found - "
+                "run scripts.seed_dev first. Skipping risk-metrics jobs for this run."
+            )
+
         ingested = skipped_out_of_scope = skipped_unresolved = skipped_other = 0
         for record in records:
             if isinstance(record, RecordIssue):
@@ -144,6 +172,19 @@ async def main() -> None:
                     f"  + {record.instrument_name} ({record.isin}): "
                     f"clean={record.clean_price} yield={record.yield_pct}%"
                 )
+                if risk_metrics_spec is not None:
+                    identity = await resolve_instrument_by_isin(session, record.isin)
+                    if isinstance(identity, ResolvedIdentity):
+                        await enqueue_gilt_risk_metrics_job(
+                            session,
+                            instrument_id=identity.instrument_id,
+                            as_of_date=record.close_of_business_date,
+                            calculation_specification_id=risk_metrics_spec.id,
+                        )
+                        await session.commit()
+                        job_result = await run_next_job(session)
+                        if job_result is not None:
+                            print(f"    risk metrics: {job_result.outcome}")
 
         print(
             f"\nIngested {ingested} real gilt closing prices. Skipped {skipped_out_of_scope} "

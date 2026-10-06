@@ -49,6 +49,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.modules.calculation.models import CalculationResult
 from app.modules.calculation.pipeline.curve_pricing import METRIC_MODEL_IMPLIED_CLEAN_PRICE
+from app.modules.calculation.pipeline.gilt_risk_metrics_pricing import METRIC_GILT_RISK_METRICS
 from app.modules.calculation.queries import latest_calculation_result
 from app.modules.evidence.embeddings.gemini_client import GeminiEmbeddingError
 from app.modules.evidence.models import (
@@ -858,6 +859,44 @@ async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchA
                     accepted_fact_id=market_fact.id,
                 )
             )
+
+    if await _display_allowed(session, "talvrin.gilt-risk-metrics"):
+        risk_metrics_result = await latest_calculation_result(
+            session, subject_id=instrument.id, metric_id=METRIC_GILT_RISK_METRICS
+        )
+        if risk_metrics_result is not None:
+            outputs = risk_metrics_result.value["outputs"]
+            # Table 13's suppressed statuses (UNAVAILABLE_FINAL_SETTLEMENT,
+            # CALCULATION_UNAVAILABLE) carry zeroed, not real, output
+            # values - never display those as if they were genuine numbers.
+            if outputs["calculation_status"] in ("OK", "EX_DIVIDEND"):
+                rows.append(
+                    ("Modified duration", f"{Decimal(outputs['modified_duration_full']):.2f} yrs")
+                )
+                rows.append(("DV01", f"£{Decimal(outputs['dv01_full']):.4f} per £100 nominal"))
+                rows.append(
+                    ("Convexity", f"{Decimal(outputs['convexity_full']):.2f} yr²")
+                )
+                if outputs["calculation_status"] == "EX_DIVIDEND":
+                    rows.append(("Settlement status", "Ex-dividend"))
+                citations.append(
+                    Citation(
+                        label="Calculated by Talvrin — TAL-FI-GILT-001 v1.0",
+                        meta=(
+                            f"As of {risk_metrics_result.as_of_date.isoformat()} — "
+                            "derived analytic, not a published market figure"
+                        ),
+                        pill="SOURCE",
+                        kind="book",
+                    )
+                )
+                session.add(
+                    EvidenceMember(
+                        evidence_bundle_id=bundle.id,
+                        kind="CALCULATION",
+                        calculation_result_id=risk_metrics_result.id,
+                    )
+                )
 
     return ResearchAnswer(
         text=(

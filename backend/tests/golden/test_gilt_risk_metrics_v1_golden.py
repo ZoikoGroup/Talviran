@@ -5,24 +5,28 @@ Unlike gilt_price_yield_v1, no DMO-published (or any external) source exists
 for these metrics (confirmed by fetching and text-searching DMO's own pinned
 price/yield methodology doc — see implementation.py's docstring). The
 corpus's expected_* values are therefore this spec's own analytical
-(shadow) implementation's frozen output, not an independently-published
+(production) implementation's frozen output, not an independently-published
 reference — an honest limitation recorded in golden/v1/corpus.json's own
-"source" block, and in FIN-001 §26's still-open FIN-O3 decision (Product +
-Methodology sign-off on the customer-facing definition), which this test
-does not resolve.
+"source" block.
+
+FIN-O3 (FIN-001 §26) is now resolved: docs/Talvrin_Gilt_Analytics_
+Methodology_Decision.docx (TAL-FI-GILT-001 v1.0) locks production as the
+closed-form/analytical implementation, with finite differences validation
+only (§5.1) — `implementation.py` is analytical/production,
+`shadow_implementation.py` is the numerical finite-difference check.
 
 Given that, this file's checks are:
-  1. the analytical (shadow) implementation reproduces its own frozen
+  1. the analytical (production) implementation reproduces its own frozen
      historical corpus values almost exactly — catches a future regression
      in that implementation itself;
-  2. the numerical (production) implementation matches those same frozen
-     values within a tolerance wide enough to absorb its inherent
-     central-finite-difference truncation error (empirically ~1e-9 to
-     ~1e-5 across these 8 cases, at BUMP_SIZE=1bp) — a much looser bound
-     than gilt_price_yield_v1's near-exact production/shadow agreement,
-     because here the two implementations use genuinely different methods
-     (exact calculus vs. numerical approximation), not just independently
-     re-derived algebra for the same closed form;
+  2. the numerical (shadow, validation-only) implementation matches those
+     same frozen values within a tolerance wide enough to absorb its
+     inherent central-finite-difference truncation error (empirically
+     ~1e-9 to ~1e-5 across these 8 cases, at BUMP_SIZE=1bp) — a much
+     looser bound than gilt_price_yield_v1's near-exact production/shadow
+     agreement, because here the two implementations use genuinely
+     different methods (exact calculus vs. numerical approximation), not
+     just independently re-derived algebra for the same closed form;
   3. production and shadow agree with each other at that same realistic
      tolerance, not gilt_price_yield_v1's 1E-30 — a real bug (wrong sign,
      off-by-one, wrong time-weighting) would still produce a divergence far
@@ -60,17 +64,17 @@ CORPUS_DIR = (
 CORPUS_PATH = CORPUS_DIR / "corpus.json"
 CORPUS = json.loads(CORPUS_PATH.read_text())
 
-# Loose: absorbs production's finite-difference truncation error at
+# Loose: absorbs shadow's (numerical, finite-difference) truncation error at
 # BUMP_SIZE=1bp (measured empirically up to ~3.8e-6 for duration across
 # these 8 cases) - a real bug would diverge far beyond this margin.
 _DURATION_TOLERANCE = Decimal("1E-4")
 _DV01_TOLERANCE = Decimal("1E-6")
 _CONVEXITY_TOLERANCE = Decimal("1E-3")
 
-# Tight: the shadow implementation reproducing its OWN frozen corpus
-# values is a near-exact check (the only slack is the corpus's own
-# 9-decimal-place quantization when it was written).
-_SHADOW_SELF_CONSISTENCY_TOLERANCE = Decimal("1E-8")
+# Tight: the production (analytical) implementation reproducing its OWN
+# frozen corpus values is a near-exact check (the only slack is the
+# corpus's own 9-decimal-place quantization when it was written).
+_PRODUCTION_SELF_CONSISTENCY_TOLERANCE = Decimal("1E-8")
 
 
 def test_corpus_v1_bytes_have_not_silently_changed() -> None:
@@ -94,32 +98,32 @@ def test_corpus_case_count_is_the_expected_8() -> None:
 
 
 @pytest.mark.parametrize("case", CORPUS["risk_metrics_cases"], ids=lambda c: c["id"])
-def test_shadow_implementation_reproduces_its_own_corpus_values(
-    case: dict[str, object],
-) -> None:
-    inputs = _inputs_from_case(case)
-    result = shadow_compute_risk_metrics(inputs, Decimal(str(case["y"])))
-
-    assert abs(
-        result.macaulay_duration - Decimal(str(case["expected_macaulay_duration"]))
-    ) < _SHADOW_SELF_CONSISTENCY_TOLERANCE, case["id"]
-    assert abs(
-        result.modified_duration - Decimal(str(case["expected_modified_duration"]))
-    ) < _SHADOW_SELF_CONSISTENCY_TOLERANCE, case["id"]
-    assert abs(
-        result.dv01 - Decimal(str(case["expected_dv01"]))
-    ) < _SHADOW_SELF_CONSISTENCY_TOLERANCE, case["id"]
-    assert abs(
-        result.convexity - Decimal(str(case["expected_convexity"]))
-    ) < _SHADOW_SELF_CONSISTENCY_TOLERANCE, case["id"]
-
-
-@pytest.mark.parametrize("case", CORPUS["risk_metrics_cases"], ids=lambda c: c["id"])
-def test_production_implementation_matches_corpus_within_approximation_tolerance(
+def test_production_implementation_reproduces_its_own_corpus_values(
     case: dict[str, object],
 ) -> None:
     inputs = _inputs_from_case(case)
     result = production_compute_risk_metrics(inputs, Decimal(str(case["y"])))
+
+    assert abs(
+        result.macaulay_duration - Decimal(str(case["expected_macaulay_duration"]))
+    ) < _PRODUCTION_SELF_CONSISTENCY_TOLERANCE, case["id"]
+    assert abs(
+        result.modified_duration - Decimal(str(case["expected_modified_duration"]))
+    ) < _PRODUCTION_SELF_CONSISTENCY_TOLERANCE, case["id"]
+    assert abs(
+        result.dv01 - Decimal(str(case["expected_dv01"]))
+    ) < _PRODUCTION_SELF_CONSISTENCY_TOLERANCE, case["id"]
+    assert abs(
+        result.convexity - Decimal(str(case["expected_convexity"]))
+    ) < _PRODUCTION_SELF_CONSISTENCY_TOLERANCE, case["id"]
+
+
+@pytest.mark.parametrize("case", CORPUS["risk_metrics_cases"], ids=lambda c: c["id"])
+def test_shadow_implementation_matches_corpus_within_approximation_tolerance(
+    case: dict[str, object],
+) -> None:
+    inputs = _inputs_from_case(case)
+    result = shadow_compute_risk_metrics(inputs, Decimal(str(case["y"])))
 
     assert abs(
         result.macaulay_duration - Decimal(str(case["expected_macaulay_duration"]))
@@ -137,10 +141,11 @@ def test_production_implementation_matches_corpus_within_approximation_tolerance
 
 @pytest.mark.parametrize("case", CORPUS["risk_metrics_cases"], ids=lambda c: c["id"])
 def test_production_and_shadow_implementations_agree(case: dict[str, object]) -> None:
-    """The dual-implementation gate proper: production (numerical
-    bump-and-reprice) and shadow (analytical cash-flow-weighted-sum) must
-    agree with EACH OTHER within the same approximation-error-scale
-    tolerance, independent of the frozen corpus values.
+    """The dual-implementation gate proper: production (analytical
+    cash-flow-weighted-sum) and shadow (numerical bump-and-reprice,
+    validation-only) must agree with EACH OTHER within the same
+    approximation-error-scale tolerance, independent of the frozen corpus
+    values.
     """
     inputs = _inputs_from_case(case)
     y = Decimal(str(case["y"]))

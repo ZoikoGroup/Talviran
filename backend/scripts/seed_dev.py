@@ -62,6 +62,13 @@ TRADEWEB_GILT_PRICES_RIGHTS_PROFILE_CODE = "tradeweb.gilt-prices"
 #: PROFILE_CODE (OGL v3.0), but its own profile code/dataset, per RIGHTS-
 #: 001's per-source (not per-publisher) doctrine.
 BOE_FX_RIGHTS_PROFILE_CODE = "boe.fx-rates"
+#: Talvrin's own display right for its OWN computed output (duration/
+#: DV01/convexity), distinct from TRADEWEB_GILT_PRICES_RIGHTS_PROFILE_CODE
+#: which gates the underlying raw price Talvrin reads to compute this -
+#: TAL-FI-GILT-001 Table 6/7's "Derived display/export" row is a separate
+#: right from the source price's own retrieve/store/display rights, per
+#: RIGHTS-001's per-action (not per-source) doctrine.
+GILT_RISK_METRICS_RIGHTS_PROFILE_CODE = "talvrin.gilt-risk-metrics"
 SEED_GILT_ISIN = "GB0032452392"
 
 #: (issuer name, trading symbol, exchange, issuer country_code,
@@ -309,6 +316,7 @@ async def seed() -> None:
         await _seed_rights_profile(
             session, BOE_FX_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
         )
+        await _seed_rights_profile(session, GILT_RISK_METRICS_RIGHTS_PROFILE_CODE, ["display"])
         await _seed_gilt_reference_data(session)
         await _seed_equity_reference_data(session)
         await _seed_calculation_specification(
