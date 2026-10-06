@@ -9,6 +9,7 @@ the methodology document both require.
 import datetime as dt
 import uuid
 from decimal import Decimal
+from typing import TypedDict
 
 from app.modules.calculation.specs.gilt_price_yield_v1.implementation import (
     ConventionalGiltInputs,
@@ -30,13 +31,33 @@ from app.modules.calculation.specs.gilt_risk_metrics_v1.status import (
 _NOW = dt.datetime(2026, 10, 6, 9, 0, tzinfo=dt.UTC)
 
 
-def _example_context() -> dict[str, object]:
+class _ExampleContext(TypedDict):
+    """Every build_evidence_bundle keyword except risk_metrics/
+    calculation_status/previous_bundle_id (passed explicitly at each call
+    site, not via **unpacking) - a precise TypedDict here, not
+    dict[str, object], is what lets mypy actually check each **-unpacked
+    keyword against build_evidence_bundle's real parameter types rather
+    than just seeing one opaque blob.
+    """
+
+    metric_id: str
+    instrument_id: uuid.UUID
+    observed_input: ObservedInput
+    rights: RightsContext
+    instrument_master: InstrumentMaster
+    convention: ConventionDerivedInputs
+    method: MethodMetadata
+    temporal: TemporalLineage
+    rounding_version: str
+
+
+def _example_context() -> _ExampleContext:
     """Synthetic but structurally realistic metadata - this calc spec has
     no real wiring to actual instrument/source/rights rows yet (see
     evidence.py's own docstring), so these are illustrative fixture values,
     not production data.
     """
-    return dict(
+    return _ExampleContext(
         metric_id="FI.DURATION.MODIFIED",
         instrument_id=uuid.uuid4(),
         observed_input=ObservedInput(
