@@ -39,6 +39,8 @@ export default function Login() {
           setFormError('Too many attempts. Please wait a moment and try again.')
         } else if (err instanceof ApiError && err.code === 'UNAUTHENTICATED') {
           setFormError('Incorrect email or password.')
+        } else if (err instanceof ApiError && err.message) {
+          setFormError(err.message)
         } else {
           setFormError('Something went wrong. Please try again.')
         }
