@@ -1,17 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bell,
+  Bookmark,
   Check,
   ChevronRight,
+  Clock,
   Ellipsis,
   Folder,
   FolderMinus,
+  HelpCircle,
+  Home,
+  LineChart,
   MessageSquare,
   PanelLeft,
   PanelLeftClose,
   Pencil,
   Plus,
+  Search,
   Settings,
+  Shield,
   SquarePen,
   Trash2,
   X,
@@ -21,8 +28,6 @@ import { useCurrentUser } from '@/data/user'
 import { useIsDesktop } from '@/hooks/use-media-query'
 import PopoverMenu from '@/components/ui/popover-menu'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
-import wordmarkOnDark from '@/assets/brand/talvrin-wordmark-on-dark.svg'
-import wordmarkOnLight from '@/assets/brand/talvrin-wordmark-on-light.svg'
 
 export interface Chat {
   id: string
@@ -62,6 +67,8 @@ interface SidebarProps {
   onExpand: () => void
   onOpenSettings: () => void
   onOpenMonitoring: () => void
+  onOpenHome?: () => void
+  activeNav?: 'home' | 'research' | 'monitoring' | 'settings'
   /** Below `lg` the sidebar is an off-canvas drawer rather than a permanent
    * column — there is no room for the icon rail, so it is simply open or
    * closed. `collapsed` is a desktop-only concept and is ignored here. */
@@ -113,6 +120,8 @@ export default function Sidebar({
   onExpand,
   onOpenSettings,
   onOpenMonitoring,
+  onOpenHome,
+  activeNav = 'home',
   mobileOpen,
   onMobileClose,
 }: SidebarProps) {
@@ -484,85 +493,209 @@ export default function Sidebar({
           collapsed && 'lg:pointer-events-none lg:opacity-0'
         )}
       >
-        {/* Brand + collapse/close */}
-        {/* Single row: the lockup already carries the name, and its height
-            is matched to the rail's mark so the logo barely moves when the
-            sidebar collapses. */}
-        <div className="flex items-center gap-2.5 px-4 pb-4 pt-4">
-          <img
-            src={wordmarkOnDark}
-            alt="Talvrin"
-            className="brand-on-dark h-8 w-auto shrink-0"
-          />
-          <img
-            src={wordmarkOnLight}
-            alt="Talvrin"
-            className="brand-on-light h-8 w-auto shrink-0"
-          />
-          {/* Mobile: closes the drawer entirely. Desktop: collapses to the
-              icon rail instead — two different actions, so two buttons
-              rather than one handler branching on viewport. */}
-          <button
-            onClick={onMobileClose}
-            aria-label="Close sidebar"
-            className="ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden"
-          >
-            <X className="h-[18px] w-[18px]" />
-          </button>
+        {/* Brand + Live Status Pill */}
+        <div className="flex items-center justify-between px-4 pb-2 pt-4">
+          <div className="flex items-center gap-2">
+            <img
+              src={brandIcon}
+              alt="Talvrin"
+              className="h-7 w-7 rounded-lg"
+            />
+            <span className="text-[17px] font-bold tracking-wider text-foreground">TALVRIN</span>
+          </div>
           <button
             onClick={onCollapse}
             aria-label="Hide sidebar"
             tabIndex={tab}
-            className="ml-auto hidden h-8 w-8 shrink-0 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground lg:grid"
+            className="hidden h-7 w-7 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground lg:grid"
           >
-            <PanelLeftClose className="h-[17px] w-[17px]" />
+            <PanelLeftClose className="h-[16px] w-[16px]" />
+          </button>
+          <button
+            onClick={onMobileClose}
+            aria-label="Close sidebar"
+            className="grid h-7 w-7 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden"
+          >
+            <X className="h-[16px] w-[16px]" />
           </button>
         </div>
 
+        {/* Sources operational indicator */}
+        <div className="mx-4 mb-3 flex items-center gap-2 rounded-lg bg-emerald-500/10 px-2.5 py-1.5 text-[11px] text-emerald-400">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="flex flex-col">
+            <span className="font-semibold leading-tight">Sources operational</span>
+            <span className="text-[10px] text-emerald-400/80">Live and up to date</span>
+          </div>
+        </div>
+
+        {/* Quick Search Talvrin Bar */}
+        <div className="mx-3 mb-2 flex items-center justify-between rounded-xl border border-sidebar-border bg-sidebar-accent/50 px-3 py-1.5 text-[12.5px] text-sidebar-muted">
+          <div className="flex items-center gap-2">
+            <Search className="h-3.5 w-3.5" />
+            <span>Search Talvrin</span>
+          </div>
+          <kbd className="rounded border border-sidebar-border bg-sidebar px-1.5 py-0.5 text-[10px] font-mono text-sidebar-muted">
+            ⌘ K
+          </kbd>
+        </div>
+
+        {/* New Research Button with Gradient Glow */}
         <button
           onClick={() => {
             onNew(null)
             onMobileClose()
           }}
           tabIndex={tab}
-          className="mx-3 mb-3 flex items-center gap-2.5 rounded-full bg-sidebar-accent px-4 py-2.5 text-left text-[13.5px] font-medium transition-all hover:brightness-125 active:scale-[0.985]"
+          className="mx-3 mb-3 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-indigo-600 px-4 py-2.5 text-center text-[13.5px] font-semibold text-white shadow-lg shadow-primary/25 transition-all hover:brightness-110 active:scale-[0.985]"
         >
           <Plus className="h-4 w-4" />
-          New chat
+          New Research
         </button>
 
-        {/* Segmented switch — chats and projects share the panel below. */}
-        <div
-          role="tablist"
-          aria-label="Sidebar view"
-          className="mx-3 mb-2 grid grid-cols-2 gap-1 rounded-full bg-sidebar-accent p-1"
-        >
-          {(
-            [
-              { key: 'chats', label: 'Chats', count: history.reduce((n, b) => n + b.chats.length, 0) },
-              { key: 'projects', label: 'Projects', count: projects.length },
-            ] as const
-          ).map(({ key, label, count }) => (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={view === key}
-              onClick={() => setView(key)}
-              tabIndex={tab}
-              className={cn(
-                'flex items-center justify-center gap-1.5 rounded-full py-1.5 text-[13px] transition-colors',
-                view === key
-                  ? 'bg-sidebar font-medium text-sidebar-foreground ring-1 ring-inset ring-sidebar-border'
-                  : 'text-sidebar-muted hover:text-sidebar-foreground'
-              )}
-            >
-              {label}
-              {count > 0 && (
-                <span className="text-[11px] tabular-nums opacity-60">{count}</span>
-              )}
-            </button>
-          ))}
+        {/* Main Navigation Links matching the design */}
+        <div className="px-3 pb-2 space-y-0.5 text-[13px]">
+          <button
+            onClick={() => {
+              if (onOpenHome) onOpenHome()
+              onMobileClose()
+            }}
+            className={cn(
+              'flex w-full items-center justify-between rounded-xl px-3 py-2 font-medium transition-colors',
+              activeNav === 'home'
+                ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+            )}
+          >
+            <div className="flex items-center gap-2.5">
+              <Home className="h-4 w-4" />
+              <span>Home</span>
+            </div>
+          </button>
+
+          <button
+            onClick={() => {
+              onNew(null)
+              onMobileClose()
+            }}
+            className={cn(
+              'flex w-full items-center justify-between rounded-xl px-3 py-2 font-medium transition-colors',
+              activeNav === 'research'
+                ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+            )}
+          >
+            <div className="flex items-center gap-2.5">
+              <MessageSquare className="h-4 w-4" />
+              <span>Research</span>
+            </div>
+            <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+          </button>
+
+          <button
+            onClick={() => {
+              if (onOpenHome) onOpenHome()
+              onMobileClose()
+            }}
+            className="flex w-full items-center justify-between rounded-xl px-3 py-2 font-medium text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              <LineChart className="h-4 w-4" />
+              <span>Markets</span>
+            </div>
+            <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+          </button>
+
+          <button
+            onClick={() => {
+              onOpenMonitoring()
+              onMobileClose()
+            }}
+            className={cn(
+              'flex w-full items-center justify-between rounded-xl px-3 py-2 font-medium transition-colors',
+              activeNav === 'monitoring'
+                ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+            )}
+          >
+            <div className="flex items-center gap-2.5">
+              <Bell className="h-4 w-4" />
+              <span>Monitoring</span>
+            </div>
+            <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10.5px] font-bold text-rose-400">
+              3
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              if (onOpenHome) onOpenHome()
+              onMobileClose()
+            }}
+            className="flex w-full items-center justify-between rounded-xl px-3 py-2 font-medium text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              <Bookmark className="h-4 w-4" />
+              <span>Watchlists</span>
+            </div>
+            <span className="rounded-full bg-sidebar-accent px-1.5 py-0.5 text-[10px] text-sidebar-muted">
+              12
+            </span>
+          </button>
+
+          <button
+            onClick={() => setView('projects')}
+            className={cn(
+              'flex w-full items-center justify-between rounded-xl px-3 py-2 font-medium transition-colors',
+              view === 'projects'
+                ? 'text-sidebar-foreground bg-sidebar-accent'
+                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+            )}
+          >
+            <div className="flex items-center gap-2.5">
+              <Folder className="h-4 w-4" />
+              <span>Projects</span>
+            </div>
+          </button>
+
+          <button
+            onClick={() => {
+              if (onOpenHome) onOpenHome()
+              onMobileClose()
+            }}
+            className="flex w-full items-center justify-between rounded-xl px-3 py-2 font-medium text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              <Shield className="h-4 w-4" />
+              <span>Evidence</span>
+            </div>
+            <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+          </button>
+
+          <button
+            onClick={() => setView('chats')}
+            className="flex w-full items-center justify-between rounded-xl px-3 py-2 font-medium text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              <Clock className="h-4 w-4" />
+              <span>Recent Research</span>
+            </div>
+          </button>
+
+          <button
+            onClick={() => {
+              window.open('https://github.com/ZoikoGroup/Talviran', '_blank')
+            }}
+            className="flex w-full items-center justify-between rounded-xl px-3 py-2 font-medium text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              <HelpCircle className="h-4 w-4" />
+              <span>Help</span>
+            </div>
+          </button>
         </div>
+
+        <div className="my-1.5 h-px bg-sidebar-border mx-3" />
 
         <nav className="scrollbar-slim flex-1 overflow-y-auto px-2 pb-2">
           {/* ---------------- Projects ---------------- */}
@@ -773,38 +906,40 @@ export default function Sidebar({
             ))}
         </nav>
 
-        <div className="flex items-center gap-2.5 border-t border-sidebar-border p-3 text-[13.5px]">
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-sidebar-accent text-[11px] font-semibold text-sidebar-muted">
-            {currentUser.initials}
-          </span>
-          <span className="truncate">{currentUser.name}</span>
-          <span className="ml-auto shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-primary">
-            {currentUser.plan}
-          </span>
-          <button
-            onClick={() => {
-              onOpenMonitoring()
-              onMobileClose()
-            }}
-            tabIndex={tab}
-            aria-label="Monitoring"
-            title="Monitoring"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+        <div className="border-t border-sidebar-border/70 p-3 space-y-2">
+          {/* User profile row */}
+          <div
+            onClick={onOpenSettings}
+            className="flex items-center gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-sidebar-accent cursor-pointer"
           >
-            <Bell className="h-[17px] w-[17px]" />
-          </button>
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-950 text-indigo-300 border border-indigo-700/50 text-[12px] font-semibold">
+              {currentUser.initials}
+            </span>
+            <div className="flex flex-col min-w-0 flex-1">
+              <span className="truncate text-[13px] font-semibold text-foreground">{currentUser.name}</span>
+              <span className="text-[11px] text-muted-foreground capitalize">{currentUser.plan.toLowerCase()}</span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </div>
+
+          {/* Settings row */}
           <button
             onClick={() => {
               onOpenSettings()
               onMobileClose()
             }}
             tabIndex={tab}
-            aria-label="Settings"
-            title="Settings"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="flex w-full items-center gap-2.5 rounded-xl px-2 py-1.5 text-[13px] text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
-            <Settings className="h-[17px] w-[17px]" />
+            <Settings className="h-4 w-4" />
+            <span>Settings</span>
           </button>
+
+          {/* Bottom Talvrin branding tagline */}
+          <div className="pt-2 px-1 text-[10px] text-muted-foreground/80 space-y-0.5">
+            <div className="font-bold tracking-widest text-foreground/80">TALVRIN</div>
+            <div>The evidence layer for public markets.</div>
+          </div>
         </div>
       </div>
 

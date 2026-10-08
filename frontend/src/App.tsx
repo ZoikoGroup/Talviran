@@ -7,6 +7,7 @@ import Message from '@/components/Message'
 import Composer from '@/components/Composer'
 import SettingsPage from '@/components/SettingsPage'
 import MonitoringPage from '@/components/MonitoringPage'
+import HomeDashboard from '@/components/HomeDashboard'
 import TalvrinMoonChat from '@/components/ui/talvrin-moon-chat'
 import { buildReply, type ChatMessage } from '@/data/mockReply'
 import { DEFAULT_MODEL, type ModelId } from '@/data/models'
@@ -109,6 +110,7 @@ export default function App() {
   const { theme, setTheme } = useTheme()
   const [showSettings, setShowSettings] = useState(false)
   const [showMonitoring, setShowMonitoring] = useState(false)
+  const [showHome, setShowHome] = useState(true)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   // Guards selectChat against firing a second GET for the same chat while
@@ -190,6 +192,8 @@ export default function App() {
   const selectChat = (id: string) => {
     setActiveId(id)
     setShowSettings(false)
+    setShowMonitoring(false)
+    setShowHome(false)
 
     const target = chats.find((c) => c.id === id)
     if (!target?.backendId || target.messagesLoaded) return
@@ -311,6 +315,7 @@ export default function App() {
     setActiveId(c.id)
     setDraft('')
     setAttachments([])
+    setShowHome(false)
   }
 
   // Creating a project drops you straight into an empty chat inside it. The
@@ -482,13 +487,21 @@ export default function App() {
         onDeleteProject={deleteProject}
         onCollapse={() => setCollapsed(true)}
         onExpand={() => setCollapsed(false)}
+        onOpenHome={() => {
+          setShowHome(true)
+          setShowSettings(false)
+          setShowMonitoring(false)
+        }}
+        activeNav={showHome ? 'home' : showSettings ? 'settings' : showMonitoring ? 'monitoring' : 'research'}
         onOpenSettings={() => {
           setShowSettings(true)
           setShowMonitoring(false)
+          setShowHome(false)
         }}
         onOpenMonitoring={() => {
           setShowMonitoring(true)
           setShowSettings(false)
+          setShowHome(false)
         }}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
@@ -531,6 +544,22 @@ export default function App() {
           />
         ) : showMonitoring ? (
           <MonitoringPage onBack={() => setShowMonitoring(false)} />
+        ) : showHome ? (
+          <HomeDashboard
+            onSearch={(query) => {
+              setShowHome(false)
+              setDraft(query)
+              send(query)
+            }}
+            onStartResearch={() => {
+              setShowHome(false)
+              startChat(null)
+            }}
+            onOpenMonitoring={() => {
+              setShowHome(false)
+              setShowMonitoring(true)
+            }}
+          />
         ) : isLoadingActive ? (
           <div className="flex flex-1 items-center justify-center text-[13.5px] text-muted-foreground">
             Loading conversation…
