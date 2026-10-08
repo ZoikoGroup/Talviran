@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Search,
   ArrowRight,
@@ -26,6 +26,52 @@ export default function HomeDashboard({
 }: HomeDashboardProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedSource, setSelectedSource] = useState('All sources')
+  const [currentTime, setCurrentTime] = useState(() => new Date())
+
+  useEffect(() => {
+    // Tick every second to keep clocks accurate
+    const timer = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Dynamic greeting based on current local hour
+  const getGreeting = () => {
+    const hour = currentTime.getHours()
+    if (hour < 12) return 'Good morning,'
+    if (hour < 17) return 'Good afternoon,'
+    return 'Good evening,'
+  }
+
+  // Format real-time clock for a given IANA timezone
+  const getZoneTime = (timeZone: string): { time: string; date: string } => {
+    try {
+      const timeFormatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+      const dateFormatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone,
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+      return {
+        time: timeFormatter.format(currentTime),
+        date: dateFormatter.format(currentTime),
+      }
+    } catch {
+      return { time: '--:--', date: '---' }
+    }
+  }
+
+  const london = getZoneTime('Europe/London')
+  const newYork = getZoneTime('America/New_York')
+  const tokyo = getZoneTime('Asia/Tokyo')
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -201,7 +247,7 @@ export default function HomeDashboard({
         {/* Top Header Row: Greeting + Live Market Timezones & Global Coverage */}
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
           <div>
-            <div className="text-[13px] font-medium text-muted-foreground">Good afternoon,</div>
+            <div className="text-[13px] font-medium text-muted-foreground">{getGreeting()}</div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
               Turn questions into evidence.
             </h1>
@@ -212,21 +258,21 @@ export default function HomeDashboard({
 
           <div className="flex shrink-0 items-center gap-6 rounded-xl border border-border/60 bg-card/60 px-4 py-2.5 backdrop-blur-md">
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">London</div>
-              <div className="text-[14px] font-semibold text-foreground">16:24</div>
-              <div className="text-[10px] text-muted-foreground">Thu, 18 Sep 2026</div>
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">London</div>
+              <div className="text-[14px] font-semibold font-mono text-foreground">{london.time}</div>
+              <div className="text-[10px] text-muted-foreground">{london.date}</div>
             </div>
             <div className="h-7 w-px bg-border/80" />
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">New York</div>
-              <div className="text-[14px] font-semibold text-foreground">11:24</div>
-              <div className="text-[10px] text-muted-foreground">Thu, 18 Sep 2026</div>
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">New York</div>
+              <div className="text-[14px] font-semibold font-mono text-foreground">{newYork.time}</div>
+              <div className="text-[10px] text-muted-foreground">{newYork.date}</div>
             </div>
             <div className="h-7 w-px bg-border/80" />
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Tokyo</div>
-              <div className="text-[14px] font-semibold text-foreground">00:24</div>
-              <div className="text-[10px] text-muted-foreground">Fri, 19 Sep 2026</div>
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Tokyo</div>
+              <div className="text-[14px] font-semibold font-mono text-foreground">{tokyo.time}</div>
+              <div className="text-[10px] text-muted-foreground">{tokyo.date}</div>
             </div>
             <div className="h-7 w-px bg-border/80" />
             <div className="flex items-center gap-2">

@@ -15,13 +15,11 @@ import {
   HelpCircle,
   Home,
   LineChart,
-  LogOut,
   MessageSquare,
   PanelLeft,
   Pencil,
   Plus,
   Search,
-  Settings,
   Shield,
   Trash2,
   X,
@@ -71,7 +69,6 @@ interface SidebarProps {
   onOpenSettings: () => void
   onOpenMonitoring: () => void
   onOpenHome?: () => void
-  onSignOut?: () => void
   activeNav?: 'home' | 'research' | 'monitoring' | 'settings'
   /** Below `lg` the sidebar is an off-canvas drawer rather than a permanent
    * column — there is no room for the icon rail, so it is simply open or
@@ -125,7 +122,6 @@ export default function Sidebar({
   onOpenSettings,
   onOpenMonitoring,
   onOpenHome,
-  onSignOut,
   activeNav = 'home',
   mobileOpen,
   onMobileClose,
@@ -400,19 +396,19 @@ export default function Sidebar({
           'bg-sidebar/60 backdrop-blur-2xl backdrop-saturate-150',
           'border-r border-sidebar-border/60',
           // Mobile: a fixed off-canvas drawer, sliding in over the app.
-          'fixed inset-y-0 left-0 z-40 w-[276px]',
+          'fixed inset-y-0 left-0 z-40 w-[252px]',
           'transition-transform duration-300 ease-out',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
           // Desktop: back to a permanent column with the width transition
           // driving the collapse/expand rail instead of a slide.
           'lg:relative lg:z-auto lg:translate-x-0 lg:transition-[width]',
-          collapsed ? 'lg:w-[56px]' : 'lg:w-[276px]'
+          collapsed ? 'lg:w-[54px]' : 'lg:w-[252px]'
         )}
       >
       {/* ---------------- Collapsed icon rail (desktop only) ---------------- */}
       <div
         className={cn(
-          'absolute inset-y-0 left-0 hidden w-[56px] flex-col items-center py-4',
+          'absolute inset-y-0 left-0 hidden w-[54px] flex-col items-center py-3.5',
           'transition-opacity duration-200 lg:flex',
           collapsed ? 'lg:opacity-100' : 'lg:pointer-events-none lg:opacity-0'
         )}
@@ -434,7 +430,8 @@ export default function Sidebar({
           <PanelLeft className="absolute h-[18px] w-[18px] text-sidebar-muted opacity-0 transition-opacity group-hover:opacity-100" />
         </button>
 
-        <div className="mt-5 flex flex-col items-center gap-1.5 w-full px-2">
+        {/* Scrollable icon rail body */}
+        <div className="mt-3 flex flex-1 min-h-0 w-full flex-col items-center gap-1.5 overflow-y-auto px-2 scrollbar-none py-1">
           {/* Quick Search */}
           <button
             onClick={() => {
@@ -443,7 +440,7 @@ export default function Sidebar({
             tabIndex={rail}
             aria-label="Universal Search"
             title="Search Talvrin (⌘K)"
-            className="grid h-9 w-9 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <Search className="h-[18px] w-[18px]" />
           </button>
@@ -454,7 +451,7 @@ export default function Sidebar({
             tabIndex={rail}
             aria-label="Start New Research"
             title="Start New Research"
-            className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-r from-primary to-indigo-600 text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 active:scale-95"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-r from-primary to-indigo-600 text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 active:scale-95"
           >
             <Plus className="h-[18px] w-[18px]" />
           </button>
@@ -468,7 +465,7 @@ export default function Sidebar({
             aria-label="Home"
             title="Home"
             className={cn(
-              'grid h-9 w-9 place-items-center rounded-xl transition-colors',
+              'grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
               activeNav === 'home'
                 ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
                 : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
@@ -486,7 +483,7 @@ export default function Sidebar({
             aria-label="Research"
             title="Research"
             className={cn(
-              'grid h-9 w-9 place-items-center rounded-xl transition-colors',
+              'grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
               activeNav === 'research'
                 ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
                 : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
@@ -503,7 +500,7 @@ export default function Sidebar({
             tabIndex={rail}
             aria-label="Markets"
             title="Markets"
-            className="grid h-9 w-9 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <LineChart className="h-[18px] w-[18px]" />
           </button>
@@ -516,7 +513,7 @@ export default function Sidebar({
             tabIndex={rail}
             aria-label="Watchlists"
             title="Watchlists (12)"
-            className="relative grid h-9 w-9 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <Bookmark className="h-[18px] w-[18px]" />
             <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-indigo-500" />
@@ -529,7 +526,7 @@ export default function Sidebar({
             aria-label="Monitoring"
             title="Monitoring (3)"
             className={cn(
-              'relative grid h-9 w-9 place-items-center rounded-xl transition-colors',
+              'relative grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
               activeNav === 'monitoring'
                 ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
                 : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
@@ -546,7 +543,7 @@ export default function Sidebar({
             aria-label="Projects"
             title="Projects"
             className={cn(
-              'grid h-9 w-9 place-items-center rounded-xl transition-colors',
+              'grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
               view === 'projects'
                 ? 'text-sidebar-foreground bg-sidebar-accent'
                 : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
@@ -563,7 +560,7 @@ export default function Sidebar({
             tabIndex={rail}
             aria-label="Evidence"
             title="Evidence"
-            className="grid h-9 w-9 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <Shield className="h-[18px] w-[18px]" />
           </button>
@@ -576,7 +573,7 @@ export default function Sidebar({
             tabIndex={rail}
             aria-label="Economic Calendar"
             title="Economic Calendar"
-            className="grid h-9 w-9 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <Calendar className="h-[18px] w-[18px]" />
           </button>
@@ -589,7 +586,7 @@ export default function Sidebar({
             tabIndex={rail}
             aria-label="Screener"
             title="Screener"
-            className="grid h-9 w-9 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <Filter className="h-[18px] w-[18px]" />
           </button>
@@ -602,7 +599,7 @@ export default function Sidebar({
             tabIndex={rail}
             aria-label="Compare"
             title="Compare"
-            className="grid h-9 w-9 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <GitCompare className="h-[18px] w-[18px]" />
           </button>
@@ -613,7 +610,7 @@ export default function Sidebar({
             tabIndex={rail}
             aria-label="Recent Research"
             title="Recent Research"
-            className="grid h-9 w-9 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <Clock className="h-[18px] w-[18px]" />
           </button>
@@ -626,48 +623,23 @@ export default function Sidebar({
             tabIndex={rail}
             aria-label="Help & Support"
             title="Help & Support"
-            className="grid h-9 w-9 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <HelpCircle className="h-[18px] w-[18px]" />
           </button>
         </div>
 
-        {/* Collapsed Rail Footer */}
-        <div className="mt-auto flex flex-col items-center gap-2 pt-2 border-t border-sidebar-border/50 w-full px-2">
-          {/* User Avatar */}
+        {/* Collapsed Rail Footer: Profile avatar directly opens Settings */}
+        <div className="mt-auto flex flex-col items-center pb-3 w-full px-2">
           <button
             onClick={onOpenSettings}
             tabIndex={rail}
-            aria-label="User Profile"
-            title={`${currentUser.name} (${currentUser.plan})`}
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-950 text-[11px] font-semibold text-indigo-300 border border-indigo-700/50 transition-colors hover:text-white"
+            aria-label="Account Settings"
+            title={`${currentUser.name} (${currentUser.plan}) - Open Settings`}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-indigo-950 text-[12px] font-semibold text-indigo-300 border border-indigo-700/60 shadow-sm transition-all hover:ring-2 hover:ring-primary/40 hover:text-white"
           >
             {currentUser.initials}
           </button>
-
-          {/* Settings */}
-          <button
-            onClick={onOpenSettings}
-            tabIndex={rail}
-            aria-label="Settings"
-            title="Settings"
-            className="grid h-8 w-8 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          >
-            <Settings className="h-4 w-4" />
-          </button>
-
-          {/* Sign out */}
-          {onSignOut && (
-            <button
-              onClick={onSignOut}
-              tabIndex={rail}
-              aria-label="Sign out"
-              title="Sign out"
-              className="grid h-8 w-8 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-destructive/15 hover:text-destructive"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          )}
         </div>
       </div>
 
@@ -677,7 +649,7 @@ export default function Sidebar({
           opaque and interactive there regardless of `collapsed`. */}
       <div
         className={cn(
-          'flex w-[276px] flex-1 flex-col overflow-hidden opacity-100 transition-opacity duration-200',
+          'flex w-[252px] flex-1 flex-col overflow-hidden opacity-100 transition-opacity duration-200',
           collapsed && 'lg:pointer-events-none lg:opacity-0'
         )}
       >
@@ -718,15 +690,6 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* Sources operational indicator */}
-        <div className="mx-4 mb-3 flex items-center gap-2 rounded-lg bg-emerald-500/10 px-2.5 py-1.5 text-[11px] text-emerald-400">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <div className="flex flex-col">
-            <span className="font-semibold leading-tight">Sources operational</span>
-            <span className="text-[10px] text-emerald-400/80">Live and up to date</span>
-          </div>
-        </div>
-
         {/* Quick Search Talvrin Bar */}
         <div className="mx-3 mb-2 flex items-center justify-between rounded-xl border border-sidebar-border bg-sidebar-accent/50 px-3 py-1.5 text-[12.5px] text-sidebar-muted">
           <div className="flex items-center gap-2">
@@ -751,244 +714,243 @@ export default function Sidebar({
           New Research
         </button>
 
-        {/* Main Navigation Links matching sidebar.jpeg */}
-        <div className="px-3 pb-2 space-y-1 text-[13px]">
-          {/* Home */}
-          <button
-            onClick={() => {
-              if (onOpenHome) onOpenHome()
-              onMobileClose()
-            }}
-            className={cn(
-              'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
-              activeNav === 'home'
-                ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
-                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
-            )}
-          >
-            <div className="flex items-center gap-2.5">
-              <Home className="h-4 w-4 shrink-0 text-primary" />
-              <div className="flex flex-col">
-                <span className="font-semibold text-foreground text-[13px] leading-tight">Home</span>
-                <span className="text-[11px] text-muted-foreground/80 leading-tight">Overview & insights</span>
+        <nav className="scrollbar-slim flex-1 min-h-0 overflow-y-auto px-2 pb-2">
+          {/* Main Navigation Links matching sidebar.jpeg */}
+          <div className="px-1 pb-2 space-y-1 text-[13px]">
+            {/* Home */}
+            <button
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
+              className={cn(
+                'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
+                activeNav === 'home'
+                  ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                  : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+              )}
+            >
+              <div className="flex items-center gap-2.5">
+                <Home className="h-4 w-4 shrink-0 text-primary" />
+                <div className="flex flex-col">
+                  <span className="font-semibold text-foreground text-[13px] leading-tight">Home</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Overview & insights</span>
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
 
-          {/* Research */}
-          <button
-            onClick={() => {
-              onNew(null)
-              onMobileClose()
-            }}
-            className={cn(
-              'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
-              activeNav === 'research'
-                ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
-                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
-            )}
-          >
-            <div className="flex items-center gap-2.5">
-              <MessageSquare className="h-4 w-4 shrink-0" />
-              <div className="flex flex-col">
-                <span className="font-medium text-foreground text-[13px] leading-tight">Research</span>
-                <span className="text-[11px] text-muted-foreground/80 leading-tight">Ask, explore, analyze</span>
+            {/* Research */}
+            <button
+              onClick={() => {
+                onNew(null)
+                onMobileClose()
+              }}
+              className={cn(
+                'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
+                activeNav === 'research'
+                  ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                  : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+              )}
+            >
+              <div className="flex items-center gap-2.5">
+                <MessageSquare className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Research</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Ask, explore, analyze</span>
+                </div>
               </div>
-            </div>
-            <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
-          </button>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
 
-          {/* Markets */}
-          <button
-            onClick={() => {
-              if (onOpenHome) onOpenHome()
-              onMobileClose()
-            }}
-            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
-          >
-            <div className="flex items-center gap-2.5">
-              <LineChart className="h-4 w-4 shrink-0" />
-              <div className="flex flex-col">
-                <span className="font-medium text-foreground text-[13px] leading-tight">Markets</span>
-                <span className="text-[11px] text-muted-foreground/80 leading-tight">Stocks, bonds, FX, ETFs +</span>
+            {/* Markets */}
+            <button
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <LineChart className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Markets</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Stocks, bonds, FX, ETFs +</span>
+                </div>
               </div>
-            </div>
-            <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
-          </button>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
 
-          {/* Watchlists */}
-          <button
-            onClick={() => {
-              if (onOpenHome) onOpenHome()
-              onMobileClose()
-            }}
-            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
-          >
-            <div className="flex items-center gap-2.5">
-              <Bookmark className="h-4 w-4 shrink-0" />
-              <div className="flex flex-col">
-                <span className="font-medium text-foreground text-[13px] leading-tight">Watchlists</span>
-                <span className="text-[11px] text-muted-foreground/80 leading-tight">Track what matters</span>
+            {/* Watchlists */}
+            <button
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <Bookmark className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Watchlists</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Track what matters</span>
+                </div>
               </div>
-            </div>
-            <span className="rounded-full bg-sidebar-accent px-2 py-0.5 text-[10.5px] font-semibold text-sidebar-muted border border-sidebar-border">
-              12
-            </span>
-          </button>
+              <span className="rounded-full bg-sidebar-accent px-2 py-0.5 text-[10.5px] font-semibold text-sidebar-muted border border-sidebar-border">
+                12
+              </span>
+            </button>
 
-          {/* Monitoring */}
-          <button
-            onClick={() => {
-              onOpenMonitoring()
-              onMobileClose()
-            }}
-            className={cn(
-              'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
-              activeNav === 'monitoring'
-                ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
-                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
-            )}
-          >
-            <div className="flex items-center gap-2.5">
-              <Bell className="h-4 w-4 shrink-0" />
-              <div className="flex flex-col">
-                <span className="font-medium text-foreground text-[13px] leading-tight">Monitoring</span>
-                <span className="text-[11px] text-muted-foreground/80 leading-tight">Alerts & updates</span>
+            {/* Monitoring */}
+            <button
+              onClick={() => {
+                onOpenMonitoring()
+                onMobileClose()
+              }}
+              className={cn(
+                'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
+                activeNav === 'monitoring'
+                  ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                  : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+              )}
+            >
+              <div className="flex items-center gap-2.5">
+                <Bell className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Monitoring</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Alerts & updates</span>
+                </div>
               </div>
-            </div>
-            <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10.5px] font-bold text-rose-400 border border-rose-500/30">
-              3
-            </span>
-          </button>
+              <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10.5px] font-bold text-rose-400 border border-rose-500/30">
+                3
+              </span>
+            </button>
 
-          {/* Projects */}
-          <button
-            onClick={() => setView('projects')}
-            className={cn(
-              'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
-              view === 'projects'
-                ? 'text-sidebar-foreground bg-sidebar-accent'
-                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
-            )}
-          >
-            <div className="flex items-center gap-2.5">
-              <Folder className="h-4 w-4 shrink-0" />
-              <div className="flex flex-col">
-                <span className="font-medium text-foreground text-[13px] leading-tight">Projects</span>
-                <span className="text-[11px] text-muted-foreground/80 leading-tight">Organize your research</span>
+            {/* Projects */}
+            <button
+              onClick={() => setView(view === 'projects' ? 'chats' : 'projects')}
+              className={cn(
+                'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
+                view === 'projects'
+                  ? 'text-sidebar-foreground bg-sidebar-accent'
+                  : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+              )}
+            >
+              <div className="flex items-center gap-2.5">
+                <Folder className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Projects</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Organize your research</span>
+                </div>
               </div>
-            </div>
-            <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
-          </button>
+              <ChevronRight className={cn('h-3.5 w-3.5 text-sidebar-muted/60 transition-transform', view === 'projects' && 'rotate-90')} />
+            </button>
 
-          {/* Evidence */}
-          <button
-            onClick={() => {
-              if (onOpenHome) onOpenHome()
-              onMobileClose()
-            }}
-            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
-          >
-            <div className="flex items-center gap-2.5">
-              <Shield className="h-4 w-4 shrink-0" />
-              <div className="flex flex-col">
-                <span className="font-medium text-foreground text-[13px] leading-tight">Evidence</span>
-                <span className="text-[11px] text-muted-foreground/80 leading-tight">Sources, documents, data</span>
+            {/* Evidence */}
+            <button
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <Shield className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Evidence</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Sources, documents, data</span>
+                </div>
               </div>
-            </div>
-            <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
-          </button>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
 
-          {/* Economic Calendar */}
-          <button
-            onClick={() => {
-              if (onOpenHome) onOpenHome()
-              onMobileClose()
-            }}
-            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
-          >
-            <div className="flex items-center gap-2.5">
-              <Calendar className="h-4 w-4 shrink-0" />
-              <div className="flex flex-col">
-                <span className="font-medium text-foreground text-[13px] leading-tight">Economic Calendar</span>
-                <span className="text-[11px] text-muted-foreground/80 leading-tight">Key dates & events</span>
+            {/* Economic Calendar */}
+            <button
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <Calendar className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Economic Calendar</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Key dates & events</span>
+                </div>
               </div>
-            </div>
-            <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
-          </button>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
 
-          {/* Screener */}
-          <button
-            onClick={() => {
-              if (onOpenHome) onOpenHome()
-              onMobileClose()
-            }}
-            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
-          >
-            <div className="flex items-center gap-2.5">
-              <Filter className="h-4 w-4 shrink-0" />
-              <div className="flex flex-col">
-                <span className="font-medium text-foreground text-[13px] leading-tight">Screener</span>
-                <span className="text-[11px] text-muted-foreground/80 leading-tight">Find opportunities</span>
+            {/* Screener */}
+            <button
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <Filter className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Screener</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Find opportunities</span>
+                </div>
               </div>
-            </div>
-            <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
-          </button>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
 
-          {/* Compare */}
-          <button
-            onClick={() => {
-              if (onOpenHome) onOpenHome()
-              onMobileClose()
-            }}
-            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
-          >
-            <div className="flex items-center gap-2.5">
-              <GitCompare className="h-4 w-4 shrink-0" />
-              <div className="flex flex-col">
-                <span className="font-medium text-foreground text-[13px] leading-tight">Compare</span>
-                <span className="text-[11px] text-muted-foreground/80 leading-tight">Assets, sectors, indices</span>
+            {/* Compare */}
+            <button
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <GitCompare className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Compare</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Assets, sectors, indices</span>
+                </div>
               </div>
-            </div>
-            <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
-          </button>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
 
-          {/* Recent Research */}
-          <button
-            onClick={() => setView('chats')}
-            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
-          >
-            <div className="flex items-center gap-2.5">
-              <Clock className="h-4 w-4 shrink-0" />
-              <div className="flex flex-col">
-                <span className="font-medium text-foreground text-[13px] leading-tight">Recent Research</span>
-                <span className="text-[11px] text-muted-foreground/80 leading-tight">Your recent activity</span>
+            {/* Recent Research */}
+            <button
+              onClick={() => setView('chats')}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <Clock className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Recent Research</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Your recent activity</span>
+                </div>
               </div>
-            </div>
-            <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
-          </button>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
 
-          {/* Help & Support */}
-          <button
-            onClick={() => {
-              window.open('https://github.com/ZoikoGroup/Talviran', '_blank')
-            }}
-            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
-          >
-            <div className="flex items-center gap-2.5">
-              <HelpCircle className="h-4 w-4 shrink-0" />
-              <div className="flex flex-col">
-                <span className="font-medium text-foreground text-[13px] leading-tight">Help & Support</span>
-                <span className="text-[11px] text-muted-foreground/80 leading-tight">Guides, FAQs, contact</span>
+            {/* Help & Support */}
+            <button
+              onClick={() => {
+                window.open('https://github.com/ZoikoGroup/Talviran', '_blank')
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <HelpCircle className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Help & Support</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Guides, FAQs, contact</span>
+                </div>
               </div>
-            </div>
-            <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
-          </button>
-        </div>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
+          </div>
 
-        <div className="my-1.5 h-px bg-sidebar-border mx-3" />
-
-        <nav className="scrollbar-slim flex-1 overflow-y-auto px-2 pb-2">
+          <div className="my-1.5 h-px bg-sidebar-border mx-2" />
           {/* ---------------- Projects ---------------- */}
           {view === 'projects' && (
           <>
@@ -1198,9 +1160,12 @@ export default function Sidebar({
         </nav>
 
         <div className="border-t border-sidebar-border/70 p-3 space-y-1">
-          {/* User profile row */}
+          {/* User profile row - opens Settings */}
           <div
-            onClick={onOpenSettings}
+            onClick={() => {
+              onOpenSettings()
+              onMobileClose()
+            }}
             className="flex items-center gap-2.5 rounded-xl p-2 transition-colors hover:bg-sidebar-accent cursor-pointer"
           >
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-indigo-950 text-indigo-300 border border-indigo-700/50 text-[12px] font-semibold">
@@ -1213,36 +1178,6 @@ export default function Sidebar({
               </span>
             </div>
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          </div>
-
-          {/* Settings row */}
-          <button
-            onClick={() => {
-              onOpenSettings()
-              onMobileClose()
-            }}
-            tabIndex={tab}
-            className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px] font-medium text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          >
-            <Settings className="h-4 w-4" />
-            <span>Settings</span>
-          </button>
-
-          {/* Sign out row */}
-          {onSignOut && (
-            <button
-              onClick={onSignOut}
-              tabIndex={tab}
-              className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px] font-medium text-sidebar-muted transition-colors hover:bg-destructive/15 hover:text-destructive"
-            >
-              <LogOut className="h-4 w-4" />
-              <span>Sign out</span>
-            </button>
-          )}
-
-          {/* Bottom Copyright */}
-          <div className="pt-2 px-2.5 text-[10.5px] text-muted-foreground/60">
-            © 2026 Talvrin. All rights reserved.
           </div>
         </div>
       </div>
