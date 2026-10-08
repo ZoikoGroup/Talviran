@@ -12,6 +12,7 @@ import TalvrinMoonChat from '@/components/ui/talvrin-moon-chat'
 import { buildReply, type ChatMessage } from '@/data/mockReply'
 import { DEFAULT_MODEL, type ModelId } from '@/data/models'
 import { useTheme } from '@/theme/ThemeContext'
+import { useAuth } from '@/auth/AuthContext'
 import {
   ApiError,
   createChat,
@@ -91,6 +92,7 @@ const toDisplayMessage = (m: ChatMessageWire): ChatMessage => ({
 
 export default function App() {
   const navigate = useNavigate()
+  const { signOut } = useAuth()
   const [draftChat] = useState(() => newChat())
   const [chats, setChats] = useState<ChatRecord[]>([draftChat])
   const [projects, setProjects] = useState<Project[]>([])
@@ -502,6 +504,10 @@ export default function App() {
           setShowMonitoring(true)
           setShowSettings(false)
           setShowHome(false)
+        }}
+        onSignOut={async () => {
+          await signOut()
+          navigate('/login', { replace: true })
         }}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
