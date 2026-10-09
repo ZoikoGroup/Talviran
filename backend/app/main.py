@@ -19,7 +19,7 @@ def create_app() -> FastAPI:
     register_default_packs(app.state.pack_registry)
 
     app.add_middleware(RequestContextMiddleware)
-    if settings.environment != "production":
+    if settings.cors_allow_origins:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=settings.cors_allow_origins,
