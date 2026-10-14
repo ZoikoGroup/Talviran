@@ -52,6 +52,8 @@ export default function Signup() {
           setFormError('An account already exists for that email address.')
         } else if (err instanceof ApiError && err.code === 'VALIDATION_ERROR') {
           setErrors((prev) => ({ ...prev, password: err.message }))
+        } else if (err instanceof ApiError && err.message) {
+          setFormError(err.message)
         } else {
           setFormError('Something went wrong. Please try again.')
         }

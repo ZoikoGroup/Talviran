@@ -1,18 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bell,
+  Bookmark,
+  Calendar,
   Check,
   ChevronRight,
+  ChevronsLeft,
+  Clock,
   Ellipsis,
+  Filter,
   Folder,
   FolderMinus,
+  GitCompare,
+  HelpCircle,
+  Home,
+  LineChart,
   MessageSquare,
   PanelLeft,
-  PanelLeftClose,
   Pencil,
   Plus,
-  Settings,
-  SquarePen,
+  Search,
+  Shield,
   Trash2,
   X,
 } from 'lucide-react'
@@ -21,8 +29,6 @@ import { useCurrentUser } from '@/data/user'
 import { useIsDesktop } from '@/hooks/use-media-query'
 import PopoverMenu from '@/components/ui/popover-menu'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
-import wordmarkOnDark from '@/assets/brand/talvrin-wordmark-on-dark.svg'
-import wordmarkOnLight from '@/assets/brand/talvrin-wordmark-on-light.svg'
 
 export interface Chat {
   id: string
@@ -62,6 +68,8 @@ interface SidebarProps {
   onExpand: () => void
   onOpenSettings: () => void
   onOpenMonitoring: () => void
+  onOpenHome?: () => void
+  activeNav?: 'home' | 'research' | 'monitoring' | 'settings'
   /** Below `lg` the sidebar is an off-canvas drawer rather than a permanent
    * column — there is no room for the icon rail, so it is simply open or
    * closed. `collapsed` is a desktop-only concept and is ignored here. */
@@ -113,6 +121,8 @@ export default function Sidebar({
   onExpand,
   onOpenSettings,
   onOpenMonitoring,
+  onOpenHome,
+  activeNav = 'home',
   mobileOpen,
   onMobileClose,
 }: SidebarProps) {
@@ -386,19 +396,19 @@ export default function Sidebar({
           'bg-sidebar/60 backdrop-blur-2xl backdrop-saturate-150',
           'border-r border-sidebar-border/60',
           // Mobile: a fixed off-canvas drawer, sliding in over the app.
-          'fixed inset-y-0 left-0 z-40 w-[276px]',
+          'fixed inset-y-0 left-0 z-40 w-[252px]',
           'transition-transform duration-300 ease-out',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
           // Desktop: back to a permanent column with the width transition
           // driving the collapse/expand rail instead of a slide.
           'lg:relative lg:z-auto lg:translate-x-0 lg:transition-[width]',
-          collapsed ? 'lg:w-[56px]' : 'lg:w-[276px]'
+          collapsed ? 'lg:w-[54px]' : 'lg:w-[252px]'
         )}
       >
       {/* ---------------- Collapsed icon rail (desktop only) ---------------- */}
       <div
         className={cn(
-          'absolute inset-y-0 left-0 hidden w-[56px] flex-col items-center py-4',
+          'absolute inset-y-0 left-0 hidden w-[54px] flex-col items-center py-3.5',
           'transition-opacity duration-200 lg:flex',
           collapsed ? 'lg:opacity-100' : 'lg:pointer-events-none lg:opacity-0'
         )}
@@ -420,58 +430,217 @@ export default function Sidebar({
           <PanelLeft className="absolute h-[18px] w-[18px] text-sidebar-muted opacity-0 transition-opacity group-hover:opacity-100" />
         </button>
 
-        <div className="mt-5 flex flex-col items-center gap-1.5">
-          {(
-            [
-              {
-                key: 'new',
-                label: 'New chat',
-                Icon: SquarePen,
-                onClick: () => onNew(null),
-              },
-              {
-                key: 'projects',
-                label: 'Projects',
-                Icon: Folder,
-                onClick: () => openView('projects'),
-              },
-              {
-                key: 'recent',
-                label: 'Recent chats',
-                Icon: MessageSquare,
-                onClick: () => openView('chats'),
-              },
-              {
-                key: 'monitoring',
-                label: 'Monitoring',
-                Icon: Bell,
-                onClick: onOpenMonitoring,
-              },
-            ] as const
-          ).map(({ key, label, Icon, onClick }) => (
-            <button
-              key={key}
-              onClick={onClick}
-              tabIndex={rail}
-              aria-label={label}
-              title={label}
-              className="grid h-9 w-9 place-items-center rounded-[10px] text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            >
-              <Icon className="h-[18px] w-[18px]" />
-            </button>
-          ))}
+        {/* Scrollable icon rail body */}
+        <div className="mt-3 flex flex-1 min-h-0 w-full flex-col items-center gap-1.5 overflow-y-auto px-2 scrollbar-none py-1">
+          {/* Quick Search */}
+          <button
+            onClick={() => {
+              if (onOpenHome) onOpenHome()
+            }}
+            tabIndex={rail}
+            aria-label="Universal Search"
+            title="Search Talvrin (⌘K)"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <Search className="h-[18px] w-[18px]" />
+          </button>
+
+          {/* Start New Research */}
+          <button
+            onClick={() => onNew(null)}
+            tabIndex={rail}
+            aria-label="Start New Research"
+            title="Start New Research"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-r from-primary to-indigo-600 text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 active:scale-95"
+          >
+            <Plus className="h-[18px] w-[18px]" />
+          </button>
+
+          {/* Home */}
+          <button
+            onClick={() => {
+              if (onOpenHome) onOpenHome()
+            }}
+            tabIndex={rail}
+            aria-label="Home"
+            title="Home"
+            className={cn(
+              'grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
+              activeNav === 'home'
+                ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+            )}
+          >
+            <Home className="h-[18px] w-[18px]" />
+          </button>
+
+          {/* Research */}
+          <button
+            onClick={() => {
+              onNew(null)
+            }}
+            tabIndex={rail}
+            aria-label="Research"
+            title="Research"
+            className={cn(
+              'grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
+              activeNav === 'research'
+                ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+            )}
+          >
+            <MessageSquare className="h-[18px] w-[18px]" />
+          </button>
+
+          {/* Markets */}
+          <button
+            onClick={() => {
+              if (onOpenHome) onOpenHome()
+            }}
+            tabIndex={rail}
+            aria-label="Markets"
+            title="Markets"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <LineChart className="h-[18px] w-[18px]" />
+          </button>
+
+          {/* Watchlists */}
+          <button
+            onClick={() => {
+              if (onOpenHome) onOpenHome()
+            }}
+            tabIndex={rail}
+            aria-label="Watchlists"
+            title="Watchlists (12)"
+            className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <Bookmark className="h-[18px] w-[18px]" />
+            <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-indigo-500" />
+          </button>
+
+          {/* Monitoring */}
+          <button
+            onClick={onOpenMonitoring}
+            tabIndex={rail}
+            aria-label="Monitoring"
+            title="Monitoring (3)"
+            className={cn(
+              'relative grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
+              activeNav === 'monitoring'
+                ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+            )}
+          >
+            <Bell className="h-[18px] w-[18px]" />
+            <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-rose-500" />
+          </button>
+
+          {/* Projects */}
+          <button
+            onClick={() => openView('projects')}
+            tabIndex={rail}
+            aria-label="Projects"
+            title="Projects"
+            className={cn(
+              'grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
+              view === 'projects'
+                ? 'text-sidebar-foreground bg-sidebar-accent'
+                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+            )}
+          >
+            <Folder className="h-[18px] w-[18px]" />
+          </button>
+
+          {/* Evidence */}
+          <button
+            onClick={() => {
+              if (onOpenHome) onOpenHome()
+            }}
+            tabIndex={rail}
+            aria-label="Evidence"
+            title="Evidence"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <Shield className="h-[18px] w-[18px]" />
+          </button>
+
+          {/* Economic Calendar */}
+          <button
+            onClick={() => {
+              if (onOpenHome) onOpenHome()
+            }}
+            tabIndex={rail}
+            aria-label="Economic Calendar"
+            title="Economic Calendar"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <Calendar className="h-[18px] w-[18px]" />
+          </button>
+
+          {/* Screener */}
+          <button
+            onClick={() => {
+              if (onOpenHome) onOpenHome()
+            }}
+            tabIndex={rail}
+            aria-label="Screener"
+            title="Screener"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <Filter className="h-[18px] w-[18px]" />
+          </button>
+
+          {/* Compare */}
+          <button
+            onClick={() => {
+              if (onOpenHome) onOpenHome()
+            }}
+            tabIndex={rail}
+            aria-label="Compare"
+            title="Compare"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <GitCompare className="h-[18px] w-[18px]" />
+          </button>
+
+          {/* Recent Research */}
+          <button
+            onClick={() => openView('chats')}
+            tabIndex={rail}
+            aria-label="Recent Research"
+            title="Recent Research"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <Clock className="h-[18px] w-[18px]" />
+          </button>
+
+          {/* Help & Support */}
+          <button
+            onClick={() => {
+              window.open('https://github.com/ZoikoGroup/Talviran', '_blank')
+            }}
+            tabIndex={rail}
+            aria-label="Help & Support"
+            title="Help & Support"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <HelpCircle className="h-[18px] w-[18px]" />
+          </button>
         </div>
 
-        {/* The rail has no room for a footer, so the avatar is the way in. */}
-        <button
-          onClick={onOpenSettings}
-          tabIndex={rail}
-          aria-label="Settings"
-          title="Settings"
-          className="mt-auto grid h-8 w-8 shrink-0 place-items-center rounded-full bg-sidebar-accent text-[11px] font-semibold text-sidebar-muted transition-colors hover:text-sidebar-foreground"
-        >
-          {currentUser.initials}
-        </button>
+        {/* Collapsed Rail Footer: Profile avatar directly opens Settings */}
+        <div className="mt-auto flex flex-col items-center pb-3 w-full px-2">
+          <button
+            onClick={onOpenSettings}
+            tabIndex={rail}
+            aria-label="Account Settings"
+            title={`${currentUser.name} (${currentUser.plan}) - Open Settings`}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-indigo-950 text-[12px] font-semibold text-indigo-300 border border-indigo-700/60 shadow-sm transition-all hover:ring-2 hover:ring-primary/40 hover:text-white"
+          >
+            {currentUser.initials}
+          </button>
+        </div>
       </div>
 
       {/* ---------------- Expanded panel ----------------
@@ -480,91 +649,308 @@ export default function Sidebar({
           opaque and interactive there regardless of `collapsed`. */}
       <div
         className={cn(
-          'flex w-[276px] flex-1 flex-col overflow-hidden opacity-100 transition-opacity duration-200',
+          'flex w-[252px] flex-1 flex-col overflow-hidden opacity-100 transition-opacity duration-200',
           collapsed && 'lg:pointer-events-none lg:opacity-0'
         )}
       >
-        {/* Brand + collapse/close */}
-        {/* Single row: the lockup already carries the name, and its height
-            is matched to the rail's mark so the logo barely moves when the
-            sidebar collapses. */}
-        <div className="flex items-center gap-2.5 px-4 pb-4 pt-4">
-          <img
-            src={wordmarkOnDark}
-            alt="Talvrin"
-            className="brand-on-dark h-8 w-auto shrink-0"
-          />
-          <img
-            src={wordmarkOnLight}
-            alt="Talvrin"
-            className="brand-on-light h-8 w-auto shrink-0"
-          />
-          {/* Mobile: closes the drawer entirely. Desktop: collapses to the
-              icon rail instead — two different actions, so two buttons
-              rather than one handler branching on viewport. */}
-          <button
-            onClick={onMobileClose}
-            aria-label="Close sidebar"
-            className="ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden"
-          >
-            <X className="h-[18px] w-[18px]" />
-          </button>
+        {/* Brand Header matching sidebar.jpeg */}
+        <div className="flex items-start justify-between px-4 pb-3 pt-4">
+          <div className="flex items-start gap-2.5">
+            <img
+              src={brandIcon}
+              alt="Talvrin"
+              className="h-8 w-8 rounded-xl shrink-0"
+            />
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1">
+                <span className="text-[17px] font-black tracking-widest text-foreground">
+                  TALVRIN
+                </span>
+                <span className="text-[9px] font-mono text-muted-foreground/80">™</span>
+              </div>
+              <span className="text-[8.5px] font-medium tracking-wider text-muted-foreground/75 uppercase leading-tight">
+                The evidence layer for public markets
+              </span>
+            </div>
+          </div>
           <button
             onClick={onCollapse}
             aria-label="Hide sidebar"
             tabIndex={tab}
-            className="ml-auto hidden h-8 w-8 shrink-0 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground lg:grid"
+            className="hidden h-7 w-7 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground lg:grid mt-0.5"
           >
-            <PanelLeftClose className="h-[17px] w-[17px]" />
+            <ChevronsLeft className="h-[17px] w-[17px]" />
+          </button>
+          <button
+            onClick={onMobileClose}
+            aria-label="Close sidebar"
+            className="grid h-7 w-7 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden mt-0.5"
+          >
+            <X className="h-[17px] w-[17px]" />
           </button>
         </div>
 
+        {/* Quick Search Talvrin Bar */}
+        <div className="mx-3 mb-2 flex items-center justify-between rounded-xl border border-sidebar-border bg-sidebar-accent/50 px-3 py-1.5 text-[12.5px] text-sidebar-muted">
+          <div className="flex items-center gap-2">
+            <Search className="h-3.5 w-3.5" />
+            <span>Search Talvrin</span>
+          </div>
+          <kbd className="rounded border border-sidebar-border bg-sidebar px-1.5 py-0.5 text-[10px] font-mono text-sidebar-muted">
+            ⌘ K
+          </kbd>
+        </div>
+
+        {/* New Research Button with Gradient Glow */}
         <button
           onClick={() => {
             onNew(null)
             onMobileClose()
           }}
           tabIndex={tab}
-          className="mx-3 mb-3 flex items-center gap-2.5 rounded-full bg-sidebar-accent px-4 py-2.5 text-left text-[13.5px] font-medium transition-all hover:brightness-125 active:scale-[0.985]"
+          className="mx-3 mb-3 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-indigo-600 px-4 py-2.5 text-center text-[13.5px] font-semibold text-white shadow-lg shadow-primary/25 transition-all hover:brightness-110 active:scale-[0.985]"
         >
           <Plus className="h-4 w-4" />
-          New chat
+          New Research
         </button>
 
-        {/* Segmented switch — chats and projects share the panel below. */}
-        <div
-          role="tablist"
-          aria-label="Sidebar view"
-          className="mx-3 mb-2 grid grid-cols-2 gap-1 rounded-full bg-sidebar-accent p-1"
-        >
-          {(
-            [
-              { key: 'chats', label: 'Chats', count: history.reduce((n, b) => n + b.chats.length, 0) },
-              { key: 'projects', label: 'Projects', count: projects.length },
-            ] as const
-          ).map(({ key, label, count }) => (
+        <nav className="scrollbar-slim flex-1 min-h-0 overflow-y-auto px-2 pb-2">
+          {/* Main Navigation Links matching sidebar.jpeg */}
+          <div className="px-1 pb-2 space-y-1 text-[13px]">
+            {/* Home */}
             <button
-              key={key}
-              role="tab"
-              aria-selected={view === key}
-              onClick={() => setView(key)}
-              tabIndex={tab}
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
               className={cn(
-                'flex items-center justify-center gap-1.5 rounded-full py-1.5 text-[13px] transition-colors',
-                view === key
-                  ? 'bg-sidebar font-medium text-sidebar-foreground ring-1 ring-inset ring-sidebar-border'
-                  : 'text-sidebar-muted hover:text-sidebar-foreground'
+                'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
+                activeNav === 'home'
+                  ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                  : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
               )}
             >
-              {label}
-              {count > 0 && (
-                <span className="text-[11px] tabular-nums opacity-60">{count}</span>
-              )}
+              <div className="flex items-center gap-2.5">
+                <Home className="h-4 w-4 shrink-0 text-primary" />
+                <div className="flex flex-col">
+                  <span className="font-semibold text-foreground text-[13px] leading-tight">Home</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Overview & insights</span>
+                </div>
+              </div>
             </button>
-          ))}
-        </div>
 
-        <nav className="scrollbar-slim flex-1 overflow-y-auto px-2 pb-2">
+            {/* Research */}
+            <button
+              onClick={() => {
+                onNew(null)
+                onMobileClose()
+              }}
+              className={cn(
+                'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
+                activeNav === 'research'
+                  ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                  : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+              )}
+            >
+              <div className="flex items-center gap-2.5">
+                <MessageSquare className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Research</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Ask, explore, analyze</span>
+                </div>
+              </div>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
+
+            {/* Markets */}
+            <button
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <LineChart className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Markets</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Stocks, bonds, FX, ETFs +</span>
+                </div>
+              </div>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
+
+            {/* Watchlists */}
+            <button
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <Bookmark className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Watchlists</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Track what matters</span>
+                </div>
+              </div>
+              <span className="rounded-full bg-sidebar-accent px-2 py-0.5 text-[10.5px] font-semibold text-sidebar-muted border border-sidebar-border">
+                12
+              </span>
+            </button>
+
+            {/* Monitoring */}
+            <button
+              onClick={() => {
+                onOpenMonitoring()
+                onMobileClose()
+              }}
+              className={cn(
+                'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
+                activeNav === 'monitoring'
+                  ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                  : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+              )}
+            >
+              <div className="flex items-center gap-2.5">
+                <Bell className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Monitoring</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Alerts & updates</span>
+                </div>
+              </div>
+              <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10.5px] font-bold text-rose-400 border border-rose-500/30">
+                3
+              </span>
+            </button>
+
+            {/* Projects */}
+            <button
+              onClick={() => setView(view === 'projects' ? 'chats' : 'projects')}
+              className={cn(
+                'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
+                view === 'projects'
+                  ? 'text-sidebar-foreground bg-sidebar-accent'
+                  : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+              )}
+            >
+              <div className="flex items-center gap-2.5">
+                <Folder className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Projects</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Organize your research</span>
+                </div>
+              </div>
+              <ChevronRight className={cn('h-3.5 w-3.5 text-sidebar-muted/60 transition-transform', view === 'projects' && 'rotate-90')} />
+            </button>
+
+            {/* Evidence */}
+            <button
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <Shield className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Evidence</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Sources, documents, data</span>
+                </div>
+              </div>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
+
+            {/* Economic Calendar */}
+            <button
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <Calendar className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Economic Calendar</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Key dates & events</span>
+                </div>
+              </div>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
+
+            {/* Screener */}
+            <button
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <Filter className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Screener</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Find opportunities</span>
+                </div>
+              </div>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
+
+            {/* Compare */}
+            <button
+              onClick={() => {
+                if (onOpenHome) onOpenHome()
+                onMobileClose()
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <GitCompare className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Compare</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Assets, sectors, indices</span>
+                </div>
+              </div>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
+
+            {/* Recent Research */}
+            <button
+              onClick={() => setView('chats')}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <Clock className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Recent Research</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Your recent activity</span>
+                </div>
+              </div>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
+
+            {/* Help & Support */}
+            <button
+              onClick={() => {
+                window.open('https://github.com/ZoikoGroup/Talviran', '_blank')
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <HelpCircle className="h-4 w-4 shrink-0" />
+                <div className="flex flex-col">
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Help & Support</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Guides, FAQs, contact</span>
+                </div>
+              </div>
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
+            </button>
+          </div>
+
+          <div className="my-1.5 h-px bg-sidebar-border mx-2" />
           {/* ---------------- Projects ---------------- */}
           {view === 'projects' && (
           <>
@@ -773,38 +1159,26 @@ export default function Sidebar({
             ))}
         </nav>
 
-        <div className="flex items-center gap-2.5 border-t border-sidebar-border p-3 text-[13.5px]">
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-sidebar-accent text-[11px] font-semibold text-sidebar-muted">
-            {currentUser.initials}
-          </span>
-          <span className="truncate">{currentUser.name}</span>
-          <span className="ml-auto shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-primary">
-            {currentUser.plan}
-          </span>
-          <button
-            onClick={() => {
-              onOpenMonitoring()
-              onMobileClose()
-            }}
-            tabIndex={tab}
-            aria-label="Monitoring"
-            title="Monitoring"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          >
-            <Bell className="h-[17px] w-[17px]" />
-          </button>
-          <button
+        <div className="border-t border-sidebar-border/70 p-3 space-y-1">
+          {/* User profile row - opens Settings */}
+          <div
             onClick={() => {
               onOpenSettings()
               onMobileClose()
             }}
-            tabIndex={tab}
-            aria-label="Settings"
-            title="Settings"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className="flex items-center gap-2.5 rounded-xl p-2 transition-colors hover:bg-sidebar-accent cursor-pointer"
           >
-            <Settings className="h-[17px] w-[17px]" />
-          </button>
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-indigo-950 text-indigo-300 border border-indigo-700/50 text-[12px] font-semibold">
+              {currentUser.initials}
+            </span>
+            <div className="flex flex-col min-w-0 flex-1">
+              <span className="truncate text-[13px] font-semibold text-foreground">{currentUser.name}</span>
+              <span className="text-[11px] text-muted-foreground capitalize">
+                {currentUser.plan.toLowerCase() === 'enterprise' ? 'Enterprise' : 'Pro Plan'}
+              </span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </div>
         </div>
       </div>
 

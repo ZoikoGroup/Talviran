@@ -41,7 +41,15 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         token = _request_id.set(request_id)
         try:
             response = await call_next(request)
+        except Exception:
+            from fastapi.responses import JSONResponse
+
+            from app.core.errors import ErrorCode, TalvrinAPIError
+
+            wrapped = TalvrinAPIError(ErrorCode.INTERNAL_ERROR, "An internal error occurred.")
+            response = JSONResponse(status_code=500, content=wrapped.to_body())
         finally:
             _request_id.reset(token)
         response.headers["x-request-id"] = request_id
         return response
+

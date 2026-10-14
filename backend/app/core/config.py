@@ -40,7 +40,12 @@ class Settings(BaseSettings):
     # share across dev/test runs on one machine.
     artifact_storage_root: str = "var/artifacts"
     secret_key: str = "dev-only-change-me"
-    cors_allow_origins: list[str] = ["http://localhost:5173"]
+    cors_allow_origins: list[str] = [
+        "http://localhost:5173",
+        "https://app.talvrin.com",
+        "https://talvrin.com",
+        "https://talvrin.vercel.app",
+    ]
 
     # Where a Supabase password-reset email should send the user back to —
     # the frontend's own origin, not one of (possibly several)

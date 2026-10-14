@@ -37,6 +37,8 @@ Create Date: 2026-09-21
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "59e91ab651d2"
@@ -46,20 +48,39 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
-    op.execute("ALTER TABLE evidence.document_chunk ADD COLUMN embedding vector(768)")
-    op.execute(
-        """
-        CREATE INDEX ix_evidence_document_chunk_embedding
-        ON evidence.document_chunk
-        USING hnsw (embedding vector_cosine_ops)
-        """
-    )
+    # Check if the 'vector' extension is available in PostgreSQL.
+    # If not installed on the system (e.g. missing postgresql-14-pgvector package on the VM),
+    # skip creating the pgvector extension and column so migrations don't break deployment.
+    conn = op.get_bind()
+    has_vector = conn.execute(
+        sa.text("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'")
+    ).scalar()
+
+    if has_vector:
+        op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        op.execute("ALTER TABLE evidence.document_chunk ADD COLUMN IF NOT EXISTS embedding vector(768)")
+        op.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ix_evidence_document_chunk_embedding
+            ON evidence.document_chunk
+            USING hnsw (embedding vector_cosine_ops)
+            """
+        )
 
 
 def downgrade() -> None:
-    op.execute("DROP INDEX evidence.ix_evidence_document_chunk_embedding")
-    op.execute("ALTER TABLE evidence.document_chunk DROP COLUMN embedding")
-    # Deliberately does not DROP EXTENSION vector - another migration or a
-    # concurrently-added table may depend on it; extension lifecycle is
-    # managed at the database level, not tied to one column's migration.
+    conn = op.get_bind()
+    has_column = conn.execute(
+        sa.text(
+            """
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'evidence'
+              AND table_name = 'document_chunk'
+              AND column_name = 'embedding'
+            """
+        )
+    ).scalar()
+
+    if has_column:
+        op.execute("DROP INDEX IF EXISTS evidence.ix_evidence_document_chunk_embedding")
+        op.execute("ALTER TABLE evidence.document_chunk DROP COLUMN IF EXISTS embedding")

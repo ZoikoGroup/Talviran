@@ -286,4 +286,12 @@
     @apply bg-muted-foreground/50;
     background-clip: content-box;
   }
+
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }

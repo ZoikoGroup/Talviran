@@ -135,7 +135,18 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(status_code=ERROR_STATUS[wrapped.code], content=wrapped.to_body())
 
+    from app.modules.identity.supabase_auth import SupabaseUnavailable
+
+    @app.exception_handler(SupabaseUnavailable)
+    async def _supabase_unavailable(_: Request, exc: SupabaseUnavailable) -> JSONResponse:
+        wrapped = TalvrinAPIError(
+            ErrorCode.DATA_UNAVAILABLE,
+            "Authentication service is temporarily unavailable. Please try again later.",
+        )
+        return JSONResponse(status_code=ERROR_STATUS[wrapped.code], content=wrapped.to_body())
+
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
         wrapped = TalvrinAPIError(ErrorCode.INTERNAL_ERROR, "An internal error occurred.")
         return JSONResponse(status_code=ERROR_STATUS[wrapped.code], content=wrapped.to_body())
+

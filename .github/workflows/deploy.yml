@@ -22,6 +22,8 @@ jobs:
             set -e
 
             cd /var/www/talvrin-backend/app
+            git checkout -- .
+            git clean -fd
             git pull origin main
             cd backend
             /home/lennox/.local/bin/uv sync
@@ -29,6 +31,8 @@ jobs:
             sudo systemctl restart talvrin-backend
 
             cd /var/www/talvrin-frontend/app
+            git checkout -- .
+            git clean -fd
             git pull origin main
             cd frontend
             npm install
