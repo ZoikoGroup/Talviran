@@ -961,6 +961,39 @@ async def test_market_maker_question_reaches_document_search_not_instrument_fact
     # have surfaced as the "no data" default, not a document citation.
 
 
+async def test_dmo_question_reaches_the_guidebook_not_a_no_data_reply(
+    db_session: AsyncSession,
+) -> None:
+    """Found live 2026-10-15 (100-query sweep): "what is the DMO?" reduces
+    through plainto_tsquery to just 'dmo', a token so common in the corpus
+    that every match ranks below _MIN_LEXICAL_MATCH_RANK - so the honest
+    "we don't cover this" reply came back about a topic the Guidebook is
+    literally "a guide to the roles of the DMO and Primary Dealers" for.
+    The market-structure branch now re-anchors on the Guidebook's own
+    section heading when the caller's own words find nothing.
+
+    The seeded chunk deliberately never says "DMO", so the raw query cannot
+    match it - this only passes through the anchor path.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    profile_id = await _seed_rights_profile(
+        db_session, code="test.doc-display-dmo", actions=["display"]
+    )
+    document = await _seed_accrued_document_chunk(
+        db_session, rights_profile_id=profile_id,
+        text_content="1. Gilt-edged Market Makers 1.1 Introduction This Guidebook sets out "
+        "the relationship with, and expectations of, the primary dealer firms, the GEMMs.",
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the DMO?", principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.DOCUMENT_EXPLANATION
+    assert answer.citations and answer.citations[0].label == document.title
+    assert "DMO" in answer.text  # the caller's own wording is what is echoed
+
+
 async def test_gilt_query_returns_real_facts_and_model_price(db_session: AsyncSession) -> None:
     await _seed_capability_and_jurisdiction(db_session)
     instrument = await _seed_gilt(db_session)
@@ -1187,6 +1220,36 @@ async def test_ambiguous_year_follow_up_naming_an_isin_resolves_it(
     assert answer.facts is not None
     rows = dict(answer.facts.rows)
     assert rows["ISIN"] == "GB00BWBR1N39"
+
+
+async def test_ambiguous_year_coupon_spellings_resolve_the_right_gilt(
+    db_session: AsyncSession,
+) -> None:
+    # Found live 2026-10-15 (100-query sweep): "what is the redemption date of
+    # the 4.25% Treasury Stock 2036?" names one gilt unambiguously, but
+    # re-triggered the ambiguous two-gilt 2036 list - the narrowing is an
+    # exact substring test against the canonical instrument_name, and the
+    # decimal (and ASCII mixed-fraction) spellings of the same coupon don't
+    # match the canonical vulgar-fraction form without normalisation.
+    await _seed_capability_and_jurisdiction(db_session)
+    seed_instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, seed_instrument.id)
+    await _seed_another_gilt(
+        db_session, isin="GB00BWBR1N39", name="4 7/8% Treasury Gilt 2036",
+        redemption_date="2036-07-31", coupon_rate="4.875",
+    )
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    for query in (
+        "what is the redemption date of the 4.25% Treasury Stock 2036?",
+        "what is the redemption date of the 4 1/4% Treasury Stock 2036?",
+        "what is the redemption date of the 4\u00bc% Treasury Stock 2036?",
+    ):
+        answer = await assemble_research_answer(
+            db_session, query_text=query, principal_id=None, account_id=None,
+        )
+        assert answer.facts is not None, query
+        assert dict(answer.facts.rows)["ISIN"] == SEED_GILT_ISIN, query
 
 
 async def test_gilt_query_with_no_year_mentioned_shows_the_one_seeded_gilt(
