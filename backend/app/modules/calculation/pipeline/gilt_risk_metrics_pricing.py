@@ -4,16 +4,17 @@ read inputs from market.accepted_fact only, gate on the spec being
 APPROVED, compute, persist, record CalculationInput lineage, supersede the
 prior ACTIVE result if the value actually changed.
 
-Scope, deliberately narrower than the full TAL-FI-GILT-001 methodology
-(docs/Talvrin_Gilt_Analytics_Methodology_Decision.docx) for this first
-wiring pass: **cum-dividend settlements only**. No ex-dividend-period
-detection from real calendar dates exists anywhere in this codebase yet
-(every existing caller of gilt_price_yield_v1 either assumes cum-dividend
-or requires the caller to already know the ex-dividend state) — building a
-correct UK-gilt ex-dividend business-day window is new, non-trivial
-calendar logic, not a mechanical wiring step, so it's out of scope here.
-This mirrors gilt_price_from_curve_v1/implementation.py's own identical,
-already-documented "cum-dividend only" limitation — not a new gap.
+Ex-dividend settlement is detected from real calendar dates via
+gilt_price_yield_v1/ex_dividend.py (DMO's seven-UK-business-days-before-
+the-coupon rule) - when settlement falls in that window, the next cash
+flow (d1) is zeroed out here before pricing/yield-solving, matching the
+existing d1=0 convention gilt_price_yield_v1's own golden corpus already
+uses for ex-dividend cases.
+
+Still deliberately out of scope for this spec: short/long first-dividend
+periods (standard_inputs_from_dates always assumes a standard-length
+first coupon period - a genuinely different limitation from ex-dividend
+detection, and one gilt_price_from_curve_v1/implementation.py shares).
 
 The source yield (GILT_MARKET_CLOSE_PRICE's own `yield_pct` field,
 supplied directly by Tradeweb) is deliberately never used in the
@@ -24,6 +25,7 @@ calculation." Only the clean price is treated as the market observation;
 everything else is re-derived from it under the pinned DMO convention.
 """
 
+import dataclasses
 import datetime as dt
 import uuid
 from dataclasses import dataclass
@@ -40,6 +42,7 @@ from app.modules.calculation.models import (
     CalculationSpecification,
     CalculationSupersession,
 )
+from app.modules.calculation.specs.gilt_price_yield_v1.ex_dividend import is_ex_dividend
 from app.modules.calculation.specs.gilt_price_yield_v1.implementation import (
     accrued_interest,
     yield_from_price,
@@ -194,6 +197,7 @@ async def compute_and_persist_gilt_risk_metrics(
     accrued = Decimal(0)
     dirty_price = clean_price
     solved_yield = Decimal(0)
+    is_ex_div = False
     if gilt_type != "CONVENTIONAL":
         outcome = RiskMetricsOutcome(
             status=RiskMetricsStatus.NOT_COVERED_BY_METHOD_V1, metrics=None
@@ -201,8 +205,11 @@ async def compute_and_persist_gilt_risk_metrics(
     elif as_of_date >= maturity_date:
         outcome = RiskMetricsOutcome(status=RiskMetricsStatus.MATURED, metrics=None)
     else:
-        # Cum-dividend only - see module docstring. standard_inputs_from_dates
-        # itself documents this same assumption (d1=d2=coupon/f exactly).
+        # standard_inputs_from_dates itself always assumes cum-dividend
+        # (d1=d2=coupon/f exactly) - real ex-dividend settlement is
+        # detected from calendar dates and applied here by zeroing d1,
+        # matching the existing d1=0 convention gilt_price_yield_v1's own
+        # golden corpus already uses for ex-dividend cases.
         inputs = standard_inputs_from_dates(
             coupon_per_100=coupon_per_100, maturity_date=maturity_date, settlement_date=as_of_date
         )
@@ -210,15 +217,29 @@ async def compute_and_persist_gilt_risk_metrics(
             maturity_date=maturity_date, settlement_date=as_of_date
         )
         schedule_hash = str(timeline.remaining_quasi_coupon_dates)
+        is_ex_div = is_ex_dividend(
+            settlement_date=as_of_date, next_payment_date=timeline.next_quasi_coupon_date
+        )
+        # accrued_interest's own next_cash_flow must be the FULL coupon
+        # amount regardless of ex-dividend state - it's the formula's
+        # negative-adjustment branch (settled_on_or_before_ex_dividend=
+        # False) that produces the correct negative ex-div accrued
+        # interest, not a zeroed input. Only the PRICE/yield formula's d1
+        # (ConventionalGiltInputs.next_cash_flow) is zeroed for
+        # ex-dividend, since that's the cash flow the current holder is
+        # not entitled to.
+        full_coupon_payment = inputs.next_cash_flow
         days_since_previous = (
             inputs.days_in_quasi_coupon_period - inputs.days_to_next_quasi_coupon
         )
         accrued = accrued_interest(
-            next_cash_flow=inputs.next_cash_flow,
+            next_cash_flow=full_coupon_payment,
             days_since_previous_quasi_coupon=days_since_previous,
             days_in_quasi_coupon_period=inputs.days_in_quasi_coupon_period,
-            settled_on_or_before_ex_dividend=True,  # cum-dividend only, see module docstring
+            settled_on_or_before_ex_dividend=not is_ex_div,
         )
+        if is_ex_div:
+            inputs = dataclasses.replace(inputs, next_cash_flow=Decimal(0))
         dirty_price = clean_price + accrued
 
         try:
@@ -253,14 +274,14 @@ async def compute_and_persist_gilt_risk_metrics(
             coupon=coupon_per_100,
             issue_date=issue_date,
             maturity_date=maturity_date,
-            first_dividend_attributes=None,  # cum-dividend-only scope, see module docstring
+            first_dividend_attributes=None,  # short/long first-dividend scope, see module docstring
             master_data_source_id="reference.instrument",
             master_snapshot_hash=str(reference_fact.id),
         ),
         convention=ConventionDerivedInputs(
             settlement_date=as_of_date,
             calendar_version="uk-gilt-settlement-v1",
-            ex_dividend_state=False,  # cum-dividend-only scope, see module docstring
+            ex_dividend_state=is_ex_div,
             accrued_interest=accrued,
             dirty_price=dirty_price,
             solved_yield=solved_yield,

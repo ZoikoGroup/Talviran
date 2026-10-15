@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+import re
 import uuid
 from typing import Any
 
@@ -99,6 +100,54 @@ def _too_long(exc: research_service.ContentTooLong) -> TalvrinAPIError:
     return TalvrinAPIError(code=ErrorCode.VALIDATION_ERROR, message=str(exc))
 
 
+#: AI-001's "the platform must keep answering correctly with the Gateway
+#: turned off" invariant, extended from *presence* to *quality*: AI
+#: composition may enrich the rule-based answer but must never negate it.
+#:
+#: Found live 2026-10-15 (finding F10): `_ACCRUED_EXPLANATION_TEXT` says
+#: "For gilts the accrual uses ACT/ACT (ICMA)" and the seeded accepted
+#: fact for GB0032452392 says `Day count = ACT/ACT (ICMA)`, yet `what day
+#: count convention do gilts use?` and `what is ACT/ACT?` both came back
+#: as "the evidence does not state / define this" - a correct
+#: deterministic answer replaced by a denial of the platform's own
+#: knowledge. The same mechanism was already visible in F4, where the
+#: curated accrued-interest definition came back as "cannot be derived".
+#:
+#: Detected structurally rather than with a second LLM call: a model that
+#: declines to answer at all is always worse than the rule-based answer
+#: it would replace, so this needs no judgement about which prose is
+#: *better*. Tuned against all 55 live responses of the 2026-10-15 run -
+#: every one of the 6 genuine declinations caught, none of the 49
+#: substantive answers misclassified.
+#:
+#: Applies to every branch, including the document fallback (whose `text`
+#: is a raw source excerpt, not prose we authored). An early draft exempted
+#: it on the grounds that an excerpt is evidence rather than an answer - a
+#: re-run on 2026-10-15 falsified that: "what is a primary dealer?" came
+#: back as "the evidence does not contain enough information to define or
+#: describe what a primary dealer is", and the excerpt this guard would
+#: have kept is page 8 of the GEMM Guidebook, which defines exactly that.
+#: A denial of a corpus that does contain the answer is never the better
+#: response, however the text was produced.
+_AI_DECLINATION_PATTERN = re.compile(
+    r"\b(?:cannot|can't|could not|unable to)\s+"
+    r"(?:answer|determine|derive|provide|confirm|be determined)\b"
+    r"|\b(?:does not|doesn't|do not|don't|did not|cannot|can't)\s+"
+    r"(?:contain|includes?|include|provide|state|define|identify|list|show"
+    r"|cover|mention|record|address)\b[^.?!]{0,80}"
+    r"\b(?:evidence|document|material|data|tables?|sources?)\b"
+    r"|\b(?:evidence|document|material|data|tables?|sources?)\b[^.?!]{0,80}"
+    r"\b(?:does not|doesn't|do not|don't|did not|cannot|can't|is not"
+    r"|are not|was not)\s+"
+    r"(?:contain|includes?|include|provide|state|define|identify|list|show"
+    r"|cover|mention|record|address)\b"
+    r"|\b(?:insufficient|no|not enough)\s+evidence\b"
+    r"|\bdo(?:es)? not have\b[^.?!]{0,60}\bevidence\b"
+    r"|\bno information\s+(?:about|on|regarding)\b",
+    re.I,
+)
+
+
 async def _try_ai_composed_text(
     db: AsyncSession,
     *,
@@ -120,6 +169,8 @@ async def _try_ai_composed_text(
     down) silently keeps the original rule-based text - "AI is fully
     removable" is a real product invariant, not aspirational: the
     platform must keep answering correctly with the Gateway turned off.
+    A model that returns a declination instead of an answer is treated
+    the same way (see _AI_DECLINATION_PATTERN).
     """
     if answer.evidence_bundle_id is None:
         return answer
@@ -147,6 +198,13 @@ async def _try_ai_composed_text(
         requested_output_type=answer.allowed_output_type,
     )
     if isinstance(outcome, InvokeResult):
+        if _AI_DECLINATION_PATTERN.search(outcome.text):
+            # The model declined to answer rather than composed one. Keep
+            # the rule-based text (facts/citations/bundle are untouched
+            # either way) instead of downgrading a working answer into a
+            # denial of what the platform holds - see
+            # _AI_DECLINATION_PATTERN.
+            return answer
         return dataclasses.replace(answer, text=outcome.text)
     return answer
 

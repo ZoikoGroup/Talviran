@@ -361,6 +361,53 @@ async def test_gateway_rejection_falls_back_to_the_rule_based_text(
         assert "canonical terms" in posted.json()["text"]
 
 
+async def test_ai_declination_keeps_the_rule_based_text(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    """AI composition may enrich the rule-based answer, never negate it
+    (finding F10, 2026-10-15). Same setup as
+    test_gateway_success_replaces_the_rule_based_text - only the model's
+    text differs, and that difference is the whole point: a model
+    answering "the evidence does not contain... therefore I cannot answer"
+    is declining to answer at all, so the platform's own answer has to
+    survive it. Found live when the curated accrued-interest explanation
+    (which states ACT/ACT (ICMA), and whose accepted fact says the same)
+    came back as "the evidence does not define ACT/ACT".
+    """
+    await _seed_pdp_prerequisites(db_session)
+    await _seed_gilt_evidence_data(db_session)
+    declination = InvokeResult(
+        execution_id=uuid.uuid4(),
+        text=(
+            "The provided evidence does not contain any information regarding "
+            "this instrument. Therefore, I cannot answer the question based "
+            "on the available data."
+        ),
+        finish_reason="stop",
+    )
+
+    async with make_client() as client:
+        await _signed_in(client)
+        chat_id = await _new_chat(client)
+
+        with patch(
+            "app.modules.api.v1.research.invoke_model", AsyncMock(return_value=declination)
+        ):
+            posted = await client.post(
+                "/api/v1/research",
+                json={"conversation_id": chat_id, "query": "tell me about the 2036 gilt"},
+                headers={"Idempotency-Key": str(uuid.uuid4())},
+            )
+        assert posted.status_code == 201, posted.text
+        body = posted.json()
+        # the rule-based prose survived the refusal ...
+        assert "canonical terms" in body["text"]
+        assert body["text"] != declination.text
+        # ... and the evidence layer is untouched either way.
+        assert body["facts"] is not None
+        assert body["evidence_bundle_id"] is not None
+
+
 async def test_evidence_is_empty_not_404_for_a_reply_with_no_bundle(
     make_client: ClientFactory, db_session: AsyncSession
 ) -> None:

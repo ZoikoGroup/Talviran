@@ -372,3 +372,74 @@ async def test_ineligible_gilt_type_is_suppressed_but_persisted(db_session: Asyn
     row = await db_session.get(CalculationResult, result.calculation_result_id)
     assert row is not None
     assert row.value["outputs"]["calculation_status"] == "NOT_COVERED_BY_METHOD_V1"
+
+
+async def test_real_ex_dividend_settlement_is_detected_and_computed(
+    db_session: AsyncSession,
+) -> None:
+    """2027-08-27 is a confirmed real ex-dividend settlement date for this
+    gilt's Sep 2027 coupon (7 UK business days before 7 Sep 2027, per
+    ex_dividend.py) - not the final period (maturity is 2036), so this
+    should compute real, positive metrics tagged EX_DIVIDEND, with
+    negative accrued interest (DMO convention) baked into a dirty price
+    below the clean price.
+    """
+    instrument_id = await _seed_instrument(db_session)
+    spec_id = await _seed_spec(db_session)
+    ex_div_settlement = dt.date(2027, 8, 27)
+    await _seed_reference_terms(db_session, instrument_id=instrument_id)
+    await _seed_price(
+        db_session, instrument_id=instrument_id, clean_price="96.25", as_of=ex_div_settlement
+    )
+
+    result = await compute_and_persist_gilt_risk_metrics(
+        db_session, instrument_id=instrument_id, as_of_date=ex_div_settlement,
+        calculation_specification_id=spec_id,
+    )
+    await db_session.commit()
+
+    assert isinstance(result, GiltRiskMetricsComputed)
+    assert result.decision == "ACCEPTED"
+    assert result.status.value == "EX_DIVIDEND"
+
+    row = await db_session.get(CalculationResult, result.calculation_result_id)
+    assert row is not None
+    assert row.value["convention"]["ex_dividend_state"] is True
+    accrued = Decimal(row.value["convention"]["accrued_interest"])
+    assert accrued < 0, "ex-dividend accrued interest must be negative (DMO convention)"
+    dirty_price = Decimal(row.value["convention"]["dirty_price"])
+    assert dirty_price < Decimal("96.25"), "dirty price must be below clean price when ex-dividend"
+    outputs = row.value["outputs"]
+    assert Decimal(outputs["modified_duration_full"]) > 0
+    assert outputs["calculation_status"] == "EX_DIVIDEND"
+
+
+async def test_real_cum_dividend_settlement_just_before_ex_div_window_is_ok(
+    db_session: AsyncSession,
+) -> None:
+    """2027-08-25 is one day before the ex-dividend date (2027-08-26) for
+    the same coupon - still cum-dividend, so status must be OK, not
+    EX_DIVIDEND, and accrued interest must be positive.
+    """
+    instrument_id = await _seed_instrument(db_session)
+    spec_id = await _seed_spec(db_session)
+    cum_div_settlement = dt.date(2027, 8, 25)
+    await _seed_reference_terms(db_session, instrument_id=instrument_id)
+    await _seed_price(
+        db_session, instrument_id=instrument_id, clean_price="96.25", as_of=cum_div_settlement
+    )
+
+    result = await compute_and_persist_gilt_risk_metrics(
+        db_session, instrument_id=instrument_id, as_of_date=cum_div_settlement,
+        calculation_specification_id=spec_id,
+    )
+    await db_session.commit()
+
+    assert isinstance(result, GiltRiskMetricsComputed)
+    assert result.status.value == "OK"
+
+    row = await db_session.get(CalculationResult, result.calculation_result_id)
+    assert row is not None
+    assert row.value["convention"]["ex_dividend_state"] is False
+    accrued = Decimal(row.value["convention"]["accrued_interest"])
+    assert accrued > 0, "cum-dividend accrued interest must be positive"
