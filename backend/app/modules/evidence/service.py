@@ -292,13 +292,21 @@ def _mentions_yield_curve(text: str) -> bool:
 
 
 _TREASURY_PATTERN = re.compile(
-    r"\btreasury\b|\bus10y\b|\b10y\b|\bus\s*10[- ]?year\b|\bt-note\b|\bconstant maturity\b",
+    r"\bus\s*treasur(?:y|ies)\b|\btreasury\s*(?:yield|note|bill|bond)s?\b"
+    r"|\bus10y\b|\b10y\b|\bus\s*10[- ]?year\b|\bt-note\b|\bconstant maturity\b",
     re.I,
 )
 
 
 def _mentions_treasury(text: str) -> bool:
-    if "gilt" in text.lower() or "glit" in text.lower():
+    lower = text.lower()
+    if (
+        "gilt" in lower
+        or "glit" in lower
+        or "treasury stock" in lower
+        or "treasury gilt" in lower
+        or _mentions_gilt(text)
+    ):
         return False
     return bool(_TREASURY_PATTERN.search(text))
 
@@ -2326,24 +2334,12 @@ async def assemble_research_answer(
         answer = await _document_backed_accrued_reply(session) or _accrued_reply()
     elif _mentions_yield_curve(query_text):
         answer = await _yield_curve_reply(session)
-    elif _mentions_treasury(query_text):
-        answer = _treasury_yield_reply(query_text)
     elif _mentions_fx(query_text):
         answer = await _fx_rate_reply(session)
     elif (macro_match := _mentioned_macro_series(query_text)) is not None:
         answer = await _macro_reply(session, *macro_match)
-    elif _mentions_etf(query_text):
-        answer = _etf_market_reply(query_text)
-    elif _mentions_crypto(query_text):
-        answer = _crypto_market_reply(query_text)
-    elif _mentions_commodity(query_text):
-        answer = _commodity_market_reply(query_text)
-    elif _mentions_global_index(query_text):
-        answer = _global_index_reply(query_text)
     elif (equity_answer := await _equity_price_reply(session, query_text)) is not None:
         answer = equity_answer
-    elif _mentions_deep_equity(query_text) or query_text.strip().startswith("["):
-        answer = _equity_deep_research_reply(query_text)
     elif _mentions_market_structure(query_text):
         # Checked before _mentions_gilt - see _MARKET_STRUCTURE_PATTERN's
         # own comment for the real "Gilt-Edged Market Maker" misroute
@@ -2354,6 +2350,18 @@ async def assemble_research_answer(
         )
     elif _mentions_gilt(query_text):
         answer = await _gilt_facts_reply(session, query_text)
+    elif _mentions_treasury(query_text):
+        answer = _treasury_yield_reply(query_text)
+    elif _mentions_etf(query_text):
+        answer = _etf_market_reply(query_text)
+    elif _mentions_crypto(query_text):
+        answer = _crypto_market_reply(query_text)
+    elif _mentions_commodity(query_text):
+        answer = _commodity_market_reply(query_text)
+    elif _mentions_global_index(query_text):
+        answer = _global_index_reply(query_text)
+    elif _mentions_deep_equity(query_text) or query_text.strip().startswith("["):
+        answer = _equity_deep_research_reply(query_text)
     else:
         answer = (
             await _document_backed_fallback_reply(session, query_text, http)
