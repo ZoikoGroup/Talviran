@@ -8,6 +8,7 @@ yet an approved/signed contract) — confirm against the ratified OpenAPI spec
 once API-001 is signed off, and update ERROR_STATUS in one place if it moves.
 """
 
+import logging
 from enum import StrEnum
 from typing import Any
 
@@ -17,6 +18,9 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.request_context import get_request_id
+from app.modules.identity.supabase_auth import SupabaseUnavailable
+
+_logger = logging.getLogger("app.core.errors")
 
 
 class ErrorCode(StrEnum):
@@ -135,13 +139,14 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(status_code=ERROR_STATUS[wrapped.code], content=wrapped.to_body())
 
-    from app.modules.identity.supabase_auth import SupabaseUnavailable
-
     @app.exception_handler(SupabaseUnavailable)
     async def _supabase_unavailable(_: Request, exc: SupabaseUnavailable) -> JSONResponse:
+        _logger.error("Supabase authentication backend unavailable: %s", exc)
         wrapped = TalvrinAPIError(
             ErrorCode.DATA_UNAVAILABLE,
-            "Authentication service is temporarily unavailable. Please try again later.",
+            f"Authentication service is temporarily unavailable ({exc}). Please try again later."
+            if "localhost" in str(_.base_url)
+            else "Authentication service is temporarily unavailable. Please try again later.",
         )
         return JSONResponse(status_code=ERROR_STATUS[wrapped.code], content=wrapped.to_body())
 

@@ -9,6 +9,7 @@ from app.modules.api.v1 import (
     issuers,
     research,
     rules,
+    watchlists,
 )
 
 router = APIRouter(prefix="/api/v1")
@@ -20,3 +21,4 @@ router.include_router(instruments.router)
 router.include_router(calculations.router)
 router.include_router(alerts.router)
 router.include_router(rules.router)
+router.include_router(watchlists.router)

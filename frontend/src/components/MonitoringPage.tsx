@@ -17,6 +17,7 @@ import {
 
 interface MonitoringPageProps {
   onBack: () => void
+  initialRuleSymbol?: string | null
 }
 
 type Tab = 'rules' | 'alerts'
@@ -280,13 +281,13 @@ function NewRuleForm({
   )
 }
 
-export default function MonitoringPage({ onBack }: MonitoringPageProps) {
+export default function MonitoringPage({ onBack, initialRuleSymbol }: MonitoringPageProps) {
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('rules')
   const [rules, setRules] = useState<Rule[] | null>(null)
   const [alerts, setAlerts] = useState<Alert[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [showForm, setShowForm] = useState(false)
+  const [showForm, setShowForm] = useState(Boolean(initialRuleSymbol))
 
   const handleError = (err: unknown) => {
     if (err instanceof ApiError && err.code === 'UNAUTHENTICATED') {

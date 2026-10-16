@@ -523,3 +523,152 @@ export const listAlerts = (cursor?: string): Promise<Page<Alert>> =>
     nextCursor: p.next_cursor,
     hasMore: p.has_more,
   }))
+
+// ------------------------------------------------------------------- watchlists
+
+export interface WatchlistItem {
+  id: string
+  watchlistId: string
+  symbol: string
+  name: string
+  assetClass: string
+  instrumentId?: string | null
+  sortOrder: number
+  createdAt: string
+}
+
+export interface Watchlist {
+  id: string
+  name: string
+  description?: string | null
+  isDefault: boolean
+  createdAt: string
+  updatedAt: string
+  items: WatchlistItem[]
+}
+
+interface WatchlistItemWire {
+  id: string
+  watchlist_id: string
+  symbol: string
+  name: string
+  asset_class: string
+  instrument_id: string | null
+  sort_order: number
+  created_at: string
+}
+
+interface WatchlistWire {
+  id: string
+  name: string
+  description: string | null
+  is_default: boolean
+  created_at: string
+  updated_at: string
+  items: WatchlistItemWire[]
+}
+
+const toWatchlistItem = (w: WatchlistItemWire): WatchlistItem => ({
+  id: w.id,
+  watchlistId: w.watchlist_id,
+  symbol: w.symbol,
+  name: w.name,
+  assetClass: w.asset_class,
+  instrumentId: w.instrument_id,
+  sortOrder: w.sort_order,
+  createdAt: w.created_at,
+})
+
+const toWatchlist = (w: WatchlistWire): Watchlist => ({
+  id: w.id,
+  name: w.name,
+  description: w.description,
+  isDefault: w.is_default,
+  createdAt: w.created_at,
+  updatedAt: w.updated_at,
+  items: (w.items || []).map(toWatchlistItem),
+})
+
+export const listWatchlists = (): Promise<Watchlist[]> =>
+  apiFetch<WatchlistWire[]>('/api/v1/watchlists').then((arr) => arr.map(toWatchlist))
+
+export const createWatchlist = (data: {
+  name: string
+  description?: string
+  isDefault?: boolean
+  items?: Array<{ symbol: string; name: string; assetClass: string; instrumentId?: string }>
+}): Promise<Watchlist> =>
+  apiFetch<WatchlistWire>('/api/v1/watchlists', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: data.name,
+      description: data.description ?? null,
+      is_default: data.isDefault ?? false,
+      items: (data.items || []).map((it) => ({
+        symbol: it.symbol,
+        name: it.name,
+        asset_class: it.assetClass,
+        instrument_id: it.instrumentId ?? null,
+      })),
+    }),
+  }).then(toWatchlist)
+
+export const deleteWatchlist = (id: string): Promise<void> =>
+  apiFetch<void>(`/api/v1/watchlists/${id}`, { method: 'DELETE' })
+
+export const addWatchlistItem = (
+  watchlistId: string,
+  item: { symbol: string; name: string; assetClass: string; instrumentId?: string }
+): Promise<WatchlistItem> =>
+  apiFetch<WatchlistItemWire>(`/api/v1/watchlists/${watchlistId}/items`, {
+    method: 'POST',
+    body: JSON.stringify({
+      symbol: item.symbol,
+      name: item.name,
+      asset_class: item.assetClass,
+      instrument_id: item.instrumentId ?? null,
+    }),
+  }).then(toWatchlistItem)
+
+export const removeWatchlistItem = (watchlistId: string, itemId: string): Promise<void> =>
+  apiFetch<void>(`/api/v1/watchlists/${watchlistId}/items/${itemId}`, {
+    method: 'DELETE',
+  })
+
+// ------------------------------------------------------------------- reference instruments
+
+export interface ReferenceInstrument {
+  id: string
+  issuerId: string
+  instrumentType: string
+  name: string
+  currencyCode: string
+  status: string
+}
+
+interface InstrumentWire {
+  id: string
+  issuer_id: string
+  instrument_type: string
+  name: string
+  currency_code: string
+  status: string
+}
+
+export const listInstruments = (cursor?: string): Promise<Page<ReferenceInstrument>> =>
+  apiFetch<PageWire<InstrumentWire>>(
+    `/api/v1/instruments${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`
+  ).then((p) => ({
+    items: p.items.map((i) => ({
+      id: i.id,
+      issuerId: i.issuer_id,
+      instrumentType: i.instrument_type,
+      name: i.name,
+      currencyCode: i.currency_code,
+      status: i.status,
+    })),
+    nextCursor: p.next_cursor,
+    hasMore: p.has_more,
+  }))
+
+

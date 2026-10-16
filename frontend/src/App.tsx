@@ -7,9 +7,12 @@ import Message from '@/components/Message'
 import Composer from '@/components/Composer'
 import SettingsPage from '@/components/SettingsPage'
 import MonitoringPage from '@/components/MonitoringPage'
+import WatchlistsPage from '@/components/WatchlistsPage'
+import MarketsPage, { GLOBAL_MARKET_ASSETS } from '@/components/MarketsPage'
 import HomeDashboard from '@/components/HomeDashboard'
+import SearchModal from '@/components/SearchModal'
 import TalvrinMoonChat from '@/components/ui/talvrin-moon-chat'
-import { buildReply, type ChatMessage } from '@/data/mockReply'
+import { buildReply, type ChatMessage, type TaggedAsset } from '@/data/mockReply'
 import { DEFAULT_MODEL, type ModelId } from '@/data/models'
 import { useTheme } from '@/theme/ThemeContext'
 import {
@@ -110,7 +113,13 @@ export default function App() {
   const { theme, setTheme } = useTheme()
   const [showSettings, setShowSettings] = useState(false)
   const [showMonitoring, setShowMonitoring] = useState(false)
+  const [showWatchlists, setShowWatchlists] = useState(false)
+  const [showMarkets, setShowMarkets] = useState(false)
   const [showHome, setShowHome] = useState(true)
+  const [showSearch, setShowSearch] = useState(false)
+  const [monitoringInitialSymbol, setMonitoringInitialSymbol] = useState<string | null>(null)
+  const [marketsInitialSymbol, setMarketsInitialSymbol] = useState<string | null>(null)
+  const [taggedAsset, setTaggedAsset] = useState<TaggedAsset | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   // Guards selectChat against firing a second GET for the same chat while
@@ -179,8 +188,18 @@ export default function App() {
     })
   }, [active.messages.length, thinking])
 
-  const patchActive = (fn: (c: ChatRecord) => ChatRecord) =>
-    setChats((prev) => prev.map((c) => (c.id === activeId ? fn(c) : c)))
+  // Global Command Palette / Search shortcut (⌘K or Ctrl+K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setShowSearch((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
 
   const appendAssistantMessage = (chatId: string, message: ChatMessage) =>
     setChats((prev) =>
@@ -193,6 +212,8 @@ export default function App() {
     setActiveId(id)
     setShowSettings(false)
     setShowMonitoring(false)
+    setShowWatchlists(false)
+    setShowMarkets(false)
     setShowHome(false)
 
     const target = chats.find((c) => c.id === id)
@@ -228,11 +249,15 @@ export default function App() {
     })()
   }
 
-  const send = (text?: string) => {
-    const content = (text ?? draft).trim()
+  const send = (text?: string, assetOverride?: TaggedAsset | null, targetChatId?: string) => {
+    const currentAsset = assetOverride !== undefined ? assetOverride : taggedAsset
+    let content = (text ?? draft).trim()
+    if (!content && currentAsset) {
+      content = `Provide institutional analysis, market drivers, and authoritative evidence for ${currentAsset.name} (${currentAsset.symbol}).`
+    }
     if (!content || thinking) return
 
-    const chatId = activeId
+    const chatId = targetChatId ?? activeId
     const before = chats.find((c) => c.id === chatId)
     const isFirstMessage = !before || before.messages.length === 0
     // A chat's model is fixed forever once its backend conversation exists
@@ -246,19 +271,29 @@ export default function App() {
     setAttachments([])
     setThinking(true)
 
-    patchActive((c) => ({
-      ...c,
-      // First message becomes the chat title in the sidebar.
-      title: c.messages.length === 0 ? content.slice(0, 40) : c.title,
-      hasMessages: true,
-      messages: [...c.messages, { role: 'user', text: content }],
-    }))
+    const chatTitle = currentAsset
+      ? `${currentAsset.symbol}: ${content.slice(0, 30)}`
+      : content.slice(0, 40)
+
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === chatId
+          ? {
+              ...c,
+              // First message becomes the chat title in the sidebar.
+              title: c.messages.length === 0 ? chatTitle : c.title,
+              hasMessages: true,
+              messages: [...c.messages, { role: 'user', text: content, taggedAsset: currentAsset }],
+            }
+          : c
+      )
+    )
 
     if (USE_MOCK) {
       // Placeholder latency so the typing indicator is visible.
       setTimeout(() => {
         appendAssistantMessage(chatId, {
-          role: 'assistant', model: effectiveModel, ...buildReply(content),
+          role: 'assistant', model: effectiveModel, ...buildReply(content, currentAsset),
         })
         setThinking(false)
       }, 750)
@@ -271,7 +306,7 @@ export default function App() {
         if (!backendId) {
           const created = await createChat(
             effectiveModel,
-            isFirstMessage ? content.slice(0, 40) : before?.title,
+            isFirstMessage ? chatTitle : before?.title,
             before?.projectId ?? null
           )
           backendId = created.id
@@ -280,7 +315,11 @@ export default function App() {
           )
         }
 
-        const answer = await postResearch(backendId, content)
+        const wireQuery = currentAsset
+          ? `[Context: Tagged Asset ${currentAsset.name} (${currentAsset.symbol}), Asset Class: ${currentAsset.assetClass || 'SOVEREIGN'}, Authoritative Source: ${currentAsset.source || 'Primary Market'}]. Query: ${content}`
+          : content
+
+        const answer = await postResearch(backendId, wireQuery)
         appendAssistantMessage(chatId, {
           role: 'assistant',
           model: effectiveModel,
@@ -309,13 +348,97 @@ export default function App() {
     })()
   }
 
-  const startChat = (projectId: string | null = null) => {
+  const startChat = (projectId: string | null = null, asset: TaggedAsset | null = null): ChatRecord => {
     const c = newChat(projectId)
     setChats((prev) => [c, ...prev])
     setActiveId(c.id)
     setDraft('')
     setAttachments([])
+    if (asset !== undefined) {
+      setTaggedAsset(asset)
+    }
     setShowHome(false)
+    setShowWatchlists(false)
+    setShowMarkets(false)
+    setShowMonitoring(false)
+    setShowSettings(false)
+    return c
+  }
+
+  const handleStartResearch = (assetOrQuery?: string | TaggedAsset, prompt?: string) => {
+    setShowMarkets(false)
+    setShowWatchlists(false)
+    setShowHome(false)
+    setShowSettings(false)
+    setShowMonitoring(false)
+
+    let targetAsset: TaggedAsset | null = null
+    let queryText = prompt ? prompt.trim() : ''
+
+    if (typeof assetOrQuery === 'object' && assetOrQuery !== null) {
+      targetAsset = assetOrQuery
+    } else if (typeof assetOrQuery === 'string' && assetOrQuery.trim()) {
+      const q = assetOrQuery.trim()
+      const qLower = q.toLowerCase()
+      // Check if q matches any known market asset
+      const matched = GLOBAL_MARKET_ASSETS.find(
+        (a) =>
+          a.symbol.toLowerCase() === qLower ||
+          a.name.toLowerCase() === qLower ||
+          a.symbol.toLowerCase().replace(/[^a-z0-9]/g, '') === qLower.replace(/[^a-z0-9]/g, '')
+      )
+
+      if (matched) {
+        targetAsset = {
+          symbol: matched.symbol,
+          name: matched.name,
+          assetClass: matched.assetClass,
+          price: matched.price,
+          change: matched.change,
+          pctChange: matched.pctChange,
+          direction: matched.direction,
+          source: matched.source,
+        }
+      } else {
+        const isTickerLike = !q.includes(' ') || q.split(/\s+/).length <= 2
+        if (isTickerLike) {
+          const upper = q.toUpperCase()
+          const knownNames: Record<string, string> = {
+            BSE: 'Bombay Stock Exchange (BSE)',
+            NSE: 'National Stock Exchange of India (NSE)',
+            SENSEX: 'S&P BSE SENSEX Index',
+            NIFTY: 'NIFTY 50 Benchmark Index',
+            RELIANCE: 'Reliance Industries Ltd.',
+            TCS: 'Tata Consultancy Services Ltd.',
+            INFY: 'Infosys Ltd.',
+            HDFCBANK: 'HDFC Bank Ltd.',
+            TSLA: 'Tesla, Inc.',
+            GOOG: 'Alphabet Inc.',
+            META: 'Meta Platforms, Inc.',
+            BARC: 'Barclays PLC',
+            BP: 'BP p.l.c.',
+            DMO: 'UK Debt Management Office',
+            BOE: 'Bank of England',
+          }
+          targetAsset = {
+            symbol: upper,
+            name: knownNames[upper] || `${upper} Market Instrument`,
+            assetClass: 'MARKET',
+            source: 'Primary Market',
+          }
+        }
+      }
+      queryText = queryText || q
+    }
+
+    const newSession = startChat(null, targetAsset)
+
+    if (queryText) {
+      setDraft(queryText)
+      send(queryText, targetAsset, newSession.id)
+    } else {
+      setDraft('')
+    }
   }
 
   // Creating a project drops you straight into an empty chat inside it. The
@@ -478,6 +601,8 @@ export default function App() {
           startChat(projectId ?? null)
           setShowSettings(false)
           setShowMonitoring(false)
+          setShowWatchlists(false)
+          setShowMarkets(false)
         }}
         onNewProject={addProject}
         onMoveChat={moveChat}
@@ -491,18 +616,51 @@ export default function App() {
           setShowHome(true)
           setShowSettings(false)
           setShowMonitoring(false)
+          setShowWatchlists(false)
+          setShowMarkets(false)
         }}
-        activeNav={showHome ? 'home' : showSettings ? 'settings' : showMonitoring ? 'monitoring' : 'research'}
+        activeNav={
+          showHome
+            ? 'home'
+            : showMarkets
+            ? 'markets'
+            : showWatchlists
+            ? 'watchlists'
+            : showSettings
+            ? 'settings'
+            : showMonitoring
+            ? 'monitoring'
+            : 'research'
+        }
+        onOpenMarkets={() => {
+          setShowMarkets(true)
+          setShowWatchlists(false)
+          setShowHome(false)
+          setShowSettings(false)
+          setShowMonitoring(false)
+        }}
+        onOpenWatchlists={() => {
+          setShowWatchlists(true)
+          setShowMarkets(false)
+          setShowHome(false)
+          setShowSettings(false)
+          setShowMonitoring(false)
+        }}
         onOpenSettings={() => {
           setShowSettings(true)
           setShowMonitoring(false)
+          setShowWatchlists(false)
+          setShowMarkets(false)
           setShowHome(false)
         }}
         onOpenMonitoring={() => {
           setShowMonitoring(true)
           setShowSettings(false)
+          setShowWatchlists(false)
+          setShowMarkets(false)
           setShowHome(false)
         }}
+        onOpenSearch={() => setShowSearch(true)}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
       />
@@ -543,21 +701,61 @@ export default function App() {
             onExportWorkspace={exportWorkspace}
           />
         ) : showMonitoring ? (
-          <MonitoringPage onBack={() => setShowMonitoring(false)} />
+          <MonitoringPage
+            onBack={() => {
+              setShowMonitoring(false)
+              setMonitoringInitialSymbol(null)
+            }}
+            initialRuleSymbol={monitoringInitialSymbol}
+          />
+        ) : showMarkets ? (
+          <MarketsPage
+            initialSymbol={marketsInitialSymbol}
+            onStartResearch={handleStartResearch}
+            onOpenMonitoringForRule={(symbol) => {
+              setShowMarkets(false)
+              setMarketsInitialSymbol(null)
+              setMonitoringInitialSymbol(symbol)
+              setShowMonitoring(true)
+            }}
+            onOpenWatchlists={() => {
+              setShowMarkets(false)
+              setMarketsInitialSymbol(null)
+              setShowWatchlists(true)
+            }}
+          />
+        ) : showWatchlists ? (
+          <WatchlistsPage
+            onBack={() => setShowWatchlists(false)}
+            onStartResearch={handleStartResearch}
+            onOpenMonitoringForRule={(symbol) => {
+              setShowWatchlists(false)
+              setMonitoringInitialSymbol(symbol)
+              setShowMonitoring(true)
+            }}
+          />
         ) : showHome ? (
           <HomeDashboard
             onSearch={(query) => {
-              setShowHome(false)
-              setDraft(query)
-              send(query)
+              handleStartResearch(query)
             }}
             onStartResearch={() => {
               setShowHome(false)
-              startChat(null)
+              setTaggedAsset(null)
+              startChat(null, null)
             }}
             onOpenMonitoring={() => {
               setShowHome(false)
               setShowMonitoring(true)
+            }}
+            onOpenWatchlists={() => {
+              setShowHome(false)
+              setShowWatchlists(true)
+            }}
+            onOpenMarkets={(symbol) => {
+              setShowHome(false)
+              setMarketsInitialSymbol(symbol ?? null)
+              setShowMarkets(true)
             }}
           />
         ) : isLoadingActive ? (
@@ -568,7 +766,7 @@ export default function App() {
           <TalvrinMoonChat
             value={draft}
             onChange={setDraft}
-            onSend={send}
+            onSend={(text) => send(text)}
             disabled={thinking}
             theme={theme}
             attachments={attachments}
@@ -578,6 +776,9 @@ export default function App() {
             }
             model={model}
             onModelChange={setModel}
+            taggedAsset={taggedAsset}
+            onRemoveTaggedAsset={() => setTaggedAsset(null)}
+            onOpenSearch={() => setShowSearch(true)}
           />
         ) : (
           <>
@@ -620,11 +821,75 @@ export default function App() {
               model={active.model ?? model}
               onModelChange={setModel}
               modelLocked={Boolean(active.model)}
+              taggedAsset={taggedAsset}
+              onRemoveTaggedAsset={() => setTaggedAsset(null)}
+              onOpenSearch={() => setShowSearch(true)}
             />
           </>
         )}
         </div>
       </main>
+
+      <SearchModal
+        isOpen={showSearch}
+        onClose={() => setShowSearch(false)}
+        chats={chats}
+        onSelectChat={(id) => {
+          setShowSearch(false)
+          selectChat(id)
+          setShowHome(false)
+          setShowMarkets(false)
+          setShowWatchlists(false)
+          setShowMonitoring(false)
+          setShowSettings(false)
+        }}
+        onStartResearch={(assetOrQuery, prompt) => {
+          setShowSearch(false)
+          handleStartResearch(assetOrQuery, prompt)
+        }}
+        onNavigate={(surface) => {
+          setShowSearch(false)
+          if (surface === 'new-chat') {
+            startChat(null, null)
+            setTaggedAsset(null)
+            setShowHome(false)
+            setShowMarkets(false)
+            setShowWatchlists(false)
+            setShowMonitoring(false)
+            setShowSettings(false)
+          } else if (surface === 'home') {
+            setShowHome(true)
+            setShowMarkets(false)
+            setShowWatchlists(false)
+            setShowMonitoring(false)
+            setShowSettings(false)
+          } else if (surface === 'markets') {
+            setShowMarkets(true)
+            setShowHome(false)
+            setShowWatchlists(false)
+            setShowMonitoring(false)
+            setShowSettings(false)
+          } else if (surface === 'watchlists') {
+            setShowWatchlists(true)
+            setShowHome(false)
+            setShowMarkets(false)
+            setShowMonitoring(false)
+            setShowSettings(false)
+          } else if (surface === 'monitoring') {
+            setShowMonitoring(true)
+            setShowHome(false)
+            setShowMarkets(false)
+            setShowWatchlists(false)
+            setShowSettings(false)
+          } else if (surface === 'settings') {
+            setShowSettings(true)
+            setShowHome(false)
+            setShowMarkets(false)
+            setShowWatchlists(false)
+            setShowMonitoring(false)
+          }
+        }}
+      />
     </div>
   )
 }

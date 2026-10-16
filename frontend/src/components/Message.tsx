@@ -7,6 +7,8 @@ import {
   ChevronDown,
   Info,
   Loader2,
+  ExternalLink,
+  Tag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getResearchEvidence, type EvidenceItem } from '@/lib/api'
@@ -193,12 +195,26 @@ export default function Message({
   citations = [],
   note,
   messageId,
+  taggedAsset,
 }: ChatMessage) {
   let displayContent = text
   let parsedFacts = facts
   let parsedCitations = citations || []
+  let effectiveTaggedAsset = taggedAsset || null
 
+  // If text contains context header, extract it cleanly
   if (displayContent) {
+    const contextMatch = displayContent.match(/^\[Context: Tagged Asset ([^(\]]+)(?:\(([^)]+)\))?[^\]]*\]\.?\s*(?:Query:\s*)?([\s\S]*)$/i)
+    if (contextMatch) {
+      if (!effectiveTaggedAsset) {
+        effectiveTaggedAsset = {
+          name: contextMatch[1].trim(),
+          symbol: contextMatch[2] ? contextMatch[2].trim() : contextMatch[1].trim(),
+        }
+      }
+      displayContent = contextMatch[3].trim()
+    }
+
     const metaMatch = displayContent.match(/<!--METADATA\n([\s\S]*?)\n-->/)
     if (metaMatch) {
       try {
@@ -214,7 +230,16 @@ export default function Message({
 
   if (role === 'user') {
     return (
-      <div className="mb-6 flex animate-rise justify-end">
+      <div className="mb-6 flex flex-col items-end animate-rise">
+        {effectiveTaggedAsset && (
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/20 px-2.5 py-0.5 text-[11px] font-medium text-primary shadow-xs">
+              <Tag className="h-3 w-3" />
+              <span>{effectiveTaggedAsset.name}</span>
+              <span className="font-mono text-[10px] opacity-80">({effectiveTaggedAsset.symbol})</span>
+            </span>
+          </div>
+        )}
         <div className="max-w-[78%] whitespace-pre-wrap break-words rounded-2xl rounded-br-sm border border-border bg-secondary px-4 py-2.5 text-[14.75px] leading-relaxed">
           {displayContent}
         </div>
@@ -242,6 +267,30 @@ export default function Message({
         <div className="whitespace-pre-wrap break-words text-[14.75px] leading-relaxed">
           <RichText>{displayContent}</RichText>
         </div>
+
+        {/* Immediate Trusted Primary Sources Link Bar */}
+        {parsedCitations.some((c) => Boolean(c.url)) && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/40">
+            <span className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-emerald-400 mr-1">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Trusted Sources:
+            </span>
+            {parsedCitations
+              .filter((c) => Boolean(c.url))
+              .map((c, i) => (
+                <a
+                  key={i}
+                  href={c.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 rounded-lg border border-border bg-card/80 hover:bg-card px-2.5 py-1 text-[11.5px] font-medium text-indigo-400 hover:text-indigo-300 hover:border-primary/50 transition shadow-2xs"
+                >
+                  <span>{c.label.split('—')[0].trim()}</span>
+                  <ExternalLink className="h-2.5 w-2.5 opacity-70" />
+                </a>
+              ))}
+          </div>
+        )}
 
         {parsedCitations.length > 0 && <Evidence citations={parsedCitations} messageId={messageId} />}
         {parsedFacts && (

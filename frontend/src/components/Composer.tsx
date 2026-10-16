@@ -1,4 +1,4 @@
-import { ArrowUpIcon } from 'lucide-react'
+import { ArrowUpIcon, Tag, X } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { useAutoResizeTextarea } from '@/hooks/use-auto-resize-textarea'
@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import AttachMenu, { AttachmentChips } from '@/components/AttachMenu'
 import ModelSwitcher from '@/components/ModelSwitcher'
 import type { ModelId } from '@/data/models'
+import type { TaggedAsset } from '@/data/mockReply'
 
 interface ComposerProps {
   value: string
@@ -23,6 +24,9 @@ interface ComposerProps {
    * so the picker must stop being changeable or it would silently lie
    * about which model is actually answering later messages. */
   modelLocked?: boolean
+  taggedAsset?: TaggedAsset | null
+  onRemoveTaggedAsset?: () => void
+  onOpenSearch?: () => void
 }
 
 export default function Composer({
@@ -36,6 +40,9 @@ export default function Composer({
   model,
   onModelChange,
   modelLocked,
+  taggedAsset,
+  onRemoveTaggedAsset,
+  onOpenSearch,
 }: ComposerProps) {
   const { textareaRef, adjustHeight } = useAutoResizeTextarea({
     minHeight: 36,
@@ -44,6 +51,12 @@ export default function Composer({
   // Below this, "Ask a follow-up…" plus the model pill and send button
   // leaves too little room for the placeholder on one line.
   const isNarrow = !useMediaQuery('(min-width: 360px)')
+
+  const placeholder = taggedAsset
+    ? `Ask about ${taggedAsset.symbol}… (trusted sources only)`
+    : isNarrow
+    ? 'Ask…'
+    : 'Ask a follow-up…'
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -55,8 +68,34 @@ export default function Composer({
 
   return (
     <div className="shrink-0 px-3 pb-4 pt-2 sm:px-6">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-3xl mb-1.5 flex flex-col gap-1.5">
         <AttachmentChips files={attachments} onRemove={onRemoveAttachment} />
+
+        {/* Tagged Asset Chip */}
+        {taggedAsset && (
+          <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-bottom-1">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-[12px] font-medium text-foreground backdrop-blur-md shadow-xs">
+              <Tag className="h-3 w-3 text-primary" />
+              <span>{taggedAsset.name}</span>
+              <span className="font-mono text-[11px] text-primary/90">({taggedAsset.symbol})</span>
+              {taggedAsset.price && (
+                <span className="rounded bg-secondary/80 px-1.5 py-0.2 font-mono text-[10px] text-foreground/80">
+                  {taggedAsset.price}
+                </span>
+              )}
+              {onRemoveTaggedAsset && (
+                <button
+                  type="button"
+                  onClick={onRemoveTaggedAsset}
+                  title="Remove tagged asset"
+                  className="ml-0.5 rounded-full p-0.5 text-muted-foreground hover:bg-white/15 hover:text-foreground transition"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </span>
+          </div>
+        )}
       </div>
 
       <div
@@ -69,6 +108,18 @@ export default function Composer({
       >
         <AttachMenu onFiles={onAttach} disabled={disabled} />
 
+        {onOpenSearch && !taggedAsset && (
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            title="Tag an asset or search markets (⌘K)"
+            disabled={disabled}
+            className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground active:scale-95 disabled:pointer-events-none cursor-pointer shrink-0"
+          >
+            <Tag className="h-4 w-4" />
+          </button>
+        )}
+
         <Textarea
           ref={textareaRef}
           rows={1}
@@ -78,7 +129,7 @@ export default function Composer({
             adjustHeight()
           }}
           onKeyDown={handleKeyDown}
-          placeholder={isNarrow ? 'Ask…' : 'Ask a follow-up…'}
+          placeholder={placeholder}
           className={cn(
             'max-h-[200px] min-h-0 flex-1 resize-none border-none bg-transparent px-1 py-2',
             'text-[14.75px] leading-6',

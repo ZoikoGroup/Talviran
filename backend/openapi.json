@@ -1498,6 +1498,240 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "WatchlistCreateIn": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_default": {
+            "default": false,
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WatchlistItemIn"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 120,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "WatchlistCreateIn",
+        "type": "object"
+      },
+      "WatchlistItemIn": {
+        "properties": {
+          "asset_class": {
+            "maxLength": 32,
+            "title": "Asset Class",
+            "type": "string"
+          },
+          "instrument_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument Id"
+          },
+          "name": {
+            "maxLength": 200,
+            "title": "Name",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "symbol": {
+            "maxLength": 64,
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "name",
+          "asset_class"
+        ],
+        "title": "WatchlistItemIn",
+        "type": "object"
+      },
+      "WatchlistItemOut": {
+        "properties": {
+          "asset_class": {
+            "title": "Asset Class",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "instrument_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "watchlist_id": {
+            "format": "uuid",
+            "title": "Watchlist Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "watchlist_id",
+          "symbol",
+          "name",
+          "asset_class",
+          "sort_order",
+          "created_at"
+        ],
+        "title": "WatchlistItemOut",
+        "type": "object"
+      },
+      "WatchlistOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WatchlistItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "is_default",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WatchlistOut",
+        "type": "object"
+      },
+      "WatchlistUpdateIn": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "WatchlistUpdateIn",
+        "type": "object"
       }
     }
   },
@@ -2877,6 +3111,297 @@
         "summary": "Revoke Share",
         "tags": [
           "research"
+        ]
+      }
+    },
+    "/api/v1/watchlists": {
+      "get": {
+        "operationId": "list_watchlists_api_v1_watchlists_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WatchlistOut"
+                  },
+                  "title": "Response List Watchlists Api V1 Watchlists Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Watchlists",
+        "tags": [
+          "watchlists"
+        ]
+      },
+      "post": {
+        "operationId": "create_watchlist_api_v1_watchlists_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Watchlist",
+        "tags": [
+          "watchlists"
+        ]
+      }
+    },
+    "/api/v1/watchlists/{watchlist_id}": {
+      "delete": {
+        "operationId": "delete_watchlist_api_v1_watchlists__watchlist_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "watchlist_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Watchlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Watchlist",
+        "tags": [
+          "watchlists"
+        ]
+      },
+      "get": {
+        "operationId": "get_watchlist_api_v1_watchlists__watchlist_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "watchlist_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Watchlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Watchlist",
+        "tags": [
+          "watchlists"
+        ]
+      },
+      "patch": {
+        "operationId": "update_watchlist_api_v1_watchlists__watchlist_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "watchlist_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Watchlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Watchlist",
+        "tags": [
+          "watchlists"
+        ]
+      }
+    },
+    "/api/v1/watchlists/{watchlist_id}/items": {
+      "post": {
+        "operationId": "add_item_api_v1_watchlists__watchlist_id__items_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "watchlist_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Watchlist Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistItemIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistItemOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Item",
+        "tags": [
+          "watchlists"
+        ]
+      }
+    },
+    "/api/v1/watchlists/{watchlist_id}/items/{item_id}": {
+      "delete": {
+        "operationId": "remove_item_api_v1_watchlists__watchlist_id__items__item_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "watchlist_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Watchlist Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Item",
+        "tags": [
+          "watchlists"
         ]
       }
     },

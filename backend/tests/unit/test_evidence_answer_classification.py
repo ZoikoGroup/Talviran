@@ -11,8 +11,13 @@ from app.modules.evidence.service import (
     _mentioned_macro_series,
     _mentioned_year,
     _mentions_accrued,
+    _mentions_commodity,
+    _mentions_crypto,
+    _mentions_deep_equity,
+    _mentions_etf,
     _mentions_fx,
     _mentions_gilt,
+    _mentions_global_index,
     _mentions_market_structure,
     _mentions_yield_curve,
     _normalise_coupon_text,
@@ -224,3 +229,57 @@ def test_mentioned_year_extracted_correctly() -> None:
     assert _mentioned_year("tell me about the 2065 gilt") == 2065
     assert _mentioned_year("what are the terms of the treasury gilt") is None
     assert _mentioned_year(f"ISIN {SEED_GILT_ISIN}") is None  # no false match inside an ISIN
+
+
+def test_crypto_mentions_detected() -> None:
+    assert _mentions_crypto("What is the price of Bitcoin?")
+    assert _mentions_crypto("tell me about BTC")
+    assert _mentions_crypto("Ethereum market cap and volume")
+    assert _mentions_crypto("Solana TPS and circulating supply")
+    assert _mentions_crypto("CoinMarketCap top 10 cryptos")
+    assert _mentions_crypto("XRP ledger consensus protocol")
+    assert not _mentions_crypto("tell me about UK Gilts")
+
+
+def test_commodity_mentions_detected() -> None:
+    assert _mentions_commodity("Spot Gold price per ounce")
+    assert _mentions_commodity("XAU/USD current market price")
+    assert _mentions_commodity("Brent crude oil futures contract")
+    assert _mentions_commodity("Silver LBMA fixing")
+    assert _mentions_commodity("WTI oil delivery at Cushing")
+    assert _mentions_commodity("Henry Hub Natural gas continuous futures")
+    assert not _mentions_commodity("what is the yield on 10Y Treasuries")
+
+
+def test_global_index_mentions_detected() -> None:
+    assert _mentions_global_index("S&P 500 index level today")
+    assert _mentions_global_index("NASDAQ 100 performance")
+    assert _mentions_global_index("DAX 40 benchmark components")
+    assert _mentions_global_index("FTSE 100 closing price")
+    assert _mentions_global_index("Nikkei 225 average")
+    assert _mentions_global_index("NIFTY 50 and BSE Sensex levels")
+    assert _mentions_global_index("TradingView screener benchmark aggregates")
+    assert not _mentions_global_index("tell me about Bank of England monetary policy")
+
+
+def test_etf_mentions_detected() -> None:
+    assert _mentions_etf("tell me about SPY ETF")
+    assert _mentions_etf("what is the QQQ fund expense ratio?")
+    assert _mentions_etf("VOO vs VTI Vanguard funds")
+    assert _mentions_etf("TLT 20+ year treasury ETF duration")
+    assert _mentions_etf("GLD physical gold shares holdings")
+    assert _mentions_etf("SMH semiconductor ETF top constituents")
+    assert not _mentions_etf("tell me about UK Gilts 2036")
+
+
+def test_deep_equity_mentions_detected() -> None:
+    assert _mentions_deep_equity("NVIDIA revenue and valuation metrics")
+    assert _mentions_deep_equity("NVDA deep research")
+    assert _mentions_deep_equity("Apple market cap and free cash flow")
+    assert _mentions_deep_equity("Microsoft P/E ratio and cloud growth")
+    assert _mentions_deep_equity("TSMC semiconductor foundry margins")
+    assert _mentions_deep_equity("ASML EUV lithography orders")
+    assert _mentions_deep_equity("fundamental research on Tesla")
+    assert not _mentions_deep_equity("what is the Bank of England base rate")
+
+

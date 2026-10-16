@@ -69,7 +69,10 @@ interface SidebarProps {
   onOpenSettings: () => void
   onOpenMonitoring: () => void
   onOpenHome?: () => void
-  activeNav?: 'home' | 'research' | 'monitoring' | 'settings'
+  onOpenWatchlists?: () => void
+  onOpenMarkets?: () => void
+  onOpenSearch?: () => void
+  activeNav?: 'home' | 'research' | 'monitoring' | 'settings' | 'watchlists' | 'markets'
   /** Below `lg` the sidebar is an off-canvas drawer rather than a permanent
    * column — there is no room for the icon rail, so it is simply open or
    * closed. `collapsed` is a desktop-only concept and is ignored here. */
@@ -122,6 +125,9 @@ export default function Sidebar({
   onOpenSettings,
   onOpenMonitoring,
   onOpenHome,
+  onOpenWatchlists,
+  onOpenMarkets,
+  onOpenSearch,
   activeNav = 'home',
   mobileOpen,
   onMobileClose,
@@ -435,7 +441,8 @@ export default function Sidebar({
           {/* Quick Search */}
           <button
             onClick={() => {
-              if (onOpenHome) onOpenHome()
+              if (onOpenSearch) onOpenSearch()
+              else if (onOpenHome) onOpenHome()
             }}
             tabIndex={rail}
             aria-label="Universal Search"
@@ -495,12 +502,17 @@ export default function Sidebar({
           {/* Markets */}
           <button
             onClick={() => {
-              if (onOpenHome) onOpenHome()
+              if (onOpenMarkets) onOpenMarkets()
             }}
             tabIndex={rail}
             aria-label="Markets"
             title="Markets"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            className={cn(
+              'grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
+              activeNav === 'markets'
+                ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+            )}
           >
             <LineChart className="h-[18px] w-[18px]" />
           </button>
@@ -508,15 +520,19 @@ export default function Sidebar({
           {/* Watchlists */}
           <button
             onClick={() => {
-              if (onOpenHome) onOpenHome()
+              if (onOpenWatchlists) onOpenWatchlists()
             }}
             tabIndex={rail}
             aria-label="Watchlists"
-            title="Watchlists (12)"
-            className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            title="Watchlists"
+            className={cn(
+              'relative grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
+              activeNav === 'watchlists'
+                ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+            )}
           >
             <Bookmark className="h-[18px] w-[18px]" />
-            <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-indigo-500" />
           </button>
 
           {/* Monitoring */}
@@ -691,15 +707,23 @@ export default function Sidebar({
         </div>
 
         {/* Quick Search Talvrin Bar */}
-        <div className="mx-3 mb-2 flex items-center justify-between rounded-xl border border-sidebar-border bg-sidebar-accent/50 px-3 py-1.5 text-[12.5px] text-sidebar-muted">
+        <button
+          type="button"
+          onClick={() => {
+            if (onOpenSearch) onOpenSearch()
+            onMobileClose()
+          }}
+          tabIndex={tab}
+          className="group mx-3 mb-2 flex items-center justify-between rounded-xl border border-sidebar-border bg-sidebar-accent/50 px-3 py-1.5 text-[12.5px] text-sidebar-muted transition-all hover:border-sidebar-border/80 hover:bg-sidebar-accent hover:text-sidebar-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 text-left"
+        >
           <div className="flex items-center gap-2">
-            <Search className="h-3.5 w-3.5" />
+            <Search className="h-3.5 w-3.5 transition-colors group-hover:text-primary" />
             <span>Search Talvrin</span>
           </div>
-          <kbd className="rounded border border-sidebar-border bg-sidebar px-1.5 py-0.5 text-[10px] font-mono text-sidebar-muted">
+          <kbd className="rounded border border-sidebar-border bg-sidebar px-1.5 py-0.5 text-[10px] font-mono text-sidebar-muted group-hover:border-sidebar-muted/40">
             ⌘ K
           </kbd>
-        </div>
+        </button>
 
         {/* New Research Button with Gradient Glow */}
         <button
@@ -765,10 +789,15 @@ export default function Sidebar({
             {/* Markets */}
             <button
               onClick={() => {
-                if (onOpenHome) onOpenHome()
+                if (onOpenMarkets) onOpenMarkets()
                 onMobileClose()
               }}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+              className={cn(
+                'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
+                activeNav === 'markets'
+                  ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                  : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+              )}
             >
               <div className="flex items-center gap-2.5">
                 <LineChart className="h-4 w-4 shrink-0" />
@@ -783,10 +812,15 @@ export default function Sidebar({
             {/* Watchlists */}
             <button
               onClick={() => {
-                if (onOpenHome) onOpenHome()
+                if (onOpenWatchlists) onOpenWatchlists()
                 onMobileClose()
               }}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+              className={cn(
+                'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
+                activeNav === 'watchlists'
+                  ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                  : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+              )}
             >
               <div className="flex items-center gap-2.5">
                 <Bookmark className="h-4 w-4 shrink-0" />
@@ -796,7 +830,7 @@ export default function Sidebar({
                 </div>
               </div>
               <span className="rounded-full bg-sidebar-accent px-2 py-0.5 text-[10.5px] font-semibold text-sidebar-muted border border-sidebar-border">
-                12
+                Live
               </span>
             </button>
 

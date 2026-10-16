@@ -42,6 +42,8 @@ frontend/Talvrin_Logo.zip
 tmp/
 temp/
 *.local
+dump.rdb
+*.jpeg
 
 # ---- TS build artifacts ----
 *.tsbuildinfo

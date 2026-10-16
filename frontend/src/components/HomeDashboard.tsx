@@ -17,12 +17,16 @@ interface HomeDashboardProps {
   onSearch: (query: string) => void
   onStartResearch: () => void
   onOpenMonitoring?: () => void
+  onOpenWatchlists?: () => void
+  onOpenMarkets?: (symbol?: string) => void
 }
 
 export default function HomeDashboard({
   onSearch,
   onStartResearch,
   onOpenMonitoring,
+  onOpenWatchlists,
+  onOpenMarkets,
 }: HomeDashboardProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedSource, setSelectedSource] = useState('All sources')
@@ -82,10 +86,10 @@ export default function HomeDashboard({
 
   const quickPills = [
     'Compare 10Y gilts vs 10Y Treasuries',
-    'Latest Fed policy decision',
-    'NVIDIA financials',
-    'UK inflation trend',
-    'Global bond yields',
+    'Bitcoin market cap & volume (CoinMarketCap)',
+    'Gold spot price (LBMA)',
+    'NVIDIA financials & TradingView chart',
+    'S&P 500 & Global Equities benchmark',
   ]
 
   const tickers = [
@@ -111,6 +115,20 @@ export default function HomeDashboard({
       change: '▲ 0.62%',
       isUp: true,
       sparkline: 'M0,25 C15,22 25,26 35,20 C45,16 55,22 65,14 C75,10 85,12 95,2',
+    },
+    {
+      title: 'Gold (XAU)',
+      value: '$2,735.40',
+      change: '▲ 0.67%',
+      isUp: true,
+      sparkline: 'M0,22 C12,20 24,18 36,15 48,16 60,12 72,10 84,6 90,4 100,2',
+    },
+    {
+      title: 'BTC/USD',
+      value: '$67,420',
+      change: '▲ 2.82%',
+      isUp: true,
+      sparkline: 'M0,26 C12,22 24,19 36,21 48,16 60,12 72,14 84,6 90,4 100,2',
     },
     {
       title: 'FTSE 100',
@@ -280,8 +298,8 @@ export default function HomeDashboard({
                 <Globe className="h-4 w-4" />
               </div>
               <div>
-                <div className="text-[11px] font-medium text-foreground">Global coverage</div>
-                <div className="text-[10px] text-muted-foreground">211 countries</div>
+                <div className="text-[11px] font-medium text-foreground">Global Markets</div>
+                <div className="text-[10px] text-muted-foreground">TradingView & CMC</div>
               </div>
             </div>
           </div>
@@ -307,9 +325,13 @@ export default function HomeDashboard({
                 onChange={(e) => setSelectedSource(e.target.value)}
                 className="rounded-lg border border-border/80 bg-background/80 px-2.5 py-1.5 text-[12.5px] font-medium text-muted-foreground outline-none hover:text-foreground cursor-pointer"
               >
-                <option value="All sources">All sources</option>
+                <option value="All sources">All sources (Global)</option>
+                <option value="TradingView">TradingView (Global Tape)</option>
+                <option value="CoinMarketCap">CoinMarketCap (Crypto)</option>
+                <option value="Primary Exchanges">Primary Exchanges (NYSE/NASDAQ/LSE/BSE/NSE)</option>
+                <option value="Commodities">Commodities (LBMA/CME/ICE)</option>
+                <option value="Central Banks">Central Banks (Fed/BoE/ECB/BoJ)</option>
                 <option value="UK DMO & Gilts">UK DMO & Gilts</option>
-                <option value="Bank of England">Bank of England</option>
                 <option value="Tradeweb">Tradeweb</option>
                 <option value="Twelve Data">Twelve Data</option>
                 <option value="DBnomics">DBnomics</option>
@@ -334,9 +356,10 @@ export default function HomeDashboard({
                   setSearchQuery(pill)
                   onSearch(pill)
                 }}
-                className="rounded-full border border-border/60 bg-card/50 px-3.5 py-1 text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/50 hover:bg-card hover:text-foreground"
+                className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-card/50 px-3.5 py-1 text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/50 hover:bg-card hover:text-foreground cursor-pointer"
               >
-                {pill}
+                <Sparkles className="h-3 w-3 text-primary" />
+                <span>{pill}</span>
               </button>
             ))}
           </div>
@@ -347,10 +370,28 @@ export default function HomeDashboard({
           {tickers.map((t) => (
             <div
               key={t.title}
-              className="group relative flex flex-col justify-between rounded-xl border border-border/70 bg-card/70 p-3.5 shadow-sm backdrop-blur-md transition-all hover:border-border hover:bg-card"
+              onClick={() => {
+                if (onOpenMarkets) onOpenMarkets(t.title)
+                else onSearch(t.title)
+              }}
+              title={`Click to view chart, or click ✨ to Ask Talvrin`}
+              className="group relative flex cursor-pointer flex-col justify-between rounded-xl border border-border/70 bg-card/70 p-3.5 shadow-sm backdrop-blur-md transition-all hover:border-primary/50 hover:bg-card hover:scale-[1.02]"
             >
               <div className="flex items-start justify-between">
-                <span className="text-[12px] font-medium text-muted-foreground">{t.title}</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-[12px] font-medium text-muted-foreground group-hover:text-primary transition-colors">{t.title}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onSearch(t.title)
+                    }}
+                    title={`Ask Talvrin about ${t.title}`}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-primary hover:bg-primary/20 transition cursor-pointer"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                  </button>
+                </div>
                 <span
                   className={`flex items-center text-[11px] font-semibold ${
                     t.isUp ? 'text-emerald-400' : 'text-rose-400'
@@ -376,7 +417,10 @@ export default function HomeDashboard({
           ))}
 
           <button
-            onClick={() => onSearch('Global market overview')}
+            onClick={() => {
+              if (onOpenMarkets) onOpenMarkets()
+              else onSearch('Global market overview')
+            }}
             className="flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/80 bg-card/30 p-3.5 text-[12.5px] font-medium text-primary transition-colors hover:border-primary/50 hover:bg-primary/5"
           >
             <span>View markets</span>
@@ -570,7 +614,10 @@ export default function HomeDashboard({
             <div className="flex items-center justify-between pb-3 border-b border-border/50">
               <h3 className="text-[14px] font-semibold text-foreground">Saved watchlists</h3>
               <button
-                onClick={() => onSearch('Watchlists and market portfolios')}
+                onClick={() => {
+                  if (onOpenWatchlists) onOpenWatchlists()
+                  else onSearch('Watchlists and market portfolios')
+                }}
                 className="flex items-center gap-1 text-[11.5px] font-medium text-primary hover:underline"
               >
                 View all <ArrowRight className="h-3 w-3" />
