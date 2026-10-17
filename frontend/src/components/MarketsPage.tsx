@@ -1,23 +1,26 @@
 import { useEffect, useState, useMemo } from 'react'
 import {
   Globe2,
+  ArrowLeft,
   Search,
   Plus,
   Bookmark,
   Check,
-  Sparkles,
   TrendingUp,
   TrendingDown,
   ShieldCheck,
   ChevronDown,
   Layers,
   BarChart2,
+  RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   listWatchlists,
   addWatchlistItem,
   type Watchlist,
+  triggerExternalSync,
+  getLiveSyncedAssets,
 } from '@/lib/api'
 import TradingViewModal from '@/components/TradingViewModal'
 import TradingViewScreener from '@/components/TradingViewScreener'
@@ -25,7 +28,8 @@ import type { TaggedAsset } from '@/data/mockReply'
 
 interface MarketsPageProps {
   initialSymbol?: string | null
-  onStartResearch: (assetOrQuery: string | TaggedAsset) => void
+  onBack?: () => void
+  onStartResearch: (assetOrQuery: string | TaggedAsset, prompt?: string) => void
   onOpenMonitoringForRule?: (symbol: string) => void
   onOpenWatchlists?: () => void
 }
@@ -67,11 +71,12 @@ function MiniSparkline({ data, direction }: { data: number[]; direction: 'up' | 
 
 export default function MarketsPage({
   initialSymbol,
+  onBack,
   onStartResearch,
   onOpenMonitoringForRule,
   onOpenWatchlists,
 }: MarketsPageProps) {
-  const [activeTab, setActiveTab] = useState<'ALL' | 'SOVEREIGN' | 'EQUITY' | 'ETF' | 'FX' | 'COMMODITIES' | 'CRYPTO' | 'MACRO'>('ALL')
+  const [activeTab, setActiveTab] = useState<'ALL' | 'SOVEREIGN' | 'EQUITY' | 'ETF' | 'FX' | 'COMMODITIES' | 'CRYPTO' | 'MACRO' | 'IPO' | 'MUTUAL_FUND'>('ALL')
   const [activeRegion, setActiveRegion] = useState<'ALL' | 'UK' | 'US' | 'EU' | 'APAC'>('ALL')
   const [activeSource, setActiveSource] = useState<string>('ALL')
   const [viewMode, setViewMode] = useState<'table' | 'screener'>('table')
@@ -80,15 +85,75 @@ export default function MarketsPage({
   const [addedItemSymbol, setAddedItemSymbol] = useState<string | null>(null)
   const [activeDropdownSymbol, setActiveDropdownSymbol] = useState<string | null>(null)
   const [selectedAsset, setSelectedAsset] = useState<MarketAsset | null>(null)
+  const [dynamicSyncedAssets, setDynamicSyncedAssets] = useState<MarketAsset[]>([])
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
 
   useEffect(() => {
     void listWatchlists().then(setWatchlists).catch(() => {})
+    // Auto-fetch any dynamically ingested assets
+    void getLiveSyncedAssets().then((items) => {
+      if (items && items.length > 0) {
+        setDynamicSyncedAssets(
+          items.map((i) => ({
+            symbol: i.symbol,
+            name: i.name,
+            assetClass: (i.asset_class as MarketAsset['assetClass']) || 'EQUITY',
+            region: 'GLOBAL',
+            price: i.price,
+            change: '+0.00',
+            pctChange: '+0.00%',
+            direction: 'flat' as const,
+            sparkline: [100, 101, 102, 102, 103],
+            source: i.source,
+            freshness: i.freshness,
+            bitemporalStatus: i.bitemporal_status,
+          }))
+        )
+      }
+    }).catch(() => {})
   }, [])
+
+  const handleTriggerSync = async () => {
+    try {
+      setIsSyncing(true)
+      const res = await triggerExternalSync('all', 50)
+      if (res && res.assets) {
+        setDynamicSyncedAssets(
+          res.assets.map((i) => ({
+            symbol: i.symbol,
+            name: i.name,
+            assetClass: (i.asset_class as MarketAsset['assetClass']) || 'EQUITY',
+            region: 'GLOBAL',
+            price: i.price,
+            change: '+0.00',
+            pctChange: '+0.00%',
+            direction: 'flat' as const,
+            sparkline: [100, 101, 102, 102, 103],
+            source: i.source,
+            freshness: i.freshness,
+            bitemporalStatus: i.bitemporal_status,
+          }))
+        )
+        setLastSyncTime(new Date().toLocaleTimeString())
+      }
+    } catch {
+      // Graceful fallback
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
+  const allAssets = useMemo(() => {
+    const existingSymbols = new Set(GLOBAL_MARKET_ASSETS.map((a) => a.symbol.toUpperCase()))
+    const newItems = dynamicSyncedAssets.filter((a) => !existingSymbols.has(a.symbol.toUpperCase()))
+    return [...newItems, ...GLOBAL_MARKET_ASSETS]
+  }, [dynamicSyncedAssets])
 
   // Auto-open modal if initialSymbol was provided
   useEffect(() => {
     if (!initialSymbol) return
-    const match = GLOBAL_MARKET_ASSETS.find(
+    const match = allAssets.find(
       (a) =>
         a.symbol.toLowerCase() === initialSymbol.toLowerCase() ||
         a.name.toLowerCase().includes(initialSymbol.toLowerCase())
@@ -97,11 +162,11 @@ export default function MarketsPage({
       setSelectedAsset(match)
       if (match.assetClass) setActiveTab(match.assetClass)
     }
-  }, [initialSymbol])
+  }, [initialSymbol, allAssets])
 
   const assetCounts = useMemo(() => {
     const counts: Record<string, number> = {
-      ALL: GLOBAL_MARKET_ASSETS.length,
+      ALL: allAssets.length,
       SOVEREIGN: 0,
       EQUITY: 0,
       ETF: 0,
@@ -109,20 +174,24 @@ export default function MarketsPage({
       FX: 0,
       CRYPTO: 0,
       MACRO: 0,
+      IPO: 0,
+      MUTUAL_FUND: 0,
     }
-    for (const a of GLOBAL_MARKET_ASSETS) {
+    for (const a of allAssets) {
       if (counts[a.assetClass] !== undefined) {
         counts[a.assetClass]++
       }
     }
     return counts
-  }, [])
+  }, [allAssets])
 
   const tabs = [
     { id: 'ALL' as const, label: 'All Assets', count: assetCounts.ALL },
     { id: 'SOVEREIGN' as const, label: 'Sovereign Debt', count: assetCounts.SOVEREIGN },
     { id: 'EQUITY' as const, label: 'Equities & Indices', count: assetCounts.EQUITY },
-    { id: 'ETF' as const, label: 'ETFs & Funds', count: assetCounts.ETF },
+    { id: 'IPO' as const, label: 'IPOs & Issues', count: assetCounts.IPO },
+    { id: 'MUTUAL_FUND' as const, label: 'Mutual Funds', count: assetCounts.MUTUAL_FUND },
+    { id: 'ETF' as const, label: 'ETFs & Index Funds', count: assetCounts.ETF },
     { id: 'COMMODITIES' as const, label: 'Commodities', count: assetCounts.COMMODITIES },
     { id: 'FX' as const, label: 'Foreign Exchange', count: assetCounts.FX },
     { id: 'CRYPTO' as const, label: 'Crypto (CMC)', count: assetCounts.CRYPTO },
@@ -130,7 +199,7 @@ export default function MarketsPage({
   ]
 
   const filteredAssets = useMemo(() => {
-    return GLOBAL_MARKET_ASSETS.filter((a) => {
+    return allAssets.filter((a) => {
       if (search.trim()) {
         const q = search.toLowerCase()
         const matchesQuery = a.symbol.toLowerCase().includes(q) || a.name.toLowerCase().includes(q) || a.source.toLowerCase().includes(q)
@@ -148,7 +217,7 @@ export default function MarketsPage({
       }
       return true
     })
-  }, [activeTab, activeRegion, activeSource, search])
+  }, [allAssets, activeTab, activeRegion, activeSource, search])
 
   const handleAddToWatchlist = async (watchlistId: string, asset: MarketAsset) => {
     try {
@@ -171,6 +240,15 @@ export default function MarketsPage({
       <div className="mx-auto flex w-full max-w-7xl items-start justify-between gap-4 pb-6 border-b border-border">
         <div>
           <div className="flex items-center gap-2.5">
+            {onBack && (
+              <button
+                onClick={onBack}
+                aria-label="Back"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground mr-1"
+              >
+                <ArrowLeft className="h-[18px] w-[18px]" />
+              </button>
+            )}
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
               <Globe2 className="h-5 w-5" />
             </div>
@@ -213,6 +291,16 @@ export default function MarketsPage({
               <span>World Screener (All Stocks)</span>
             </button>
           </div>
+
+          <button
+            onClick={handleTriggerSync}
+            disabled={isSyncing}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3.5 py-2 text-[13px] font-semibold text-foreground shadow-sm hover:bg-accent transition disabled:opacity-50"
+            title="Auto-sync new assets from TwelveData, AMFI, and TradingView"
+          >
+            <RefreshCw className={cn("h-4 w-4 text-primary", isSyncing && "animate-spin")} />
+            <span>{isSyncing ? "Syncing..." : lastSyncTime ? `Synced (${lastSyncTime})` : "Live Provider Sync"}</span>
+          </button>
 
           {onOpenWatchlists && (
             <button
@@ -398,10 +486,10 @@ export default function MarketsPage({
                                     source: 'Primary Market',
                                   })
                                 }}
-                                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary to-indigo-600 px-4 py-2 text-[12px] font-semibold text-white shadow-md hover:brightness-110 transition active:scale-95"
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-[12px] font-semibold text-primary-foreground shadow-sm hover:opacity-90 transition active:scale-95"
                               >
-                                <Sparkles className="h-4 w-4" />
-                                <span>Ask Talvrin: "{search}"</span>
+                                <Search className="h-4 w-4" />
+                                <span>Research: "{search}"</span>
                               </button>
 
                               <button
@@ -543,11 +631,11 @@ export default function MarketsPage({
                                     source: asset.source,
                                   })
                                 }
-                                title="Ask Talvrin Research"
-                                className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-[11.5px] font-semibold text-primary hover:bg-primary hover:text-primary-foreground transition shadow-xs"
+                                title="Research Asset"
+                                className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary/60 px-2.5 py-1 text-[11.5px] font-semibold text-foreground hover:bg-primary hover:text-primary-foreground hover:border-primary transition shadow-xs"
                               >
-                                <Sparkles className="h-3 w-3" />
-                                <span>Ask Talvrin</span>
+                                <Search className="h-3 w-3" />
+                                <span>Research</span>
                               </button>
 
                               {/* Add to Watchlist Dropdown Trigger */}

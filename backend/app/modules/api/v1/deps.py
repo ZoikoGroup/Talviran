@@ -42,6 +42,19 @@ async def current_identity(
     return identity
 
 
+async def optional_identity(
+    request: Request, db: SessionDep
+) -> identity_service.Identity | None:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        return None
+    try:
+        return await identity_service.resolve_session(db, token=token)
+    except Exception:
+        return None
+
+
+OptionalIdentityDep = Annotated[identity_service.Identity | None, Depends(optional_identity)]
 IdentityDep = Annotated[identity_service.Identity, Depends(current_identity)]
 
 

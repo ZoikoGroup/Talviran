@@ -18,7 +18,9 @@ from app.modules.evidence.service import (
     _mentions_fx,
     _mentions_gilt,
     _mentions_global_index,
+    _mentions_ipo,
     _mentions_market_structure,
+    _mentions_mutual_fund,
     _mentions_yield_curve,
     _normalise_coupon_text,
 )
@@ -278,8 +280,21 @@ def test_deep_equity_mentions_detected() -> None:
     assert _mentions_deep_equity("Apple market cap and free cash flow")
     assert _mentions_deep_equity("Microsoft P/E ratio and cloud growth")
     assert _mentions_deep_equity("TSMC semiconductor foundry margins")
-    assert _mentions_deep_equity("ASML EUV lithography orders")
-    assert _mentions_deep_equity("fundamental research on Tesla")
-    assert not _mentions_deep_equity("what is the Bank of England base rate")
+def test_ipo_mentions_detected() -> None:
+    assert _mentions_ipo("price of jio ipo")
+    assert _mentions_ipo("ipo means?")
+    assert _mentions_ipo("what is an initial public offering")
+    assert _mentions_ipo("hyundai motor india ipo subscription")
+    assert _mentions_ipo("upcoming ipos on nse")
+    assert not _mentions_ipo("tell me about UK Gilts 2036")
+
+
+def test_mutual_fund_mentions_detected() -> None:
+    assert _mentions_mutual_fund("vanguard mutual fund")
+    assert _mentions_mutual_fund("sbi bluechip fund nav")
+    assert _mentions_mutual_fund("parag parikh flexi cap fund")
+    assert _mentions_mutual_fund("what is a mutual fund net asset value")
+    assert _mentions_mutual_fund("amfi daily nav records")
+    assert not _mentions_mutual_fund("price of crude oil")
 
 

@@ -318,17 +318,29 @@ export default function MonitoringPage({ onBack, initialRuleSymbol }: Monitoring
   }, [onBack])
 
   return (
-    <div className="scrollbar-slim flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-6 pb-20 pt-8">
-        <div className="mb-7 flex items-center gap-3">
-          <button
-            onClick={onBack}
-            aria-label="Back"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <ArrowLeft className="h-[18px] w-[18px]" />
-          </button>
-          <h1 className="text-[22px] font-semibold tracking-tight">Monitoring</h1>
+    <div className="flex h-full flex-col overflow-y-auto bg-background p-6 md:p-8">
+      <div className="mx-auto w-full max-w-5xl">
+        <div className="flex items-start justify-between gap-4 pb-6 border-b border-border mb-6">
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={onBack}
+              aria-label="Back"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground mr-1"
+            >
+              <ArrowLeft className="h-[18px] w-[18px]" />
+            </button>
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
+              <Bell className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+                Real-Time Market Monitoring
+              </h1>
+              <p className="text-[13px] text-muted-foreground">
+                Objective trigger conditions on live yield curves, sovereign spreads, and instrument prices.
+              </p>
+            </div>
+          </div>
         </div>
 
         <nav className="mb-6 flex gap-1.5 border-b border-border">

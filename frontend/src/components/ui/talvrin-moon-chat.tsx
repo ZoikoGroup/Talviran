@@ -7,7 +7,7 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion'
 import { useAutoResizeTextarea } from '@/hooks/use-auto-resize-textarea'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { cn } from '@/lib/utils'
-import { ArrowUpIcon, Tag, Sparkles, X } from 'lucide-react'
+import { ArrowUpIcon, Tag, X } from 'lucide-react'
 import { useCurrentUser } from '@/data/user'
 import AttachMenu, { AttachmentChips } from '@/components/AttachMenu'
 import ModelSwitcher from '@/components/ModelSwitcher'
@@ -275,9 +275,8 @@ export default function TalvrinMoonChat({
                     onChange(promptText)
                     onSend(promptText)
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-secondary/50 hover:bg-secondary hover:border-primary/40 px-3 py-1.5 text-[11.5px] text-muted-foreground hover:text-foreground transition active:scale-95 text-left"
+                  className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-secondary/50 hover:bg-secondary hover:border-primary/40 px-3.5 py-1.5 text-[11.5px] text-muted-foreground hover:text-foreground transition active:scale-95 text-left"
                 >
-                  <Sparkles className="h-3 w-3 text-primary shrink-0" />
                   <span className="truncate max-w-[280px] sm:max-w-none">{promptText}</span>
                 </button>
               ))}

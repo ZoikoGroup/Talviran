@@ -76,6 +76,36 @@ UK_GILTS_PACK = PackDefinition(
     calculation_spec_codes=("gilt_price_yield_v1",),
 )
 
+US_EQUITIES_PACK = PackDefinition(
+    code="us-equities",
+    version="0.1.0",
+    jurisdiction_codes=("US",),
+    default_rights_profile_code="twelve-data.equity",
+    capability_codes=("reference.issuers.read", "reference.instruments.read"),
+    connector_codes=("twelve-data.eod-price",),
+    calculation_spec_codes=(),
+)
+
+INDIAN_MUTUAL_FUNDS_PACK = PackDefinition(
+    code="indian-mutual-funds",
+    version="0.1.0",
+    jurisdiction_codes=("IN",),
+    default_rights_profile_code="amfi.statutory",
+    capability_codes=("reference.issuers.read", "reference.instruments.read"),
+    connector_codes=("amfi.daily-nav",),
+    calculation_spec_codes=(),
+)
+
+PRIMARY_MARKET_IPO_PACK = PackDefinition(
+    code="primary-market-ipo",
+    version="0.1.0",
+    jurisdiction_codes=("IN", "US"),
+    default_rights_profile_code="regulatory.prospectus",
+    capability_codes=("reference.issuers.read", "reference.instruments.read"),
+    connector_codes=("sebi.drhp", "sec.edgar-s1"),
+    calculation_spec_codes=(),
+)
+
 
 def register_default_packs(registry: PackRegistry) -> None:
     """Registers every pack currently known to the platform. Called once at
@@ -85,3 +115,7 @@ def register_default_packs(registry: PackRegistry) -> None:
     defaults it didn't ask for.
     """
     registry.register(UK_GILTS_PACK)
+    registry.register(US_EQUITIES_PACK)
+    registry.register(INDIAN_MUTUAL_FUNDS_PACK)
+    registry.register(PRIMARY_MARKET_IPO_PACK)
+

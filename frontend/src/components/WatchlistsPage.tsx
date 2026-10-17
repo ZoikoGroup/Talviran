@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Bookmark,
+  ArrowLeft,
   Plus,
   Trash2,
   TrendingDown,
@@ -10,7 +11,6 @@ import {
   Bell,
   FolderPlus,
   Layers,
-  Sparkles,
   ShieldCheck,
   Download,
 } from 'lucide-react'
@@ -30,7 +30,7 @@ import type { TaggedAsset } from '@/data/mockReply'
 
 interface WatchlistsPageProps {
   onBack?: () => void
-  onStartResearch: (assetOrQuery: string | TaggedAsset) => void
+  onStartResearch: (assetOrQuery: string | TaggedAsset, prompt?: string) => void
   onOpenMonitoringForRule?: (symbol: string) => void
 }
 
@@ -176,6 +176,7 @@ function MiniSparkline({ data, direction }: { data: number[]; direction: 'up' | 
 }
 
 export default function WatchlistsPage({
+  onBack,
   onStartResearch,
   onOpenMonitoringForRule,
 }: WatchlistsPageProps) {
@@ -444,6 +445,15 @@ export default function WatchlistsPage({
       <div className="mx-auto flex w-full max-w-7xl items-start justify-between gap-4 pb-6 border-b border-border">
         <div>
           <div className="flex items-center gap-2.5">
+            {onBack && (
+              <button
+                onClick={onBack}
+                aria-label="Back"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground mr-1"
+              >
+                <ArrowLeft className="h-[18px] w-[18px]" />
+              </button>
+            )}
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
               <Bookmark className="h-5 w-5" />
             </div>
@@ -714,11 +724,11 @@ export default function WatchlistsPage({
                                   source: quote.source,
                                 })
                               }}
-                              title="Ask Talvrin"
-                              className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-[11.5px] font-semibold text-primary hover:bg-primary hover:text-primary-foreground transition shadow-xs"
+                              title="Research Instrument"
+                              className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary/60 px-2.5 py-1 text-[11.5px] font-semibold text-foreground hover:bg-primary hover:text-primary-foreground hover:border-primary transition shadow-xs"
                             >
-                              <Sparkles className="h-3 w-3" />
-                              <span>Ask Talvrin</span>
+                              <Search className="h-3 w-3" />
+                              <span>Research</span>
                             </button>
 
                             <button

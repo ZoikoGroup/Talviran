@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   X,
-  Sparkles,
+  Search,
   Bell,
   ShieldCheck,
   Clock,
@@ -27,7 +27,7 @@ interface TradingViewModalProps {
   freshness: string
   bitemporalStatus: string
   onClose: () => void
-  onStartResearch: (asset: TaggedAsset) => void
+  onStartResearch: (asset: TaggedAsset, prompt?: string) => void
   onOpenMonitoring: (symbol: string) => void
 }
 
@@ -71,19 +71,22 @@ export default function TradingViewModal({
   const tvSymbol = mapToTradingViewSymbol(symbol)
 
   const handleAskTalvrin = () => {
-    // Closes modal and redirects to Talvrin chat with the active product/asset tagged
+    // Closes modal and redirects to Talvrin chat with the active product/asset tagged and query populated
     onClose()
-    onStartResearch({
-      symbol,
-      name,
-      assetClass,
-      price: last,
-      change,
-      pctChange,
-      direction,
-      source,
-      tvSymbol,
-    })
+    onStartResearch(
+      {
+        symbol,
+        name,
+        assetClass,
+        price: last,
+        change,
+        pctChange,
+        direction,
+        source,
+        tvSymbol,
+      },
+      `Deep fundamentals, valuation, and primary market facts for ${name} (${symbol})`
+    )
   }
 
   return createPortal(
@@ -133,8 +136,8 @@ export default function TradingViewModal({
               onClick={handleAskTalvrin}
               className="inline-flex items-center gap-1 sm:gap-1.5 rounded-xl bg-primary px-2.5 sm:px-3 py-1.5 text-[11.5px] sm:text-[12px] font-semibold text-primary-foreground shadow-sm hover:opacity-90 transition active:scale-95"
             >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>Ask Talvrin</span>
+              <Search className="h-3.5 w-3.5" />
+              <span>Research</span>
             </button>
 
             <button

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Sparkles, Search, Tag } from 'lucide-react'
+import { Search, Tag } from 'lucide-react'
 import type { TaggedAsset } from '@/data/mockReply'
 
 export type TradingViewMarket =
@@ -190,10 +190,10 @@ export default function TradingViewScreener({
             <button
               type="submit"
               disabled={!screenerQuery.trim()}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-primary to-indigo-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:brightness-110 transition active:scale-95 disabled:opacity-50 disabled:pointer-events-none shrink-0"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-semibold text-primary-foreground shadow-sm hover:opacity-90 transition active:scale-95 disabled:opacity-50 disabled:pointer-events-none shrink-0"
             >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>Ask Talvrin</span>
+              <Search className="h-3.5 w-3.5" />
+              <span>Research</span>
             </button>
           </form>
 
@@ -218,17 +218,16 @@ export default function TradingViewScreener({
         <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-border/40 text-[11px]">
           <span className="flex items-center gap-1 text-muted-foreground font-medium shrink-0 mr-1">
             <Tag className="h-3 w-3 text-primary" />
-            <span>Ask Talvrin tags:</span>
+            <span>Research tags:</span>
           </span>
           {currentTags.map((tag) => (
             <button
               key={tag.symbol}
               type="button"
               onClick={() => onStartResearch && onStartResearch({ symbol: tag.symbol, name: tag.name, assetClass: 'EQUITY', source: 'Primary Market' })}
-              title={`Ask Talvrin about ${tag.name}`}
-              className="inline-flex items-center gap-1 rounded-md border border-primary/25 bg-primary/10 px-2 py-0.5 font-medium text-primary hover:bg-primary hover:text-primary-foreground hover:border-primary transition shadow-xs cursor-pointer active:scale-95"
+              title={`Research ${tag.name}`}
+              className="inline-flex items-center gap-1 rounded-md border border-border/80 bg-secondary/60 px-2 py-0.5 font-medium text-foreground hover:bg-primary hover:text-primary-foreground hover:border-primary transition shadow-xs cursor-pointer active:scale-95"
             >
-              <Sparkles className="h-2.5 w-2.5" />
               <span>{tag.symbol}</span>
             </button>
           ))}

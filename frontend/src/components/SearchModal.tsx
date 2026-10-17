@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Search,
-  Sparkles,
   TrendingUp,
   MessageSquare,
   CornerDownLeft,
@@ -71,10 +70,10 @@ export default function SearchModal({
     items.push({
       id: 'ask-ai-direct',
       category: 'ask',
-      title: `Ask Talvrin: "${trimmed}"`,
+      title: `Research: "${trimmed}"`,
       subtitle: 'Evidence-backed answer grounded in trusted primary sources only',
-      badge: 'AI Research',
-      icon: Sparkles,
+      badge: 'Research',
+      icon: Search,
     })
   }
 

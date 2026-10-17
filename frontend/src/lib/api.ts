@@ -671,4 +671,81 @@ export const listInstruments = (cursor?: string): Promise<Page<ReferenceInstrume
     hasMore: p.has_more,
   }))
 
+// ------------------------------------------------------------------- live provider auto-sync
+
+export interface SyncedAssetRecord {
+  symbol: string
+  name: string
+  asset_class: string
+  price: string
+  source: string
+  freshness: string
+  bitemporal_status: string
+}
+
+export interface SyncResponse {
+  status: string
+  provider: string
+  synced_at: string
+  total_synced: number
+  assets: SyncedAssetRecord[]
+}
+
+export const triggerExternalSync = (provider = 'all', limit = 50): Promise<SyncResponse> =>
+  apiFetch<SyncResponse>('/api/v1/sync/trigger', {
+    method: 'POST',
+    body: JSON.stringify({ provider, limit }),
+  })
+
+export const getLiveSyncedAssets = (): Promise<SyncedAssetRecord[]> =>
+  apiFetch<SyncedAssetRecord[]>('/api/v1/sync/live-feed')
+
+// ------------------------------------------------------------------- dashboard overview
+
+export interface DashboardTicker {
+  title: string
+  value: string
+  change: string
+  is_up: boolean
+  is_bps: boolean
+  sparkline: number[]
+}
+
+export interface DashboardAlert {
+  id: string
+  title: string
+  time_ago: string
+  status: string
+  metric_id: string
+}
+
+export interface DashboardEconomicEvent {
+  date: string
+  time: string
+  flag: string
+  code: string
+  event: string
+}
+
+export interface DashboardWatchlistSummary {
+  id: string
+  title: string
+  detail: string
+  change: string
+  is_up: boolean
+}
+
+export interface DashboardOverviewResponse {
+  tickers: DashboardTicker[]
+  alerts: DashboardAlert[]
+  economic_calendar: DashboardEconomicEvent[]
+  watchlists: DashboardWatchlistSummary[]
+  as_of: string
+}
+
+export const getDashboardOverview = (): Promise<DashboardOverviewResponse> =>
+  apiFetch<DashboardOverviewResponse>('/api/v1/dashboard/overview')
+
+
+
 

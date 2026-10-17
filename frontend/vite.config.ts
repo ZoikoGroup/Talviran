@@ -8,4 +8,17 @@ export default defineConfig({
     alias: { '@': path.resolve(__dirname, './src') },
   },
   server: { port: 5173, open: true },
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          charts: ['lightweight-charts', 'recharts', 'ogl'],
+          icons: ['lucide-react'],
+        },
+      },
+    },
+  },
 })
+

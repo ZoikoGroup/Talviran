@@ -187,6 +187,10 @@ function Evidence({
   )
 }
 
+interface MessageProps extends ChatMessage {
+  isLatestAssistant?: boolean
+}
+
 export default function Message({
   role,
   text,
@@ -196,7 +200,8 @@ export default function Message({
   note,
   messageId,
   taggedAsset,
-}: ChatMessage) {
+  isLatestAssistant = false,
+}: MessageProps) {
   let displayContent = text
   let parsedFacts = facts
   let parsedCitations = citations || []
@@ -228,6 +233,27 @@ export default function Message({
     }
   }
 
+  // ChatGPT-style typing streaming state for newly received assistant messages
+  const [typedLength, setTypedLength] = useState(() => (isLatestAssistant ? 0 : displayContent.length))
+  const isTyping = isLatestAssistant && typedLength < displayContent.length
+
+  useEffect(() => {
+    if (!isLatestAssistant) {
+      setTypedLength(displayContent.length)
+      return
+    }
+
+    if (typedLength < displayContent.length) {
+      // Dynamic chunk size and interval: faster on long prose, natural pacing on short answers
+      const remaining = displayContent.length - typedLength
+      const step = remaining > 180 ? 5 : remaining > 80 ? 3 : 2
+      const timer = setTimeout(() => {
+        setTypedLength((prev) => Math.min(prev + step, displayContent.length))
+      }, 16)
+      return () => clearTimeout(timer)
+    }
+  }, [isLatestAssistant, typedLength, displayContent.length])
+
   if (role === 'user') {
     return (
       <div className="mb-6 flex flex-col items-end animate-rise">
@@ -247,6 +273,8 @@ export default function Message({
     )
   }
 
+  const visibleText = displayContent.slice(0, typedLength)
+
   return (
     <div className="mb-7 flex animate-rise gap-3.5">
       <img
@@ -265,7 +293,8 @@ export default function Message({
           )}
         </div>
         <div className="whitespace-pre-wrap break-words text-[14.75px] leading-relaxed">
-          <RichText>{displayContent}</RichText>
+          <RichText>{visibleText}</RichText>
+          {isTyping && <span className="typing-cursor" aria-hidden="true" />}
         </div>
 
         {/* Immediate Trusted Primary Sources Link Bar */}

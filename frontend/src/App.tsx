@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { PanelLeft } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Toaster, toast } from 'sonner'
@@ -111,6 +111,9 @@ export default function App() {
   // unlike `collapsed`, this is session state, not a device preference.
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const { theme, setTheme } = useTheme()
+  type NavView = 'home' | 'markets' | 'watchlists' | 'monitoring' | 'settings' | 'research'
+
+  const [currentView, setCurrentView] = useState<NavView>('home')
   const [showSettings, setShowSettings] = useState(false)
   const [showMonitoring, setShowMonitoring] = useState(false)
   const [showWatchlists, setShowWatchlists] = useState(false)
@@ -120,6 +123,90 @@ export default function App() {
   const [monitoringInitialSymbol, setMonitoringInitialSymbol] = useState<string | null>(null)
   const [marketsInitialSymbol, setMarketsInitialSymbol] = useState<string | null>(null)
   const [taggedAsset, setTaggedAsset] = useState<TaggedAsset | null>(null)
+
+  // Internal view navigation helper that syncs with browser history
+  const navigateToView = useCallback((nextView: NavView, replace = false) => {
+    setCurrentView(nextView)
+    setShowHome(nextView === 'home')
+    setShowMarkets(nextView === 'markets')
+    setShowWatchlists(nextView === 'watchlists')
+    setShowMonitoring(nextView === 'monitoring')
+    setShowSettings(nextView === 'settings')
+
+    const stateObj = { talvrinView: nextView }
+    if (replace) {
+      window.history.replaceState(stateObj, '')
+    } else {
+      window.history.pushState(stateObj, '')
+    }
+  }, [])
+
+  // In-app Back action: goes back to previous view or returns to home
+  const handleGoBack = useCallback(() => {
+    if (currentView === 'home') return // Already on home, cannot go further back
+    window.history.back()
+  }, [currentView])
+
+  // Hardware backing (Android back button/gestures, mouse button 3, Alt+Left, and browser back)
+  useEffect(() => {
+    // Prime initial history entry with 'home'
+    window.history.replaceState({ talvrinView: 'home', depth: 0 }, '')
+    // Push an additional defensive buffer state so hardware back stays within Talvrin
+    window.history.pushState({ talvrinView: 'home', depth: 1 }, '')
+
+    const handlePopState = (e: PopStateEvent) => {
+      const stateView: NavView = e.state?.talvrinView || 'home'
+      setCurrentView(stateView)
+      setShowHome(stateView === 'home')
+      setShowMarkets(stateView === 'markets')
+      setShowWatchlists(stateView === 'watchlists')
+      setShowMonitoring(stateView === 'monitoring')
+      setShowSettings(stateView === 'settings')
+
+      // Trap hardware back at home: if user triggers hardware back while on home,
+      // prevent the browser from escaping to external history or closing.
+      if (stateView === 'home') {
+        window.history.pushState({ talvrinView: 'home', depth: 1 }, '')
+      }
+    }
+
+    // Hardware mouse back button (button 3 / XButton1) & Alt+Left Arrow
+    const handleMouseBack = (e: MouseEvent) => {
+      if (e.button === 3) {
+        // Physical back button on gaming / productivity mice
+        e.preventDefault()
+        e.stopPropagation()
+        handleGoBack()
+      }
+    }
+
+    const handleHardwareKeyBack = (e: KeyboardEvent) => {
+      // Browser back key code on Android keyboards or Alt+Left on PC
+      if (
+        e.key === 'BrowserBack' ||
+        (e.altKey && e.key === 'ArrowLeft') ||
+        (e.key === 'Backspace' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement))
+      ) {
+        if (currentView !== 'home') {
+          e.preventDefault()
+          handleGoBack()
+        } else {
+          // At home, consume the key so it never navigates away
+          e.preventDefault()
+        }
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    window.addEventListener('mouseup', handleMouseBack, true)
+    window.addEventListener('keydown', handleHardwareKeyBack, true)
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+      window.removeEventListener('mouseup', handleMouseBack, true)
+      window.removeEventListener('keydown', handleHardwareKeyBack, true)
+    }
+  }, [currentView, handleGoBack])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   // Guards selectChat against firing a second GET for the same chat while
@@ -210,11 +297,7 @@ export default function App() {
    * sidebar row only ever carries metadata until it's actually opened. */
   const selectChat = (id: string) => {
     setActiveId(id)
-    setShowSettings(false)
-    setShowMonitoring(false)
-    setShowWatchlists(false)
-    setShowMarkets(false)
-    setShowHome(false)
+    navigateToView('research')
 
     const target = chats.find((c) => c.id === id)
     if (!target?.backendId || target.messagesLoaded) return
@@ -357,20 +440,12 @@ export default function App() {
     if (asset !== undefined) {
       setTaggedAsset(asset)
     }
-    setShowHome(false)
-    setShowWatchlists(false)
-    setShowMarkets(false)
-    setShowMonitoring(false)
-    setShowSettings(false)
+    navigateToView('research')
     return c
   }
 
   const handleStartResearch = (assetOrQuery?: string | TaggedAsset, prompt?: string) => {
-    setShowMarkets(false)
-    setShowWatchlists(false)
-    setShowHome(false)
-    setShowSettings(false)
-    setShowMonitoring(false)
+    navigateToView('research')
 
     let targetAsset: TaggedAsset | null = null
     let queryText = prompt ? prompt.trim() : ''
@@ -599,10 +674,6 @@ export default function App() {
         onSelect={selectChat}
         onNew={(projectId) => {
           startChat(projectId ?? null)
-          setShowSettings(false)
-          setShowMonitoring(false)
-          setShowWatchlists(false)
-          setShowMarkets(false)
         }}
         onNewProject={addProject}
         onMoveChat={moveChat}
@@ -612,54 +683,12 @@ export default function App() {
         onDeleteProject={deleteProject}
         onCollapse={() => setCollapsed(true)}
         onExpand={() => setCollapsed(false)}
-        onOpenHome={() => {
-          setShowHome(true)
-          setShowSettings(false)
-          setShowMonitoring(false)
-          setShowWatchlists(false)
-          setShowMarkets(false)
-        }}
-        activeNav={
-          showHome
-            ? 'home'
-            : showMarkets
-            ? 'markets'
-            : showWatchlists
-            ? 'watchlists'
-            : showSettings
-            ? 'settings'
-            : showMonitoring
-            ? 'monitoring'
-            : 'research'
-        }
-        onOpenMarkets={() => {
-          setShowMarkets(true)
-          setShowWatchlists(false)
-          setShowHome(false)
-          setShowSettings(false)
-          setShowMonitoring(false)
-        }}
-        onOpenWatchlists={() => {
-          setShowWatchlists(true)
-          setShowMarkets(false)
-          setShowHome(false)
-          setShowSettings(false)
-          setShowMonitoring(false)
-        }}
-        onOpenSettings={() => {
-          setShowSettings(true)
-          setShowMonitoring(false)
-          setShowWatchlists(false)
-          setShowMarkets(false)
-          setShowHome(false)
-        }}
-        onOpenMonitoring={() => {
-          setShowMonitoring(true)
-          setShowSettings(false)
-          setShowWatchlists(false)
-          setShowMarkets(false)
-          setShowHome(false)
-        }}
+        onOpenHome={() => navigateToView('home')}
+        activeNav={currentView}
+        onOpenMarkets={() => navigateToView('markets')}
+        onOpenWatchlists={() => navigateToView('watchlists')}
+        onOpenSettings={() => navigateToView('settings')}
+        onOpenMonitoring={() => navigateToView('monitoring')}
         onOpenSearch={() => setShowSearch(true)}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
@@ -686,10 +715,10 @@ export default function App() {
             flex-1/h-full, and without this wrapper that percentage would
             resolve against main's full height and overflow by the bar's
             height under `overflow-hidden`. */}
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div key={currentView} className="flex min-h-0 flex-1 flex-col view-transition">
         {showSettings ? (
           <SettingsPage
-            onBack={() => setShowSettings(false)}
+            onBack={handleGoBack}
             theme={theme}
             onThemeChange={setTheme}
             stats={{
@@ -703,64 +732,72 @@ export default function App() {
         ) : showMonitoring ? (
           <MonitoringPage
             onBack={() => {
-              setShowMonitoring(false)
               setMonitoringInitialSymbol(null)
+              handleGoBack()
             }}
             initialRuleSymbol={monitoringInitialSymbol}
           />
         ) : showMarkets ? (
           <MarketsPage
             initialSymbol={marketsInitialSymbol}
+            onBack={handleGoBack}
             onStartResearch={handleStartResearch}
             onOpenMonitoringForRule={(symbol) => {
-              setShowMarkets(false)
               setMarketsInitialSymbol(null)
               setMonitoringInitialSymbol(symbol)
-              setShowMonitoring(true)
+              navigateToView('monitoring')
             }}
             onOpenWatchlists={() => {
-              setShowMarkets(false)
               setMarketsInitialSymbol(null)
-              setShowWatchlists(true)
+              navigateToView('watchlists')
             }}
           />
         ) : showWatchlists ? (
           <WatchlistsPage
-            onBack={() => setShowWatchlists(false)}
+            onBack={handleGoBack}
             onStartResearch={handleStartResearch}
             onOpenMonitoringForRule={(symbol) => {
-              setShowWatchlists(false)
               setMonitoringInitialSymbol(symbol)
-              setShowMonitoring(true)
+              navigateToView('monitoring')
             }}
           />
         ) : showHome ? (
           <HomeDashboard
+            chats={chats.filter((c) => c.hasMessages)}
+            onSelectChat={(chatId) => {
+              setActiveId(chatId)
+              navigateToView('research')
+            }}
             onSearch={(query) => {
               handleStartResearch(query)
             }}
             onStartResearch={() => {
-              setShowHome(false)
               setTaggedAsset(null)
               startChat(null, null)
             }}
             onOpenMonitoring={() => {
-              setShowHome(false)
-              setShowMonitoring(true)
+              navigateToView('monitoring')
             }}
             onOpenWatchlists={() => {
-              setShowHome(false)
-              setShowWatchlists(true)
+              navigateToView('watchlists')
             }}
             onOpenMarkets={(symbol) => {
-              setShowHome(false)
               setMarketsInitialSymbol(symbol ?? null)
-              setShowMarkets(true)
+              navigateToView('markets')
             }}
           />
         ) : isLoadingActive ? (
-          <div className="flex flex-1 items-center justify-center text-[13.5px] text-muted-foreground">
-            Loading conversation…
+          <div className="flex flex-1 flex-col items-center justify-center p-8">
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-6 w-6 institutional-spinner" />
+              <div className="text-[12.5px] font-medium text-foreground tracking-tight">Syncing conversation state…</div>
+              <div className="text-[11px] text-muted-foreground">Verifying canonical bitemporal fact record</div>
+            </div>
+            {/* Shimmer placeholders */}
+            <div className="w-full max-w-xl mt-8 space-y-4 opacity-50">
+              <div className="h-14 rounded-xl shimmer-skeleton border border-border/40" />
+              <div className="h-28 rounded-xl shimmer-skeleton border border-border/40" />
+            </div>
           </div>
         ) : isEmpty ? (
           <TalvrinMoonChat
@@ -785,7 +822,11 @@ export default function App() {
             <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-slim">
               <div className="mx-auto max-w-3xl px-4 pb-3 pt-6 sm:px-6 lg:pt-16">
                 {active.messages.map((m, i) => (
-                  <Message key={i} {...m} />
+                  <Message
+                    key={i}
+                    {...m}
+                    isLatestAssistant={i === active.messages.length - 1 && m.role === 'assistant'}
+                  />
                 ))}
 
                 {thinking && (
@@ -837,11 +878,6 @@ export default function App() {
         onSelectChat={(id) => {
           setShowSearch(false)
           selectChat(id)
-          setShowHome(false)
-          setShowMarkets(false)
-          setShowWatchlists(false)
-          setShowMonitoring(false)
-          setShowSettings(false)
         }}
         onStartResearch={(assetOrQuery, prompt) => {
           setShowSearch(false)
@@ -852,41 +888,16 @@ export default function App() {
           if (surface === 'new-chat') {
             startChat(null, null)
             setTaggedAsset(null)
-            setShowHome(false)
-            setShowMarkets(false)
-            setShowWatchlists(false)
-            setShowMonitoring(false)
-            setShowSettings(false)
           } else if (surface === 'home') {
-            setShowHome(true)
-            setShowMarkets(false)
-            setShowWatchlists(false)
-            setShowMonitoring(false)
-            setShowSettings(false)
+            navigateToView('home')
           } else if (surface === 'markets') {
-            setShowMarkets(true)
-            setShowHome(false)
-            setShowWatchlists(false)
-            setShowMonitoring(false)
-            setShowSettings(false)
+            navigateToView('markets')
           } else if (surface === 'watchlists') {
-            setShowWatchlists(true)
-            setShowHome(false)
-            setShowMarkets(false)
-            setShowMonitoring(false)
-            setShowSettings(false)
+            navigateToView('watchlists')
           } else if (surface === 'monitoring') {
-            setShowMonitoring(true)
-            setShowHome(false)
-            setShowMarkets(false)
-            setShowWatchlists(false)
-            setShowSettings(false)
+            navigateToView('monitoring')
           } else if (surface === 'settings') {
-            setShowSettings(true)
-            setShowHome(false)
-            setShowMarkets(false)
-            setShowWatchlists(false)
-            setShowMonitoring(false)
+            navigateToView('settings')
           }
         }}
       />

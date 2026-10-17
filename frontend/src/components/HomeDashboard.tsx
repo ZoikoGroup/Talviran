@@ -9,9 +9,14 @@ import {
   FileText,
   Bookmark,
   Layers,
-  Sparkles,
+  Cpu,
 } from 'lucide-react'
 import earthImg from '@/assets/earth_space_view.jpg'
+import {
+  getDashboardOverview,
+  type DashboardOverviewResponse,
+} from '@/lib/api'
+import type { Chat } from '@/components/Sidebar'
 
 interface HomeDashboardProps {
   onSearch: (query: string) => void
@@ -19,6 +24,8 @@ interface HomeDashboardProps {
   onOpenMonitoring?: () => void
   onOpenWatchlists?: () => void
   onOpenMarkets?: (symbol?: string) => void
+  chats?: Chat[]
+  onSelectChat?: (chatId: string) => void
 }
 
 export default function HomeDashboard({
@@ -27,10 +34,22 @@ export default function HomeDashboard({
   onOpenMonitoring,
   onOpenWatchlists,
   onOpenMarkets,
+  chats = [],
+  onSelectChat,
 }: HomeDashboardProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedSource, setSelectedSource] = useState('All sources')
   const [currentTime, setCurrentTime] = useState(() => new Date())
+  const [overview, setOverview] = useState<DashboardOverviewResponse | null>(null)
+
+  useEffect(() => {
+    // Load real aggregated data from backend API
+    void getDashboardOverview()
+      .then((data) => {
+        if (data) setOverview(data)
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     // Tick every second to keep clocks accurate
@@ -92,7 +111,36 @@ export default function HomeDashboard({
     'S&P 500 & Global Equities benchmark',
   ]
 
-  const tickers = [
+  // Helper to convert numerical sparkline array [1, 2, 3] to SVG path string
+  const toSvgPath = (points: number[] | string | undefined, isUp: boolean): string => {
+    if (!points) {
+      return isUp
+        ? 'M0,22 C12,24 24,18 36,19 C48,15 60,12 72,14 C84,8 90,4 100,2'
+        : 'M0,8 C12,10 24,7 36,15 C48,12 60,18 72,22 C84,18 90,24 100,22'
+    }
+    if (typeof points === 'string') return points
+    if (!Array.isArray(points) || points.length === 0) {
+      return isUp ? 'M0,25 L100,5' : 'M0,5 L100,25'
+    }
+    const min = Math.min(...points)
+    const max = Math.max(...points)
+    const range = max - min || 1
+    const width = 100
+    const height = 26
+    const padding = 2
+
+    return points
+      .map((val, idx) => {
+        const x = (idx / (points.length - 1)) * width
+        // Invert y because SVG y=0 is top
+        const normalized = (val - min) / range
+        const y = height - padding - normalized * (height - 2 * padding)
+        return `${idx === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
+      })
+      .join(' ')
+  }
+
+  const defaultTickers = [
     {
       title: 'UK 10Y Gilt',
       value: '4.216%',
@@ -137,14 +185,19 @@ export default function HomeDashboard({
       isUp: true,
       sparkline: 'M0,24 C10,22 20,25 30,20 C40,16 50,19 60,14 C70,15 80,10 90,6',
     },
-    {
-      title: 'DXY',
-      value: '100.18',
-      change: '▼ 0.31%',
-      isUp: false,
-      sparkline: 'M0,8 C12,10 24,7 36,15 C48,12 60,18 72,22 C84,18 90,24 100,22',
-    },
   ]
+
+  // Dynamic tickers derived from live API overview or fallback
+  const tickers = overview?.tickers && overview.tickers.length > 0
+    ? overview.tickers.map((t) => ({
+        title: t.title,
+        value: t.value,
+        change: t.change,
+        isUp: t.is_up,
+        isBps: t.is_bps,
+        sparkline: toSvgPath(t.sparkline, t.is_up),
+      }))
+    : defaultTickers
 
   const keyDevelopments = [
     {
@@ -179,7 +232,7 @@ export default function HomeDashboard({
     },
   ]
 
-  const userAlerts = [
+  const defaultAlerts = [
     {
       title: 'US 10Y yield moved above 4.30%',
       time: '12 minutes ago',
@@ -197,7 +250,22 @@ export default function HomeDashboard({
     },
   ]
 
-  const economicCalendar = [
+  // Dynamic user alerts from real Monitoring rule events in database
+  const userAlerts = overview?.alerts && overview.alerts.length > 0
+    ? overview.alerts.map((a) => {
+        let dot = 'bg-blue-400'
+        if (a.status === 'open' || a.status === 'triggered') dot = 'bg-amber-400'
+        else if (a.status === 'acknowledged') dot = 'bg-blue-400'
+        else if (a.status === 'resolved') dot = 'bg-emerald-400'
+        return {
+          title: a.title,
+          time: a.time_ago,
+          color: dot,
+        }
+      })
+    : defaultAlerts
+
+  const defaultCalendar = [
     { date: '18 Sep', time: '13:30', flag: '🇺🇸', code: 'US', event: 'Initial Jobless Claims' },
     { date: '18 Sep', time: '15:00', flag: '🇺🇸', code: 'US', event: 'Existing Home Sales' },
     { date: '19 Sep', time: '07:00', flag: '🇬🇧', code: 'UK', event: 'Retail Sales (MoM)' },
@@ -205,31 +273,57 @@ export default function HomeDashboard({
     { date: '19 Sep', time: '13:30', flag: '🇺🇸', code: 'US', event: 'Fed Balance Sheet' },
   ]
 
-  const recentResearch = [
+  const economicCalendar = overview?.economic_calendar && overview.economic_calendar.length > 0
+    ? overview.economic_calendar.map((e) => ({
+        date: e.date,
+        time: e.time,
+        flag: e.flag,
+        code: e.code,
+        event: e.event,
+      }))
+    : defaultCalendar
+
+  const defaultResearch = [
     {
+      id: '',
       title: 'Compare the 10Y gilt and 10Y Treasury',
       time: 'Last edited 2 hours ago',
       icon: BarChart3,
     },
     {
+      id: '',
       title: 'NVIDIA - latest financial performance',
       time: 'Last edited 5 hours ago',
       icon: FileText,
     },
     {
+      id: '',
       title: 'UK inflation analysis',
       time: 'Last edited 1 day ago',
       icon: BarChart3,
     },
     {
+      id: '',
       title: 'Global central bank policy comparison',
       time: 'Last edited 2 days ago',
       icon: Bookmark,
     },
   ]
 
-  const savedWatchlists = [
+  // Map real user chats from Sidebar/App state if available
+  const activeChats = chats.filter((c) => c.title && c.title !== 'New Research')
+  const recentResearch = activeChats.length > 0
+    ? activeChats.slice(0, 4).map((c) => ({
+        id: c.id,
+        title: c.title,
+        time: 'Active investigation',
+        icon: FileText,
+      }))
+    : defaultResearch
+
+  const defaultWatchlists = [
     {
+      id: 'default-1',
       title: 'Core Bonds',
       detail: '12 instruments',
       change: '▲ 0.18%',
@@ -237,13 +331,15 @@ export default function HomeDashboard({
       icon: Layers,
     },
     {
+      id: 'default-2',
       title: 'Tech Leaders',
       detail: '8 instruments',
       change: '▲ 1.24%',
       isUp: true,
-      icon: Sparkles,
+      icon: Cpu,
     },
     {
+      id: 'default-3',
       title: 'UK Equities',
       detail: '15 instruments',
       change: '▲ 0.32%',
@@ -251,6 +347,7 @@ export default function HomeDashboard({
       icon: FileText,
     },
     {
+      id: 'default-4',
       title: 'Global ETFs',
       detail: '10 instruments',
       change: '▼ 0.21%',
@@ -258,6 +355,18 @@ export default function HomeDashboard({
       icon: Layers,
     },
   ]
+
+  // Real user watchlists from DB
+  const savedWatchlists = overview?.watchlists && overview.watchlists.length > 0
+    ? overview.watchlists.map((w) => ({
+        id: w.id,
+        title: w.title,
+        detail: w.detail,
+        change: w.change,
+        isUp: w.is_up,
+        icon: Layers,
+      }))
+    : defaultWatchlists
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6 scrollbar-slim lg:px-10">
@@ -356,9 +465,8 @@ export default function HomeDashboard({
                   setSearchQuery(pill)
                   onSearch(pill)
                 }}
-                className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-card/50 px-3.5 py-1 text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/50 hover:bg-card hover:text-foreground cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/50 px-3.5 py-1 text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/50 hover:bg-card hover:text-foreground cursor-pointer"
               >
-                <Sparkles className="h-3 w-3 text-primary" />
                 <span>{pill}</span>
               </button>
             ))}
@@ -374,36 +482,38 @@ export default function HomeDashboard({
                 if (onOpenMarkets) onOpenMarkets(t.title)
                 else onSearch(t.title)
               }}
-              title={`Click to view chart, or click ✨ to Ask Talvrin`}
-              className="group relative flex cursor-pointer flex-col justify-between rounded-xl border border-border/70 bg-card/70 p-3.5 shadow-sm backdrop-blur-md transition-all hover:border-primary/50 hover:bg-card hover:scale-[1.02]"
+              title={`Click to view ${t.title} market chart`}
+              className="institutional-card group relative flex cursor-pointer flex-col justify-between rounded-xl border border-border/70 bg-card/70 p-3.5 shadow-sm backdrop-blur-md hover:border-primary/50 hover:bg-card hover:shadow-md"
             >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-1">
-                  <span className="text-[12px] font-medium text-muted-foreground group-hover:text-primary transition-colors">{t.title}</span>
+              <div className="flex items-center justify-between gap-1.5 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 shrink">
+                  <span className="text-[12px] font-medium text-muted-foreground group-hover:text-primary transition-colors truncate">
+                    {t.title}
+                  </span>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation()
                       onSearch(t.title)
                     }}
-                    title={`Ask Talvrin about ${t.title}`}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-primary hover:bg-primary/20 transition cursor-pointer"
+                    title={`Research ${t.title}`}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/20 transition cursor-pointer shrink-0"
                   >
-                    <Sparkles className="h-3 w-3" />
+                    <Search className="h-3 w-3" />
                   </button>
                 </div>
                 <span
-                  className={`flex items-center text-[11px] font-semibold ${
+                  className={`inline-flex items-center whitespace-nowrap text-[11px] font-semibold shrink-0 ${
                     t.isUp ? 'text-emerald-400' : 'text-rose-400'
                   }`}
                 >
                   {t.change}
                 </span>
               </div>
-              <div className="mt-2 flex items-baseline justify-between">
-                <span className="text-[17px] font-bold tracking-tight text-foreground">{t.value}</span>
+              <div className="mt-2.5 flex items-baseline justify-between gap-2">
+                <span className="text-[17px] font-bold tracking-tight text-foreground whitespace-nowrap">{t.value}</span>
                 {/* SVG Sparkline */}
-                <svg className="h-6 w-16 overflow-visible" viewBox="0 0 100 30" fill="none">
+                <svg className="h-5 w-14 overflow-visible shrink-0" viewBox="0 0 100 30" fill="none">
                   <path
                     d={t.sparkline}
                     stroke={t.isUp ? '#34d399' : '#f87171'}
@@ -421,10 +531,13 @@ export default function HomeDashboard({
               if (onOpenMarkets) onOpenMarkets()
               else onSearch('Global market overview')
             }}
-            className="flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/80 bg-card/30 p-3.5 text-[12.5px] font-medium text-primary transition-colors hover:border-primary/50 hover:bg-primary/5"
+            className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/80 bg-card/30 p-3.5 min-h-[78px] text-[12.5px] font-medium text-primary transition-all hover:border-primary/50 hover:bg-primary/5 active:scale-98"
           >
-            <span>View markets</span>
-            <ArrowRight className="h-3.5 w-3.5" />
+            <div className="flex items-center gap-1">
+              <span>View all markets</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </div>
+            <span className="text-[10.5px] text-muted-foreground font-normal">70+ global assets</span>
           </button>
         </div>
 
@@ -558,16 +671,16 @@ export default function HomeDashboard({
                   <div
                     key={i}
                     onClick={() => onSearch(`${ec.event} ${ec.code}`)}
-                    className="flex cursor-pointer items-center justify-between py-2 transition-colors hover:text-primary"
+                    className="flex cursor-pointer items-center justify-between gap-1.5 py-2 transition-colors hover:text-primary min-w-0"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-muted-foreground">{ec.date}</span>
-                      <span className="font-mono text-muted-foreground">{ec.time}</span>
-                      <span className="text-[12px]">{ec.flag}</span>
-                      <span className="font-semibold text-foreground">{ec.code}</span>
-                      <span className="text-muted-foreground truncate max-w-[110px]">{ec.event}</span>
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <span className="font-mono text-muted-foreground shrink-0 text-[11px]">{ec.date}</span>
+                      <span className="font-mono text-muted-foreground shrink-0 text-[11px]">{ec.time}</span>
+                      <span className="text-[12px] shrink-0">{ec.flag}</span>
+                      <span className="font-semibold text-foreground shrink-0">{ec.code}</span>
+                      <span className="text-muted-foreground truncate flex-1 min-w-0" title={ec.event}>{ec.event}</span>
                     </div>
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   </div>
                 ))}
               </div>
@@ -593,7 +706,13 @@ export default function HomeDashboard({
               {recentResearch.map((item, idx) => (
                 <div
                   key={idx}
-                  onClick={() => onSearch(item.title)}
+                  onClick={() => {
+                    if (item.id && onSelectChat) {
+                      onSelectChat(item.id)
+                    } else {
+                      onSearch(item.title)
+                    }
+                  }}
                   className="flex cursor-pointer items-center justify-between rounded-xl border border-border/40 bg-background/50 p-2.5 transition-all hover:border-primary/40 hover:bg-background"
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -628,7 +747,10 @@ export default function HomeDashboard({
               {savedWatchlists.map((w, idx) => (
                 <div
                   key={idx}
-                  onClick={() => onSearch(w.title)}
+                  onClick={() => {
+                    if (onOpenWatchlists) onOpenWatchlists()
+                    else onSearch(w.title)
+                  }}
                   className="flex cursor-pointer items-center justify-between rounded-xl border border-border/40 bg-background/50 p-2.5 transition-all hover:border-primary/40 hover:bg-background"
                 >
                   <div className="flex items-center gap-3">

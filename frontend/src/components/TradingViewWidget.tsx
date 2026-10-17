@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { Loader2 } from 'lucide-react'
 
 declare global {
   interface Window {
@@ -100,15 +99,30 @@ export function mapToTradingViewSymbol(symbol: string): string {
   if (s === 'EEM') return 'AMEX:EEM'
   if (s === 'INDA') return 'BATS:INDA'
 
-  // Indian Equities (NSE / BSE)
+  // Indian Equities & IPOs (NSE / BSE)
   if (s === 'SUZLON' || s.includes('SUZLON')) return 'NSE:SUZLON'
   if (s === 'RELIANCE' || s.includes('RELIANCE')) return 'NSE:RELIANCE'
   if (s === 'TCS' || s.includes('TCS')) return 'NSE:TCS'
   if (s === 'INFY' || s.includes('INFOSYS')) return 'NSE:INFY'
-  if (s === 'HDFCBANK' || s.includes('HDFC')) return 'NSE:HDFCBANK'
+  if (s === 'HDFCBANK' || s.includes('HDFCBANK') || s === 'HDFCBANK:NSE') return 'NSE:HDFCBANK'
   if (s === 'TATAMOTORS' || s.includes('TATA MOTORS')) return 'NSE:TATAMOTORS'
   if (s === 'TATASTEEL' || s.includes('TATA STEEL')) return 'NSE:TATASTEEL'
   if (s === 'BSE') return 'BSE:BSE'
+  if (s.includes('HYUNDAI')) return 'NSE:HYUNDAI'
+  if (s.includes('SWIGGY')) return 'NSE:SWIGGY'
+  if (s.includes('NTPCGREEN')) return 'NSE:NTPCGREEN'
+  if (s.includes('JIO')) return 'NSE:RELIANCE' // Parent holding entity on NSE
+
+  // Institutional Mutual Funds & UCITS
+  if (s === 'VFIAX') return 'MUTF:VFIAX'
+  if (s === 'FXAIX') return 'MUTF:FXAIX'
+  if (s === 'VWRL') return 'LSE:VWRL'
+  if (s.includes('SBIBLUE')) return 'BSE:SBIBLUE'
+  if (s.includes('PPFCF') || s.includes('PARAG')) return 'BSE:539000'
+  if (s.includes('HDFCBAL')) return 'BSE:500180'
+  if (s.includes('MIRAELE')) return 'BSE:532800'
+  if (s.includes('NIPPONSM')) return 'BSE:540716'
+
 
   // Foreign Exchange
   if (s.includes('GBP/USD') || s === 'GBPUSD') return 'FX:GBPUSD'
@@ -222,10 +236,10 @@ export default function TradingViewWidget({
       />
 
       {loading && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#090b0e]/90 p-4 text-center">
-          <Loader2 className="h-6 w-6 animate-spin text-primary mb-2" />
-          <span className="text-[12.5px] font-medium text-white">Connecting to TradingView Live Engine ({tvSymbol})…</span>
-          <span className="text-[11px] text-muted-foreground mt-0.5">Fetching institutional market feeds</span>
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#090b0e]/85 backdrop-blur-sm p-4 text-center">
+          <div className="h-6 w-6 institutional-spinner mb-3" />
+          <span className="text-[12.5px] font-medium text-white tracking-tight">Connecting to TradingView Feed ({tvSymbol})…</span>
+          <span className="text-[11px] text-muted-foreground mt-0.5">Streaming institutional market feeds</span>
 
           {loadTimedOut && (
             <div className="mt-3 flex flex-col items-center gap-2">

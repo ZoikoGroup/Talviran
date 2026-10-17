@@ -267,6 +267,109 @@
       transparent 70%
     );
   }
+
+  /* Smooth institutional page transitions */
+  .view-transition {
+    animation: viewFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    will-change: opacity, transform;
+  }
+
+  @keyframes viewFadeIn {
+    0% {
+      opacity: 0;
+      transform: translateY(4px) scale(0.998);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  /* Institutional card interactions */
+  .institutional-card {
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 0.2s ease,
+                box-shadow 0.2s ease,
+                background-color 0.2s ease;
+  }
+  .institutional-card:hover {
+    transform: translateY(-1.5px);
+  }
+
+  /* Institutional sleek shimmer loader */
+  .shimmer-skeleton {
+    position: relative;
+    overflow: hidden;
+    background: hsl(var(--card) / 0.7);
+  }
+  .shimmer-skeleton::after {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0,
+      rgba(255, 255, 255, 0.04) 20%,
+      rgba(255, 255, 255, 0.08) 60%,
+      rgba(255, 255, 255, 0)
+    );
+    animation: shimmer 1.8s infinite;
+    content: '';
+  }
+  .light .shimmer-skeleton::after {
+    background-image: linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0) 0,
+      rgba(0, 0, 0, 0.03) 20%,
+      rgba(0, 0, 0, 0.06) 60%,
+      rgba(0, 0, 0, 0)
+    );
+  }
+
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Minimal institutional ring spinner */
+  .institutional-spinner {
+    display: inline-block;
+    border: 2px solid hsl(var(--border));
+    border-top-color: hsl(var(--primary));
+    border-radius: 50%;
+    animation: spinRing 0.7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  @keyframes spinRing {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* ChatGPT style typing cursor */
+  .typing-cursor {
+    display: inline-block;
+    width: 6px;
+    height: 15px;
+    margin-left: 3px;
+    vertical-align: -2px;
+    background-color: hsl(var(--primary));
+    border-radius: 1px;
+    animation: typingBlink 0.8s infinite;
+  }
+
+  @keyframes typingBlink {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
 }
 
 @layer utilities {
