@@ -486,6 +486,191 @@
         "title": "Credentials",
         "type": "object"
       },
+      "DashboardAlert": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "metric_id": {
+            "title": "Metric Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "time_ago": {
+            "title": "Time Ago",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "time_ago",
+          "status",
+          "metric_id"
+        ],
+        "title": "DashboardAlert",
+        "type": "object"
+      },
+      "DashboardEconomicEvent": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "flag": {
+            "title": "Flag",
+            "type": "string"
+          },
+          "time": {
+            "title": "Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "time",
+          "flag",
+          "code",
+          "event"
+        ],
+        "title": "DashboardEconomicEvent",
+        "type": "object"
+      },
+      "DashboardOverviewResponse": {
+        "properties": {
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardAlert"
+            },
+            "title": "Alerts",
+            "type": "array"
+          },
+          "as_of": {
+            "title": "As Of",
+            "type": "string"
+          },
+          "economic_calendar": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardEconomicEvent"
+            },
+            "title": "Economic Calendar",
+            "type": "array"
+          },
+          "tickers": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardTicker"
+            },
+            "title": "Tickers",
+            "type": "array"
+          },
+          "watchlists": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardWatchlistSummary"
+            },
+            "title": "Watchlists",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tickers",
+          "alerts",
+          "economic_calendar",
+          "watchlists",
+          "as_of"
+        ],
+        "title": "DashboardOverviewResponse",
+        "type": "object"
+      },
+      "DashboardTicker": {
+        "properties": {
+          "change": {
+            "title": "Change",
+            "type": "string"
+          },
+          "is_bps": {
+            "title": "Is Bps",
+            "type": "boolean"
+          },
+          "is_up": {
+            "title": "Is Up",
+            "type": "boolean"
+          },
+          "sparkline": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Sparkline",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "value",
+          "change",
+          "is_up",
+          "is_bps",
+          "sparkline"
+        ],
+        "title": "DashboardTicker",
+        "type": "object"
+      },
+      "DashboardWatchlistSummary": {
+        "properties": {
+          "change": {
+            "title": "Change",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_up": {
+            "title": "Is Up",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "detail",
+          "change",
+          "is_up"
+        ],
+        "title": "DashboardWatchlistSummary",
+        "type": "object"
+      },
       "EvidenceItemOut": {
         "properties": {
           "as_of": {
@@ -635,6 +820,27 @@
           "items"
         ],
         "title": "EvidenceOut",
+        "type": "object"
+      },
+      "ExternalSyncRequest": {
+        "description": "Admin or automated cron job request to trigger asset provider refresh.",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "description": "Max assets in batch",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "provider": {
+            "default": "all",
+            "description": "Provider identifier: 'twelve_data', 'amfi', 'tradingview', 'all'",
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "title": "ExternalSyncRequest",
         "type": "object"
       },
       "FactTableOut": {
@@ -1457,6 +1663,188 @@
           "messages"
         ],
         "title": "SharedViewOut",
+        "type": "object"
+      },
+      "SyncResponse": {
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/SyncedAssetRecord"
+            },
+            "title": "Assets",
+            "type": "array"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "synced_at": {
+            "title": "Synced At",
+            "type": "string"
+          },
+          "total_synced": {
+            "title": "Total Synced",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "provider",
+          "synced_at",
+          "total_synced",
+          "assets"
+        ],
+        "title": "SyncResponse",
+        "type": "object"
+      },
+      "SyncedAssetRecord": {
+        "properties": {
+          "asset_class": {
+            "title": "Asset Class",
+            "type": "string"
+          },
+          "bitemporal_status": {
+            "title": "Bitemporal Status",
+            "type": "string"
+          },
+          "freshness": {
+            "title": "Freshness",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "name",
+          "asset_class",
+          "price",
+          "source",
+          "freshness",
+          "bitemporal_status"
+        ],
+        "title": "SyncedAssetRecord",
+        "type": "object"
+      },
+      "TradingViewAlertPayload": {
+        "description": "TradingView Alert / Webhook notification payload.",
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Alert trigger condition",
+            "title": "Action"
+          },
+          "asset_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "EQUITY",
+            "description": "Asset class",
+            "title": "Asset Class"
+          },
+          "exchange": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source exchange",
+            "title": "Exchange"
+          },
+          "interval": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Resolution (e.g. 1D, 1h)",
+            "title": "Interval"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Screener message",
+            "title": "Message"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observed trigger price",
+            "title": "Price"
+          },
+          "symbol": {
+            "description": "Ticker or contract symbol",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO timestamp of event",
+            "title": "Time"
+          }
+        },
+        "required": [
+          "symbol"
+        ],
+        "title": "TradingViewAlertPayload",
         "type": "object"
       },
       "ValidationError": {
@@ -2530,6 +2918,28 @@
         ]
       }
     },
+    "/api/v1/dashboard/overview": {
+      "get": {
+        "description": "Aggregates real market benchmarks, user alerts, and saved watchlists for HomeDashboard.",
+        "operationId": "get_dashboard_overview_api_v1_dashboard_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardOverviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Dashboard Overview",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
     "/api/v1/instruments": {
       "get": {
         "operationId": "list_instruments_api_v1_instruments_get",
@@ -3111,6 +3521,136 @@
         "summary": "Revoke Share",
         "tags": [
           "research"
+        ]
+      }
+    },
+    "/api/v1/sync/live-feed": {
+      "get": {
+        "description": "Retrieves all dynamically auto-ingested assets from live webhooks & sync jobs.",
+        "operationId": "get_live_synced_assets_api_v1_sync_live_feed_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SyncedAssetRecord"
+                  },
+                  "title": "Response Get Live Synced Assets Api V1 Sync Live Feed Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Live Synced Assets",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/tradingview-webhook": {
+      "post": {
+        "description": "Receives automated screener alerts and candle updates from TradingView Webhooks.",
+        "operationId": "handle_tradingview_webhook_api_v1_sync_tradingview_webhook_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-TradingView-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Tradingview-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TradingViewAlertPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Handle Tradingview Webhook Api V1 Sync Tradingview Webhook Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Handle Tradingview Webhook",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/trigger": {
+      "post": {
+        "description": "Manual or Cron-driven trigger to pull latest data from providers.",
+        "operationId": "trigger_external_sync_api_v1_sync_trigger_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalSyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trigger External Sync",
+        "tags": [
+          "sync"
         ]
       }
     },
