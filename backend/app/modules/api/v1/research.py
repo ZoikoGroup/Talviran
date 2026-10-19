@@ -19,6 +19,7 @@ import dataclasses
 import datetime as dt
 import re
 import uuid
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import httpx
@@ -148,6 +149,88 @@ _AI_DECLINATION_PATTERN = re.compile(
 )
 
 
+#: The one FX fact-table row labels this guard reads (see
+#: evidence_service._fx_rate_reply, which authors them) - "GBP/USD" is the
+#: pair's NAME (conventionally read quote-per-base) and is deliberately
+#: NOT treated as a unit assertion below; only an explicit "N <currency>
+#: per <currency>" phrase asserts one.
+_FX_PAIR_ROW_LABEL = "Currency pair"
+_FX_RATE_ROW_LABEL = "Spot rate"
+_FX_UNIT_PHRASE_PATTERN = re.compile(
+    r"(?P<value>\d[\d,]*(?:\.\d+)?)\s*"
+    r"(?P<c1>GBP|USD|pounds?|dollars?|sterling)\s*"
+    r"(?:per|a|for each|for one)\s+"
+    r"(?P<c2>GBP|USD|pounds?|dollars?|sterling)",
+    re.I,
+)
+_FX_CURRENCY_CODES = {
+    "gbp": "GBP",
+    "pound": "GBP",
+    "pounds": "GBP",
+    "sterling": "GBP",
+    "usd": "USD",
+    "dollar": "USD",
+    "dollars": "USD",
+}
+#: Relative slack for the comparison below. Generous enough for prose
+#: rounding ("1.33 USD per GBP", or a reciprocal "0.75 GBP per USD" both
+#: pass), yet far below any real inversion: the F5 bug said the same
+#: figure was "GBP per USD" instead of "USD per GBP" - ~76% off the value
+#: that direction implies, so a 5% bar separates the two classes cleanly.
+_FX_UNIT_TOLERANCE = Decimal("0.05")
+
+
+def _fx_unit_contradicts(
+    facts: evidence_service.FactTable | None, text: str
+) -> bool:
+    """F5 guard (found live 2026-10-15): AI-composed prose inverted the
+    FX rate's unit - the deterministic answer's facts table says the rate
+    is quote-per-base (1.3266 USD per GBP) while the composed sentence
+    labelled the very same figure "GBP per USD", a materially wrong
+    statement about which currency was worth what. _AI_DECLINATION_PATTERN
+    only catches a model that refuses to answer; this catches a model
+    that answers confidently with the units flipped.
+
+    Deterministic, no second LLM call, same doctrine as that guard: when
+    composed prose contradicts the accepted facts it is built on, the
+    prose goes and the rule-based answer stays. Only phrases naming both
+    sides of the canonical pair are judged - anything else is left
+    entirely to the composition, exactly as before.
+    """
+    if facts is None:
+        return False
+    rows = dict(facts.rows)
+    pair, rate_text = rows.get(_FX_PAIR_ROW_LABEL), rows.get(_FX_RATE_ROW_LABEL)
+    if pair is None or rate_text is None or "/" not in pair:
+        return False  # not an FX answer (or an unexpected shape) - nothing to check
+    base, quote = (side.strip().upper() for side in pair.split("/", 1))
+    try:
+        rate = Decimal(rate_text)
+    except InvalidOperation:
+        return False
+    if rate <= 0:
+        return False
+
+    for match in _FX_UNIT_PHRASE_PATTERN.finditer(text):
+        first = _FX_CURRENCY_CODES[match["c1"].lower()]
+        second = _FX_CURRENCY_CODES[match["c2"].lower()]
+        if first == second or {first, second} != {base, quote}:
+            continue  # not this pair's two currencies - nothing to judge
+        try:
+            value = Decimal(match["value"].replace(",", ""))
+        except InvalidOperation:
+            continue
+        if value <= 0:
+            continue
+        # The facts' rate is quote-per-base: "N <quote> per <base>" is the
+        # canonical direction and must carry the rate itself; the inverted
+        # direction must carry its reciprocal.
+        expected = rate if first == quote else Decimal(1) / rate
+        if abs(value - expected) > expected * _FX_UNIT_TOLERANCE:
+            return True
+    return False
+
+
 async def _try_ai_composed_text(
     db: AsyncSession,
     *,
@@ -204,6 +287,13 @@ async def _try_ai_composed_text(
             # either way) instead of downgrading a working answer into a
             # denial of what the platform holds - see
             # _AI_DECLINATION_PATTERN.
+            return answer
+        if _fx_unit_contradicts(answer.facts, outcome.text):
+            # Same reasoning, different defect class (F5): composed prose
+            # that states the FX rate with its unit inverted contradicts
+            # the accepted fact it was built on - keep the rule-based
+            # answer rather than publishing a materially wrong sentence
+            # next to a correct facts table.
             return answer
         return dataclasses.replace(answer, text=outcome.text)
     return answer

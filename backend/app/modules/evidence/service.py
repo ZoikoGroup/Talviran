@@ -71,6 +71,11 @@ from app.modules.market.pipeline.curve_ingest import (
 )
 from app.modules.market.pipeline.equity_ingest import METRIC_EQUITY_EOD_PRICE
 from app.modules.market.pipeline.fx_ingest import METRIC_FX_SPOT_RATE, fx_pair_subject_id
+from app.modules.market.pipeline.identity_resolution import (
+    ResolvedIdentity,
+    UnresolvedIdentity,
+    resolve_instrument_by_isin,
+)
 from app.modules.market.pipeline.macro_ingest import macro_series_subject_id
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
 from app.modules.market.pipeline.tradeweb_price_ingest import METRIC_GILT_MARKET_CLOSE_PRICE
@@ -114,6 +119,25 @@ _ADVICE_PATTERNS = [
 #: (DATA-002's "no fuzzy identity matching" is about instrument identity
 #: resolution specifically, not this kind of intent-vocabulary pattern).
 _GILT_PATTERN = re.compile(r"\bgilt|\bglit|treasury gilt|2036\b", re.I)
+# A bare ISIN is already the deterministic instrument identifier the rest
+# of the platform resolves by (DATA-002 exact alias match, never fuzzy),
+# but until now nothing ROUTED on it: "Tell me about GB0032452392"
+# mentioned no keyword any branch recognised and fell through to the
+# document-search catch-all, and "what is the price of GB00BNNGP668?"
+# answered from an unrelated corpus excerpt instead of either the
+# instrument's own facts or an honest "not in our reference data" (both
+# found live 2026-10-15, finding F2). This is a pattern only - actual
+# resolution still goes through resolve_instrument_by_isin's exact alias
+# lookup; a token that merely looks like an ISIN but isn't registered gets
+# an honest unresolved reply, never a guessed instrument.
+#
+# Shape: 2-letter country prefix + 9 alphanumerics + 1 check digit (12
+# chars total). The check digit is deliberately NOT verified here - the
+# exact alias lookup already decides whether the platform knows the ISIN,
+# and requiring a valid checksum would only send a mistyped-but-genuinely-
+# asked-about ISIN back to the document catch-all, which is the F2 bug
+# this replaces.
+_ISIN_PATTERN = re.compile(r"\b[A-Z]{2}[A-Z0-9]{9}\d\b", re.I)
 # Checked BEFORE _GILT_PATTERN below - "Gilt-Edged Market Maker" contains
 # the substring "gilt", so without this a genuine market-structure/dealer
 # question was silently misrouted to the single-instrument facts branch
@@ -140,6 +164,37 @@ _MARKET_STRUCTURE_PATTERN = re.compile(
     re.I,
 )
 _YEAR_PATTERN = re.compile(r"\b(19|20)\d{2}\b")
+#: Document-corpus questions that merely CONTAIN the word "gilt" were
+#: captured by the gilt-facts branch before the document search ever saw
+#: them (found live 2026-10-15, finding F12: "how does the DMO issue
+#: gilts?" came back as the deterministic instrument-facts text rather
+#: than a document answer). The gilt-facts branch can only ever render one
+#: instrument's data table - it cannot answer a "how/why" mechanism
+#: question at all. _prefers_document_explanation below admits exactly the
+#: explanation-framed questions for which that table is never an answer,
+#: and only when nothing more specific was named: no maturity year (that
+#: identifies a gilt the facts branch resolves), no ISIN (same), and no
+#: explicit data-request term like "price" or "yield" (those ARE facts-
+#: branch questions even when phrased "how"/"why", e.g. "why is the gilt
+#: price falling?").
+_DOCUMENT_EXPLANATION_PATTERN = re.compile(
+    r"^\s*(?:how|why)\b"
+    r"|^\s*(?:explain|describe|walk me through|tell me why|what makes|what causes|what happens)\b",
+    re.I,
+)
+_GILT_DATA_TERM_PATTERN = re.compile(
+    r"\bprices?\b|\byields?\b|\bcoupons?\b|\bmaturit|\bredemption\b"
+    r"|\bclosings?\b|\bquotes?\b|\bdurations?\b|\bdv01\b|\bspreads?\b|\bcost\b",
+    re.I,
+)
+
+
+def _prefers_document_explanation(text: str) -> bool:
+    if _YEAR_PATTERN.search(text) or _ISIN_PATTERN.search(text):
+        return False
+    if _GILT_DATA_TERM_PATTERN.search(text):
+        return False
+    return bool(_DOCUMENT_EXPLANATION_PATTERN.search(text))
 _ACCRUED_PATTERN = re.compile(
     r"accrued|day count|convention|clean|dirty|act/act|ex[- ]?dividend", re.I
 )
@@ -235,7 +290,9 @@ _HELP_PATTERN = re.compile(
 # implicit "what can you help with" - the same honest capability list a
 # generic "no data" reply would otherwise cold-open with.
 _GREETING_PATTERN = re.compile(
-    r"^\s*(hi|hello|hey|hiya|yo|greetings|good (morning|afternoon|evening))\s*[!.]?\s*$", re.I
+    r"^\s*(hi|hello|hey|hiya|yo|greetings|good (morning|afternoon|evening))( there)?"
+    r"\s*[!.]?\s*$",
+    re.I,
 )
 # Same whole-message-only reasoning as _GREETING_PATTERN - "thanks" as a
 # real word inside an actual question must never be mis-routed here. Before
@@ -244,11 +301,43 @@ _GREETING_PATTERN = re.compile(
 # question") - technically correct (no document matches "thank you") but
 # an unfriendly, un-conversational answer to what is obviously a closing
 # remark, not a data question.
-_CLOSING_PATTERN = re.compile(
-    r"^\s*(thanks?( you)?( (very|so) much)?|cheers|appreciate it|much appreciated|"
-    r"ok(ay)?,?\s*thanks?|great,?\s*thanks?|bye|goodbye|see you|that'?s all)\s*[!.]?\s*$",
+#
+# The original shape was one whole-message regex of a handful of stock
+# phrases, and live testing found the gaps that costs: "Thanks, that's all"
+# and "hello, thanks" both fell through to the generic reply (finding F1,
+# 2026-10-15) because neither is any single listed phrase. A closing is
+# now recognised as a short message BUILT from closing parts, split on
+# conversational separators: every part must be a greeting/closing word,
+# and at least one part must carry the actual closing (a modifier like
+# "ok" alone is not one - "ok" on its own is an acknowledgement, not a
+# farewell). Still whole-message: "thanks to the ex-dividend convention,
+# what is accrued interest" has a non-closing part and must never be
+# mis-routed here.
+_CLOSING_PRIMARY_PART = (
+    r"thanks?(?: you)?(?: (?:very|so) much)?(?: a (?:lot|ton))?"
+    r"|cheers"
+    r"|(?:i )?appreciate(?: it)?|much appreciated"
+    r"|bye(?: bye)?|goodbye|good night"
+    r"|see you(?: later| soon| tomorrow)?"
+    r"|that(?:'?s| is|was) all(?: for (?:now|today))?"
+    r"|nothing else(?: for now)?"
+    r"|(?:i'?m|we'?re|we are|all) (?:done|finished)"
+)
+_CLOSING_MODIFIER_PART = (
+    r"ok(?:ay)?|great|perfect|lovely|nice|well|right"
+    r"|hi|hello|hey|hiya|yo|greetings|good (?:morning|afternoon|evening)"
+)
+_CLOSING_SEPARATOR = re.compile(r"\s*(?:,|;|&|\band\b|\u2014)\s*", re.I)
+# NB the extra (?:...) around each part - an alternation binds looser than
+# concatenation, so `{_CLOSING_MODIFIER_PART}\s+` unparenthesised would
+# attach the \s+ only to the last alternative ("ok thanks" would never
+# match, which the integration suite caught).
+_CLOSING_PRIMARY_RE = re.compile(
+    rf"^\s*(?:(?:{_CLOSING_MODIFIER_PART})\s+)*(?:{_CLOSING_PRIMARY_PART})"
+    rf"(?:\s+(?:{_CLOSING_MODIFIER_PART}))*\s*$",
     re.I,
 )
+_CLOSING_MODIFIER_RE = re.compile(rf"^\s*(?:(?:{_CLOSING_MODIFIER_PART})\s*)+$", re.I)
 
 
 def _is_advice(text: str) -> bool:
@@ -264,11 +353,28 @@ def _is_greeting(text: str) -> bool:
 
 
 def _is_closing(text: str) -> bool:
-    return bool(_CLOSING_PATTERN.match(text))
+    message = re.sub(r"[.!]+$", "", text.strip())
+    if not message:
+        return False
+    parts = [part for part in _CLOSING_SEPARATOR.split(message) if part.strip()]
+    if not parts:
+        return False
+    return any(_CLOSING_PRIMARY_RE.match(part) for part in parts) and all(
+        _CLOSING_PRIMARY_RE.match(part) or _CLOSING_MODIFIER_RE.match(part) for part in parts
+    )
 
 
 def _mentions_gilt(text: str) -> bool:
     return bool(_GILT_PATTERN.search(text))
+
+
+def _mentioned_isin(text: str) -> str | None:
+    """The first ISIN-shaped token, upper-cased (ISINs are conventionally
+    written in capitals, but a user may type one lowercase - the alias
+    registry stores them uppercase, so the comparison key must be too).
+    """
+    match = _ISIN_PATTERN.search(text)
+    return match.group().upper() if match else None
 
 
 def _mentions_market_structure(text: str) -> bool:
@@ -1043,6 +1149,25 @@ async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchA
             return _default_reply("gilt reference facts")
         instrument, reference_fact = seed_instrument, seed_fact
 
+    return await _gilt_reference_reply(
+        session, instrument=instrument, reference_fact=reference_fact, now=now
+    )
+
+
+async def _gilt_reference_reply(
+    session: AsyncSession,
+    *,
+    instrument: Instrument,
+    reference_fact: AcceptedFact,
+    now: dt.datetime,
+) -> ResearchAnswer:
+    """Render one already-resolved gilt's canonical facts - the shared
+    tail of _gilt_facts_reply (keyword/year resolution) and _isin_reply
+    (exact ISIN resolution): reference terms always, plus the
+    model-implied price, Tradeweb market close and risk metrics whenever
+    their own rights profile allows. Identity resolution never happens
+    here (DATA-002: it happens once, deterministically, in the caller).
+    """
     isin = await _isin_for_instrument(session, instrument.id)
     rows: list[tuple[str, str]] = [
         ("Instrument", reference_fact.value["instrument_name"]),
@@ -1190,6 +1315,75 @@ async def _gilt_facts_reply(session: AsyncSession, query_text: str) -> ResearchA
         note=None,
         allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
         evidence_bundle_id=bundle.id,
+    )
+
+
+async def _isin_reply(
+    session: AsyncSession, *, query_text: str, isin: str
+) -> ResearchAnswer:
+    """F2 (found live 2026-10-15): a bare ISIN mentioned no keyword any
+    intent branch recognised, so "Tell me about GB0032452392" fell through
+    to the document-search catch-all and "what is the price of
+    GB00BNNGP668?" was answered from an unrelated corpus excerpt. An ISIN
+    is already the exact identifier the platform resolves instruments by
+    everywhere else (DATA-002), so it gets its own routing: exact alias
+    lookup, then that gilt's facts. An unregistered ISIN gets an honest
+    "not in our reference data" - never a fuzzy guess at which instrument
+    was probably meant, and never the seed gilt's facts (the pre-F2
+    behaviour for anything that did reach the gilt branch was to default
+    to the seed gilt, which would have been plainly wrong here).
+    """
+    if not await _display_allowed(session, "uk-dmo.gilts"):
+        return _default_reply("gilt reference facts")
+
+    resolved = await resolve_instrument_by_isin(session, isin)
+    if isinstance(resolved, UnresolvedIdentity):
+        return ResearchAnswer(
+            text=(
+                f'You asked: "{query_text}"\n\n'
+                f"I don't have {isin} in the platform's reference data, so I can't "
+                "resolve it to an instrument — Talvrin only answers from exactly "
+                "identified, reconciled data, never a guessed match. Reference "
+                "coverage today is UK gilts: try a gilt's name, a maturity year, "
+                "or ask me about the gilt curve instead."
+            ),
+            facts=None,
+            citations=[],
+            note=None,
+            allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
+            evidence_bundle_id=None,
+        )
+    assert isinstance(resolved, ResolvedIdentity)
+    now = dt.datetime.now(dt.UTC)
+    instrument = await session.get(Instrument, resolved.instrument_id)
+    reference_fact = (
+        await current_accepted_fact_at(
+            session,
+            subject_id=resolved.instrument_id,
+            metric_id=METRIC_GILT_REFERENCE_TERMS,
+            at=now,
+        )
+        if instrument is not None
+        else None
+    )
+    if instrument is None or reference_fact is None:
+        # Registered but not a gilt-with-terms (e.g. an equity's ISIN) -
+        # still an honest gap, not a fallback to some other instrument.
+        return ResearchAnswer(
+            text=(
+                f'You asked: "{query_text}"\n\n'
+                f"{isin} is registered in the reference data but has no gilt "
+                "reference terms recorded, so there are no reconciled facts I can "
+                "show for it."
+            ),
+            facts=None,
+            citations=[],
+            note=None,
+            allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
+            evidence_bundle_id=None,
+        )
+    return await _gilt_reference_reply(
+        session, instrument=instrument, reference_fact=reference_fact, now=now
     )
 
 
@@ -2601,6 +2795,12 @@ async def assemble_research_answer(
         answer = await _macro_reply(session, *macro_match)
     elif (equity_answer := await _equity_price_reply(session, query_text)) is not None:
         answer = equity_answer
+    elif (isin := _mentioned_isin(query_text)) is not None:
+        # F2: checked before the keyword branches so an ISIN resolves to
+        # the instrument it names, whether or not the query also says
+        # "gilt" - never the seed gilt (the gilt branch's no-year
+        # default) and never the document catch-all.
+        answer = await _isin_reply(session, query_text=query_text, isin=isin)
     elif _mentions_market_structure(query_text):
         # Checked before _mentions_gilt - see _MARKET_STRUCTURE_PATTERN's
         # own comment for the real "Gilt-Edged Market Maker" misroute
@@ -2609,7 +2809,19 @@ async def assemble_research_answer(
             session, query_text, http
         ) or _default_reply(query_text)
     elif _mentions_gilt(query_text):
-        answer = await _gilt_facts_reply(session, query_text)
+        if _prefers_document_explanation(query_text):
+            # F12: an explanation-framed question that merely mentions
+            # "gilt" - the instrument-facts branch can only ever render
+            # one gilt's data table, which is never an answer to
+            # "how"/"why". Document corpus first; fall back to the gilt
+            # facts when nothing there matches, so this is never worse
+            # than the pre-F12 routing.
+            answer = (
+                await _document_backed_fallback_reply(session, query_text, http)
+                or await _gilt_facts_reply(session, query_text)
+            )
+        else:
+            answer = await _gilt_facts_reply(session, query_text)
     elif _mentions_treasury(query_text):
         answer = _treasury_yield_reply(query_text)
     elif _mentions_etf(query_text):
