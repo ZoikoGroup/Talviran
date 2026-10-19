@@ -4,10 +4,15 @@ product behaviour worth keeping per the plan this was built from), so these
 prove the port is faithful, not that the patterns themselves are novel.
 """
 
+from app.modules.api.v1.research import _fx_unit_contradicts
 from app.modules.evidence.service import (
     SEED_GILT_ISIN,
+    FactTable,
     _is_advice,
+    _is_closing,
+    _is_greeting,
     _is_help_request,
+    _mentioned_isin,
     _mentioned_macro_series,
     _mentioned_year,
     _mentions_accrued,
@@ -23,6 +28,7 @@ from app.modules.evidence.service import (
     _mentions_mutual_fund,
     _mentions_yield_curve,
     _normalise_coupon_text,
+    _prefers_document_explanation,
 )
 
 ADVICE_QUERIES = [
@@ -296,5 +302,99 @@ def test_mutual_fund_mentions_detected() -> None:
     assert _mentions_mutual_fund("what is a mutual fund net asset value")
     assert _mentions_mutual_fund("amfi daily nav records")
     assert not _mentions_mutual_fund("price of crude oil")
+
+
+def test_multi_part_closing_remarks_are_recognised() -> None:
+    # Found live 2026-10-15 (finding F1): "Thanks, that's all" and
+    # "hello, thanks" fell through to the cold generic reply because the
+    # closing pattern only knew single stock phrases - a closing is now a
+    # short message built from closing parts, not one exact phrase.
+    for closing in (
+        "Thanks, that's all",
+        "thanks, that's all!",
+        "thats all",
+        "hello, thanks",
+        "ok, thanks",
+        "ok thanks",  # caught by the integration suite, not the unit list
+        "great thanks",
+        "ok, that's all",
+        "Thank you very much",
+        "cheers, see you",
+        "bye and thanks",
+        "hi, thanks",
+        "thanks",
+        "bye",
+    ):
+        assert _is_closing(closing), closing
+
+
+def test_closing_still_ignores_real_questions_and_bare_acknowledgements() -> None:
+    assert not _is_closing("thanks to the ex-dividend convention, what is accrued interest")
+    assert not _is_closing("what is the yield of the 2036 gilt?")
+    assert not _is_closing("ok")  # a bare modifier is an acknowledgement, not a farewell
+    assert not _is_closing("is that all")
+
+
+def test_greeting_with_there_variant_is_recognised() -> None:
+    # Same F1 sweep: "hey there" fell through while bare "hey" answered.
+    assert _is_greeting("hey there")
+    assert _is_greeting("hello there!")
+    assert _is_greeting("hi")
+    assert _is_greeting("good morning")
+    # ...but a question that merely opens with a greeting is not one
+    assert not _is_greeting("hi there, what is the gilt price")
+
+
+def test_bare_isin_is_extracted_for_routing() -> None:
+    # Found live 2026-10-15 (finding F2): neither of these resolved.
+    assert _mentioned_isin("Tell me about GB0032452392") == "GB0032452392"
+    assert _mentioned_isin("what is the price of GB00BNNGP668?") == "GB00BNNGP668"
+    assert _mentioned_isin("gb0032452392") == "GB0032452392"
+    # an ISIN must not be confused with a year, and non-ISIN queries must
+    # extract nothing (a stray match would hijack the whole router)
+    assert _mentioned_year(SEED_GILT_ISIN) is None
+    assert _mentioned_isin("tell me about the 2036 gilt") is None
+    assert _mentioned_isin("what's the weather like") is None
+    assert _mentioned_isin("GBPUSD spot rate") is None
+
+
+def test_document_explanation_framing_with_gilt_is_detected() -> None:
+    # Found live 2026-10-15 (finding F12): "how does the DMO issue
+    # gilts?" returned the deterministic instrument-facts text - a data
+    # table is never an answer to "how"/"why".
+    assert _prefers_document_explanation("how does the DMO issue gilts?")
+    assert _prefers_document_explanation("why do gilts trade below par?")
+    assert _prefers_document_explanation("how are gilts issued?")
+    assert _prefers_document_explanation("explain how gilt taxation works")
+    # ...while anything naming a specific instrument or asking for data
+    # keeps reaching the facts branch
+    assert not _prefers_document_explanation("why is the gilt price falling?")
+    assert not _prefers_document_explanation("tell me about the 2036 gilt")
+    assert not _prefers_document_explanation("how much does GB0032452392 cost?")
+    assert not _prefers_document_explanation("what is accrued interest?")
+
+
+def test_fx_unit_inversion_in_ai_prose_is_flagged() -> None:
+    # Found live 2026-10-15 (finding F5): the deterministic facts say the
+    # rate is quote-per-base (USD per GBP) while composed prose labelled
+    # the same figure "GBP per USD".
+    facts = FactTable(
+        title="GBP/USD exchange rate",
+        rows=[("Currency pair", "GBP/USD"), ("Spot rate", "1.3266")],
+    )
+    assert _fx_unit_contradicts(facts, "The rate is 1.3266 GBP per USD.")
+    assert _fx_unit_contradicts(facts, "You get 1.3266 pounds for each dollar.")
+    # correct statements pass through untouched
+    assert not _fx_unit_contradicts(facts, "1.3266 USD per GBP")
+    assert not _fx_unit_contradicts(facts, "about 1.33 US dollars per pound")
+    # the reciprocal, stated correctly, is also fine
+    assert not _fx_unit_contradicts(facts, "0.7549 GBP per USD")
+    # the pair NAME is not a unit assertion - "GBP/USD" reads
+    # quote-per-base by convention and must never be parsed as one
+    assert not _fx_unit_contradicts(facts, "The GBP/USD spot rate is 1.3266, up today.")
+    # unrelated phrases naming one currency, or another pair, are not judged
+    assert not _fx_unit_contradicts(facts, "Gilts are priced in pounds per 100 nominal.")
+    # no facts at all (greeting/advice/no-data replies) - nothing to contradict
+    assert not _fx_unit_contradicts(None, "1.3266 GBP per USD")
 
 

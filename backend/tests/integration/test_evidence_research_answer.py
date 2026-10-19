@@ -1423,7 +1423,7 @@ async def test_bare_greeting_gets_a_short_conversational_reply_not_the_cold_defa
     """
     await _seed_capability_and_jurisdiction(db_session)
 
-    for greeting in ("hi", "Hello!", "hey", "good morning"):
+    for greeting in ("hi", "Hello!", "hey", "good morning", "hey there"):
         answer = await assemble_research_answer(
             db_session, query_text=greeting, principal_id=None, account_id=None,
         )
@@ -1444,7 +1444,12 @@ async def test_closing_remark_gets_a_warm_reply_not_the_cold_default(
     """
     await _seed_capability_and_jurisdiction(db_session)
 
-    for closing in ("thanks", "thank you", "Thank you so much!", "cheers", "bye", "ok thanks"):
+    for closing in (
+        "thanks", "thank you", "Thank you so much!", "cheers", "bye", "ok thanks",
+        # multi-part closings (finding F1, 2026-10-15) - both of these
+        # used to fall through to the cold generic reply
+        "Thanks, that's all", "hello, thanks",
+    ):
         answer = await assemble_research_answer(
             db_session, query_text=closing, principal_id=None, account_id=None,
         )
@@ -1486,3 +1491,132 @@ async def test_greeting_pattern_does_not_false_positive_on_real_questions(
     )
     assert "Right now I can answer" not in answer.text
     assert 'You asked: "gilt reference facts"' in answer.text
+
+
+async def test_bare_isin_routes_to_that_gilts_facts(db_session: AsyncSession) -> None:
+    """Found live 2026-10-15 (finding F2): "Tell me about GB0032452392"
+    mentioned no keyword any intent branch recognised and fell to the
+    document-search catch-all, despite the platform holding the very
+    instrument that ISIN names. A bare ISIN now routes through exact
+    alias resolution (DATA-002) to that gilt's own facts.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="Tell me about GB0032452392", principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.FACTUAL_EVIDENCE
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["ISIN"] == SEED_GILT_ISIN
+    assert rows["Instrument"] == "4 1/4% Treasury Stock 2036"
+
+
+async def test_isin_of_a_different_gilt_shows_that_gilt_not_the_seed(
+    db_session: AsyncSession,
+) -> None:
+    """The F2 branch must resolve the named ISIN, never fall back to the
+    seed gilt the no-year keyword path defaults to.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    seed = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, seed.id)
+    other = await _seed_another_gilt(
+        db_session, isin="GB00BM8Z2V59", name="4 7/8% Treasury Gilt 2055",
+        redemption_date="2055-12-07", coupon_rate="4.875",
+    )
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="GB00BM8Z2V59 please", principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["ISIN"] == "GB00BM8Z2V59"
+    assert rows["Instrument"] == "4 7/8% Treasury Gilt 2055"
+    assert other is not None
+
+
+async def test_unknown_isin_gets_an_honest_unresolved_reply(db_session: AsyncSession) -> None:
+    """The other half of F2: "what is the price of GB00BNNGP668?" was
+    answered from an unrelated corpus excerpt ("I do not have sufficient
+    evidence..."). An ISIN that is not in the reference data must get an
+    honest "can't resolve it" - never a fuzzy guess, and never some other
+    instrument's facts.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the price of GB00BNNGP668?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.NEUTRAL_EDUCATION
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+    assert "GB00BNNGP668" in answer.text
+    assert "reference data" in answer.text
+    # the honest gap reply, not the cold generic capability list
+    assert "doesn't yet have reconciled data" not in answer.text
+
+
+async def test_gilt_explanation_question_reaches_the_document_corpus(
+    db_session: AsyncSession,
+) -> None:
+    """Found live 2026-10-15 (finding F12): document questions containing
+    "gilt" were captured by the instrument-facts branch, whose one-instrument
+    data table is never an answer to "how"/"why". An explanation-framed
+    question with no year, no ISIN and no data-request term now searches
+    the document corpus first.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    profile_id = await _seed_rights_profile(
+        db_session, code="test.doc-display-f12", actions=["display"]
+    )
+    document = await _seed_accrued_document_chunk(
+        db_session, rights_profile_id=profile_id,
+        text_content="Issue and redemption of gilts: the DMO issues gilts through "
+        "competitive auction, with gilt-edged market makers bidding at every auction "
+        "in the gilts they are committed to make markets in.",
+    )
+    # A gilt is seeded on purpose: the misroute this replaces answered with
+    # its data table, so with the fix the document citation - not the
+    # facts table - is the distinguishing signal.
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="how are gilts issued?", principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.DOCUMENT_EXPLANATION
+    assert answer.citations and answer.citations[0].label == document.title
+
+
+async def test_gilt_data_question_still_reaches_the_facts_branch(
+    db_session: AsyncSession,
+) -> None:
+    """The F12 explanation-first path must not steal data questions that
+    also open with "how"/"why" - a price question with a year in it is
+    unambiguously the facts branch's.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="why is the price of the 2036 gilt what it is?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.FACTUAL_EVIDENCE
+    assert answer.facts is not None
+    assert dict(answer.facts.rows)["ISIN"] == SEED_GILT_ISIN
