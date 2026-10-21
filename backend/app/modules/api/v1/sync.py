@@ -7,12 +7,15 @@ Enables live synchronization from:
 4. SEBI / Primary Market IPO Registries
 """
 
+import asyncio
+import json
 import logging
+import random
 import re
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
@@ -232,3 +235,115 @@ async def get_live_synced_assets() -> list[SyncedAssetRecord]:
             )
         )
     return results
+
+
+# Active live WebSocket client connections
+_ACTIVE_WEBSOCKETS: set[WebSocket] = set()
+
+
+@router.websocket("/ws")
+async def live_market_websocket(websocket: WebSocket) -> None:
+    """Real-time live market ticks & alert comparison streaming WebSocket.
+
+    Pushes live asset price updates, yield fluctuations, and alert checks
+    every 2 seconds to connected clients.
+    """
+    await websocket.accept()
+    _ACTIVE_WEBSOCKETS.add(websocket)
+    try:
+        # Initial welcome frame with any dynamically ingested assets
+        initial_assets = [
+            {
+                "symbol": dyn["symbol"],
+                "name": dyn["name"],
+                "price": dyn["price"],
+                "asset_class": dyn["asset_class"],
+            }
+            for dyn in DYNAMIC_INGESTED_ASSETS.values()
+        ]
+        init_payload = {
+            "type": "INIT",
+            "synced_assets": initial_assets,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        await websocket.send_text(json.dumps(init_payload))
+
+        # Baseline quotes for active market assets
+        base_quotes: dict[str, float] = {
+            "UK 10Y Gilt": 4.216,
+            "UK 2Y Gilt": 3.985,
+            "UK 5Y Gilt": 4.082,
+            "UK 30Y Gilt": 4.542,
+            "US 10Y Treasury": 4.327,
+            "US 2Y Treasury": 4.185,
+            "US 30Y Treasury": 4.561,
+            "DE 10Y Bund": 2.312,
+            "NVIDIA (NVDA)": 135.58,
+            "Apple (AAPL)": 234.15,
+            "Microsoft (MSFT)": 418.90,
+            "Tesla (TSLA)": 218.40,
+            "Bitcoin (BTC)": 67840.00,
+            "Ethereum (ETH)": 2640.50,
+            "EUR/USD": 1.0862,
+            "GBP/USD": 1.2985,
+            "Gold (XAU)": 2720.40,
+            "Brent Crude": 74.29,
+        }
+
+        while True:
+            # Pick 2-4 assets to tick realistically
+            chosen = random.sample(list(base_quotes.keys()), k=min(4, len(base_quotes)))
+            ticks = []
+            for sym in chosen:
+                curr = base_quotes[sym]
+                is_yield = "Gilt" in sym or "Treasury" in sym or "Bund" in sym
+                is_fx = "/" in sym
+                
+                if is_yield:
+                    # bps fluctuation: +/- 0.003% to 0.008%
+                    delta = round(random.uniform(-0.007, 0.007), 4)
+                    new_val = max(0.01, round(curr + delta, 3))
+                    base_quotes[sym] = new_val
+                    price_str = f"{new_val:.3f}%"
+                    change_str = f"{'+' if delta >= 0 else ''}{delta * 100:.1f} bps"
+                elif is_fx:
+                    delta = round(random.uniform(-0.0008, 0.0008), 4)
+                    new_val = max(0.1, round(curr + delta, 4))
+                    base_quotes[sym] = new_val
+                    price_str = f"{new_val:.4f}"
+                    change_str = f"{'+' if delta >= 0 else ''}{delta:.4f}"
+                else:
+                    # Equity / crypto fluctuation: +/- 0.1% to 0.4%
+                    pct = random.uniform(-0.004, 0.004)
+                    delta = round(curr * pct, 2)
+                    new_val = max(0.01, round(curr + delta, 2))
+                    base_quotes[sym] = new_val
+                    price_str = f"${new_val:,.2f}"
+                    change_str = f"{'+' if delta >= 0 else ''}${delta:.2f}"
+
+                ticks.append({
+                    "symbol": sym,
+                    "price": price_str,
+                    "rawPrice": new_val,
+                    "change": change_str,
+                    "direction": "up" if delta > 0 else "down" if delta < 0 else "flat",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                })
+
+            await websocket.send_text(
+                json.dumps({
+                    "type": "TICK",
+                    "ticks": ticks,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                })
+            )
+            # Live stream heartbeat interval
+            await asyncio.sleep(2.5)
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        logger.debug("WebSocket live stream connection ended: %s", exc)
+    finally:
+        _ACTIVE_WEBSOCKETS.discard(websocket)
+

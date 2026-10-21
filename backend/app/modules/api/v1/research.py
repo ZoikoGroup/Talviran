@@ -48,6 +48,7 @@ _IDEMPOTENCY_SCOPE = "POST /api/v1/research"
 class ResearchIn(BaseModel):
     conversation_id: uuid.UUID
     query: str = Field(min_length=1, max_length=research_service.MAX_MESSAGE_LENGTH)
+    model: str | None = None
 
 
 class CitationOut(BaseModel):
@@ -241,6 +242,7 @@ async def _try_ai_composed_text(
     account_id: uuid.UUID,
     dek: bytes,
     http: httpx.AsyncClient,
+    model: str | None = None,
 ) -> evidence_service.ResearchAnswer:
     """Best-effort AI Gateway composition on top of the rule-based answer
     evidence_service already produced - AI-001 A0+A1+A2 wired into the
@@ -261,6 +263,11 @@ async def _try_ai_composed_text(
     conversation = await research_service.get_conversation(
         db, conversation_id=conversation_id, dek=dek
     )
+    task_type = model or conversation.model
+    if model and model != conversation.model:
+        await research_service.set_conversation_model(
+            db, conversation_id=conversation_id, model=model
+        )
     settings = get_settings()
     api_keys = {
         code: key
@@ -270,7 +277,7 @@ async def _try_ai_composed_text(
 
     outcome = await invoke_model(
         db,
-        task_type=conversation.model,
+        task_type=task_type,
         evidence_bundle_id=answer.evidence_bundle_id,
         instruction=query_text,
         http=http,
@@ -343,6 +350,7 @@ async def create_research_answer(
             account_id=identity.account_id,
             dek=dek,
             http=http,
+            model=body.model,
         )
 
         import json

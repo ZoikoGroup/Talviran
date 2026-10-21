@@ -437,6 +437,17 @@
       },
       "ConversationPatch": {
         "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
           "project_id": {
             "anyOf": [
               {
@@ -1262,6 +1273,17 @@
             "format": "uuid",
             "title": "Conversation Id",
             "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
           },
           "query": {
             "maxLength": 100000,

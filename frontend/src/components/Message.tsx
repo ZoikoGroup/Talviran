@@ -31,13 +31,13 @@ const PILL_STYLE: Record<Freshness, string> = {
   SOURCE: 'bg-secondary text-muted-foreground',
 }
 
-/** Render **bold** spans without pulling in a markdown dependency. */
-function RichText({ children }: { children: string }) {
+/** Render headings (###, ##, #), bullets, and **bold** spans without breaking into raw markdown. */
+function InlineFormatted({ text }: { text: string }) {
   return (
     <>
-      {children.split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
+      {text.split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
         p.startsWith('**') && p.endsWith('**') ? (
-          <strong key={i} className="font-semibold">
+          <strong key={i} className="font-semibold text-foreground">
             {p.slice(2, -2)}
           </strong>
         ) : (
@@ -45,6 +45,68 @@ function RichText({ children }: { children: string }) {
         )
       )}
     </>
+  )
+}
+
+function RichText({ children }: { children: string }) {
+  const lines = children.split('\n')
+
+  return (
+    <div className="space-y-2">
+      {lines.map((line, idx) => {
+        const trimmed = line.trim()
+        if (!trimmed) {
+          return <div key={idx} className="h-1.5" />
+        }
+
+        // Headings: ### H3, ## H2, # H1
+        const h3Match = line.match(/^###\s+(.*)$/)
+        if (h3Match) {
+          return (
+            <h3 key={idx} className="pt-1.5 pb-1 text-[15px] font-bold tracking-tight text-foreground/95">
+              <InlineFormatted text={h3Match[1]} />
+            </h3>
+          )
+        }
+
+        const h2Match = line.match(/^##\s+(.*)$/)
+        if (h2Match) {
+          return (
+            <h2 key={idx} className="pt-2 pb-1 text-[16px] font-bold tracking-tight text-foreground">
+              <InlineFormatted text={h2Match[1]} />
+            </h2>
+          )
+        }
+
+        const h1Match = line.match(/^#\s+(.*)$/)
+        if (h1Match) {
+          return (
+            <h1 key={idx} className="pt-2.5 pb-1 text-[17px] font-extrabold tracking-tight text-foreground">
+              <InlineFormatted text={h1Match[1]} />
+            </h1>
+          )
+        }
+
+        // Unordered lists: • or - or *
+        const bulletMatch = line.match(/^([•\-\*]|\d+\.)\s+(.*)$/)
+        if (bulletMatch) {
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-1 leading-relaxed">
+              <span className="select-none text-muted-foreground/80">•</span>
+              <div className="flex-1">
+                <InlineFormatted text={bulletMatch[2]} />
+              </div>
+            </div>
+          )
+        }
+
+        return (
+          <p key={idx} className="leading-relaxed">
+            <InlineFormatted text={line} />
+          </p>
+        )
+      })}
+    </div>
   )
 }
 

@@ -113,18 +113,36 @@ export default function App() {
   const { theme, setTheme } = useTheme()
   type NavView = 'home' | 'markets' | 'watchlists' | 'monitoring' | 'settings' | 'research'
 
-  const [currentView, setCurrentView] = useState<NavView>('home')
-  const [showSettings, setShowSettings] = useState(false)
-  const [showMonitoring, setShowMonitoring] = useState(false)
-  const [showWatchlists, setShowWatchlists] = useState(false)
-  const [showMarkets, setShowMarkets] = useState(false)
-  const [showHome, setShowHome] = useState(true)
+  // Retrieve initial view on reload/refresh from history state, URL hash, or session storage
+  const getInitialView = (): NavView => {
+    if (typeof window === 'undefined') return 'home'
+    const hashView = window.location.hash.replace('#', '') as NavView
+    const validViews: NavView[] = ['home', 'markets', 'watchlists', 'monitoring', 'settings', 'research']
+    if (validViews.includes(hashView)) return hashView
+    const stateView = window.history.state?.talvrinView as NavView
+    if (validViews.includes(stateView)) return stateView
+    try {
+      const saved = sessionStorage.getItem('talvrin_active_view') as NavView
+      if (validViews.includes(saved)) return saved
+    } catch {
+      // fallback
+    }
+    return 'home'
+  }
+
+  const initialView = getInitialView()
+  const [currentView, setCurrentView] = useState<NavView>(initialView)
+  const [showSettings, setShowSettings] = useState(initialView === 'settings')
+  const [showMonitoring, setShowMonitoring] = useState(initialView === 'monitoring')
+  const [showWatchlists, setShowWatchlists] = useState(initialView === 'watchlists')
+  const [showMarkets, setShowMarkets] = useState(initialView === 'markets')
+  const [showHome, setShowHome] = useState(initialView === 'home')
   const [showSearch, setShowSearch] = useState(false)
   const [monitoringInitialSymbol, setMonitoringInitialSymbol] = useState<string | null>(null)
   const [marketsInitialSymbol, setMarketsInitialSymbol] = useState<string | null>(null)
   const [taggedAsset, setTaggedAsset] = useState<TaggedAsset | null>(null)
 
-  // Internal view navigation helper that syncs with browser history
+  // Internal view navigation helper that syncs with browser history, hash and storage
   const navigateToView = useCallback((nextView: NavView, replace = false) => {
     setCurrentView(nextView)
     setShowHome(nextView === 'home')
@@ -133,11 +151,19 @@ export default function App() {
     setShowMonitoring(nextView === 'monitoring')
     setShowSettings(nextView === 'settings')
 
+    try {
+      sessionStorage.setItem('talvrin_active_view', nextView)
+    } catch {
+      // ignore
+    }
+
     const stateObj = { talvrinView: nextView }
+    const urlHash = nextView === 'home' ? '' : `#${nextView}`
+    const targetUrl = window.location.pathname + (urlHash ? `${urlHash}` : '')
     if (replace) {
-      window.history.replaceState(stateObj, '')
+      window.history.replaceState(stateObj, '', targetUrl)
     } else {
-      window.history.pushState(stateObj, '')
+      window.history.pushState(stateObj, '', targetUrl)
     }
   }, [])
 
@@ -149,13 +175,14 @@ export default function App() {
 
   // Hardware backing (Android back button/gestures, mouse button 3, Alt+Left, and browser back)
   useEffect(() => {
-    // Prime initial history entry with 'home'
-    window.history.replaceState({ talvrinView: 'home', depth: 0 }, '')
+    // Prime initial history entry with current view (not unconditionally overriding to home on reload)
+    const urlHash = initialView === 'home' ? '' : `#${initialView}`
+    window.history.replaceState({ talvrinView: initialView, depth: 0 }, '', window.location.pathname + urlHash)
     // Push an additional defensive buffer state so hardware back stays within Talvrin
-    window.history.pushState({ talvrinView: 'home', depth: 1 }, '')
+    window.history.pushState({ talvrinView: initialView, depth: 1 }, '', window.location.pathname + urlHash)
 
     const handlePopState = (e: PopStateEvent) => {
-      const stateView: NavView = e.state?.talvrinView || 'home'
+      const stateView: NavView = e.state?.talvrinView || getInitialView()
       setCurrentView(stateView)
       setShowHome(stateView === 'home')
       setShowMarkets(stateView === 'markets')
@@ -163,10 +190,16 @@ export default function App() {
       setShowMonitoring(stateView === 'monitoring')
       setShowSettings(stateView === 'settings')
 
+      try {
+        sessionStorage.setItem('talvrin_active_view', stateView)
+      } catch {
+        // ignore
+      }
+
       // Trap hardware back at home: if user triggers hardware back while on home,
       // prevent the browser from escaping to external history or closing.
       if (stateView === 'home') {
-        window.history.pushState({ talvrinView: 'home', depth: 1 }, '')
+        window.history.pushState({ talvrinView: 'home', depth: 1 }, '', window.location.pathname)
       }
     }
 
@@ -343,11 +376,7 @@ export default function App() {
     const chatId = targetChatId ?? activeId
     const before = chats.find((c) => c.id === chatId)
     const isFirstMessage = !before || before.messages.length === 0
-    // A chat's model is fixed forever once its backend conversation exists
-    // (research.conversation.model is read once, at creation) - use that
-    // bound value for every later message, never the picker's current
-    // value, which the user is free to change for the *next* chat without
-    // affecting this one.
+    // Use the chat's current model or fallback to active picker selection
     const effectiveModel = before?.model ?? model
 
     setDraft('')
@@ -365,6 +394,7 @@ export default function App() {
               ...c,
               // First message becomes the chat title in the sidebar.
               title: c.messages.length === 0 ? chatTitle : c.title,
+              model: effectiveModel,
               hasMessages: true,
               messages: [...c.messages, { role: 'user', text: content, taggedAsset: currentAsset }],
             }
@@ -402,7 +432,7 @@ export default function App() {
           ? `[Context: Tagged Asset ${currentAsset.name} (${currentAsset.symbol}), Asset Class: ${currentAsset.assetClass || 'SOVEREIGN'}, Authoritative Source: ${currentAsset.source || 'Primary Market'}]. Query: ${content}`
           : content
 
-        const answer = await postResearch(backendId, wireQuery)
+        const answer = await postResearch(backendId, wireQuery, effectiveModel)
         appendAssistantMessage(chatId, {
           role: 'assistant',
           model: effectiveModel,
@@ -860,8 +890,20 @@ export default function App() {
                 setAttachments((prev) => prev.filter((_, n) => n !== i))
               }
               model={active.model ?? model}
-              onModelChange={setModel}
-              modelLocked={Boolean(active.model)}
+              onModelChange={(newModel) => {
+                setModel(newModel)
+                if (active) {
+                  setChats((prev) =>
+                    prev.map((c) => (c.id === active.id ? { ...c, model: newModel } : c))
+                  )
+                  if (active.backendId && !USE_MOCK) {
+                    patchChat(active.backendId, { model: newModel }).catch(() => {
+                      // Non-critical background sync
+                    })
+                  }
+                }
+              }}
+              modelLocked={false}
               taggedAsset={taggedAsset}
               onRemoveTaggedAsset={() => setTaggedAsset(null)}
               onOpenSearch={() => setShowSearch(true)}

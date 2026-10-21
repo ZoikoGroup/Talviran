@@ -256,7 +256,10 @@ export default function TradingViewScreener({
       <div
         ref={containerRef}
         className="tradingview-widget-container relative w-full overflow-hidden rounded-xl border border-border bg-[#0d0f14]"
-        style={{ height: typeof height === 'number' ? `${height}px` : height }}
+        style={{
+          minHeight: '780px',
+          height: typeof height === 'number' ? `${height}px` : height || '780px',
+        }}
       />
     </div>
   )

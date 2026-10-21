@@ -13,6 +13,7 @@ import {
   Layers,
   ShieldCheck,
   Download,
+  BarChart2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Field, SubmitButton } from '@/components/ui/field'
@@ -461,9 +462,6 @@ export default function WatchlistsPage({
               <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                 Watchlists & Market Portfolios
               </h1>
-              <p className="text-[13px] text-muted-foreground">
-                Bitemporal truth, canonical reference series, and real-time sovereign yield tracking.
-              </p>
             </div>
           </div>
         </div>
@@ -633,13 +631,16 @@ export default function WatchlistsPage({
                         {/* Instrument */}
                         <td className="py-3.5 pl-4 pr-3">
                           <div className="flex flex-col">
-                            <span className="font-semibold text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5">
-                              {item.symbol}
-                              <span className="opacity-0 group-hover:opacity-100 text-[10px] text-primary transition font-normal bg-primary/10 px-1 rounded">
-                                View Chart
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-foreground group-hover:text-primary transition-colors whitespace-nowrap">
+                                {item.symbol}
                               </span>
-                            </span>
-                            <span className="text-[11.5px] text-muted-foreground">
+                              <span className="opacity-0 group-hover:opacity-100 transition-all duration-150 inline-flex items-center gap-1 rounded-md bg-primary/15 border border-primary/25 px-1.5 py-0.5 text-[10.5px] font-medium text-primary whitespace-nowrap shadow-2xs">
+                                <BarChart2 className="h-2.5 w-2.5" />
+                                <span>View Chart</span>
+                              </span>
+                            </div>
+                            <span className="text-[11.5px] text-muted-foreground truncate max-w-xs">
                               {item.name}
                             </span>
                           </div>

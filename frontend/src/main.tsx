@@ -18,6 +18,7 @@ import Contact from '@/pages/Contact'
 import Help from '@/pages/Help'
 import { AuthProvider, useAuth } from '@/auth/AuthContext'
 import { ThemeProvider } from '@/theme/ThemeContext'
+import { LiveMarketProvider } from '@/hooks/useLiveMarket'
 import '@/index.css'
 
 /** Sends signed-out visitors to sign in, remembering where they were going.
@@ -46,7 +47,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter>
+        <LiveMarketProvider>
+          <BrowserRouter>
           <Routes>
             <Route
               path="/login"
@@ -92,6 +94,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
+        </LiveMarketProvider>
       </AuthProvider>
     </ThemeProvider>
   </React.StrictMode>
