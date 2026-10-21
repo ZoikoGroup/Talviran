@@ -13,6 +13,8 @@ import {
 import { cn } from '@/lib/utils'
 import InstitutionalChart from '@/components/InstitutionalChart'
 import TradingViewWidget, { mapToTradingViewSymbol } from '@/components/TradingViewWidget'
+import SetAlertModal from '@/components/SetAlertModal'
+import { toast } from 'sonner'
 import type { TaggedAsset } from '@/data/mockReply'
 
 interface TradingViewModalProps {
@@ -56,7 +58,7 @@ export default function TradingViewModal({
   bitemporalStatus,
   onClose,
   onStartResearch,
-  onOpenMonitoring,
+  onOpenMonitoring: _onOpenMonitoring,
 }: TradingViewModalProps) {
   const isSovereign = assetClass === 'SOVEREIGN' || symbol.toLowerCase().includes('gilt') || symbol.toLowerCase().includes('treasury') || symbol.toLowerCase().includes('bund') || symbol.toLowerCase().includes('jgb')
   
@@ -65,6 +67,7 @@ export default function TradingViewModal({
   const [useTradingViewEmbed, setUseTradingViewEmbed] = useState(false)
   const [isMaximized, setIsMaximized] = useState(false)
   const [hoverQuote, setHoverQuote] = useState<HoverQuote | null>(null)
+  const [showSetAlert, setShowSetAlert] = useState(false)
 
   const isUp = direction === 'up'
   const isDown = direction === 'down'
@@ -141,8 +144,8 @@ export default function TradingViewModal({
             </button>
 
             <button
-              onClick={() => onOpenMonitoring(symbol)}
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-border bg-card/60 px-3 py-1.5 text-[12px] font-medium text-foreground hover:bg-accent transition"
+              onClick={() => setShowSetAlert(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3 py-1.5 text-[12px] font-semibold text-primary hover:bg-primary/20 transition cursor-pointer shadow-xs"
             >
               <Bell className="h-3.5 w-3.5 text-primary" />
               <span>Set Alert</span>
@@ -305,6 +308,18 @@ export default function TradingViewModal({
           </div>
         </div>
       </div>
+
+      {showSetAlert && (
+        <SetAlertModal
+          symbol={symbol}
+          name={name}
+          currentPrice={last}
+          onClose={() => setShowSetAlert(false)}
+          onAlertCreated={(created) => {
+            toast.success(`Alert armed for ${created.assetSymbol} at ${created.threshold}`)
+          }}
+        />
+      )}
     </div>,
     document.body
   )

@@ -109,6 +109,10 @@ class Settings(BaseSettings):
     tradeweb_username: str | None = None
     tradeweb_password: str | None = None
 
+    #: Resend email provider configuration for objective price & market alerts
+    resend_api_key: str | None = None
+    alerts_from_email: str = "alerts@talvrin.com"
+
 
 @lru_cache
 def get_settings() -> Settings:

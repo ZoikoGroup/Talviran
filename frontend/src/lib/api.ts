@@ -199,12 +199,13 @@ export const getChat = (chatId: string): Promise<ChatDetail> =>
 
 export const patchChat = (
   chatId: string,
-  patch: { title?: string; projectId?: string | null }
+  patch: { title?: string; projectId?: string | null; model?: string }
 ): Promise<void> =>
   apiFetch<void>(`/api/v1/chats/${chatId}`, {
     method: 'PATCH',
     body: JSON.stringify({
       ...(patch.title !== undefined ? { title: patch.title } : {}),
+      ...(patch.model !== undefined ? { model: patch.model } : {}),
       // `undefined` (omitted) means "leave the project alone"; `null` means
       // "remove from its project" — the backend distinguishes the two by
       // whether the key is present at all, not by its value.
@@ -292,11 +293,19 @@ interface ResearchWire {
   note: string | null
 }
 
-export const postResearch = (conversationId: string, query: string): Promise<ResearchAnswer> =>
+export const postResearch = (
+  conversationId: string,
+  query: string,
+  model?: string
+): Promise<ResearchAnswer> =>
   apiFetch<ResearchWire>('/api/v1/research', {
     method: 'POST',
     headers: { 'Idempotency-Key': crypto.randomUUID() },
-    body: JSON.stringify({ conversation_id: conversationId, query }),
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      query,
+      ...(model ? { model } : {}),
+    }),
   }).then((r) => ({
     requestId: r.request_id,
     generatedAt: r.generated_at,

@@ -77,6 +77,7 @@ class ConversationIn(BaseModel):
 
 class ConversationPatch(BaseModel):
     title: str | None = Field(default=None, max_length=service.MAX_TITLE_LENGTH)
+    model: str | None = None
     #: Present-and-null means "remove from its project", so the field is
     #: distinguished from absent by `model_fields_set`.
     project_id: uuid.UUID | None = None
@@ -309,6 +310,15 @@ async def patch_chat(
         if "title" in fields and body.title is not None:
             await service.rename_conversation(
                 db, conversation_id=chat_id, title=body.title, dek=dek
+            )
+        if "model" in fields and body.model is not None:
+            if body.model not in ALLOWED_MODELS:
+                raise TalvrinAPIError(
+                    code=ErrorCode.VALIDATION_ERROR,
+                    message=f"Unknown model {body.model!r}.",
+                )
+            await service.set_conversation_model(
+                db, conversation_id=chat_id, model=body.model
             )
         if "project_id" in fields:
             await service.move_conversation(

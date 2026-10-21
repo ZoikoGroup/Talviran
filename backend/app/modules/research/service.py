@@ -443,6 +443,20 @@ async def rename_conversation(
         raise NotFound(str(conversation_id))
 
 
+async def set_conversation_model(
+    session: AsyncSession, *, conversation_id: uuid.UUID, model: str
+) -> None:
+    result = await session.execute(
+        text(
+            "UPDATE research.conversation SET model = :m "
+            "WHERE id = :id AND deleted_at IS NULL"
+        ),
+        {"m": model, "id": conversation_id},
+    )
+    if _rows_affected(result) == 0:
+        raise NotFound(str(conversation_id))
+
+
 async def move_conversation(
     session: AsyncSession,
     *,

@@ -397,4 +397,14 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+
+  /* TradingView Screener Embed sizing fix */
+  .tradingview-widget-container,
+  .tradingview-widget-container__widget,
+  .tradingview-widget-container iframe {
+    min-height: 750px !important;
+    height: 100% !important;
+    width: 100% !important;
+  }
 }
+

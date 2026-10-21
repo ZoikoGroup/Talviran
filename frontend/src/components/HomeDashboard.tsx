@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react'
 import {
   Search,
   ArrowRight,
-  Globe,
   Bell,
   ChevronRight,
   BarChart3,
@@ -10,6 +9,11 @@ import {
   Bookmark,
   Layers,
   Cpu,
+  Settings,
+  Plus,
+  Trash2,
+  X,
+  Check,
 } from 'lucide-react'
 import earthImg from '@/assets/earth_space_view.jpg'
 import {
@@ -17,6 +21,7 @@ import {
   type DashboardOverviewResponse,
 } from '@/lib/api'
 import type { Chat } from '@/components/Sidebar'
+import { useLiveMarket } from '@/hooks/useLiveMarket'
 
 interface HomeDashboardProps {
   onSearch: (query: string) => void
@@ -41,6 +46,7 @@ export default function HomeDashboard({
   const [selectedSource, setSelectedSource] = useState('All sources')
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [overview, setOverview] = useState<DashboardOverviewResponse | null>(null)
+  const { livePrices } = useLiveMarket()
 
   useEffect(() => {
     // Load real aggregated data from backend API
@@ -67,6 +73,65 @@ export default function HomeDashboard({
     return 'Good evening,'
   }
 
+interface ClockItem {
+  id: string
+  label: string
+  timeZone: string
+}
+
+const DEFAULT_CLOCKS: ClockItem[] = [
+  { id: '1', label: 'London', timeZone: 'Europe/London' },
+  { id: '2', label: 'New York', timeZone: 'America/New_York' },
+  { id: '3', label: 'Tokyo', timeZone: 'Asia/Tokyo' },
+]
+
+const AVAILABLE_TIMEZONES = [
+  { label: 'London (GMT/BST)', city: 'London', zone: 'Europe/London' },
+  { label: 'New York (EST/EDT)', city: 'New York', zone: 'America/New_York' },
+  { label: 'Tokyo (JST)', city: 'Tokyo', zone: 'Asia/Tokyo' },
+  { label: 'Hong Kong (HKT)', city: 'Hong Kong', zone: 'Asia/Hong_Kong' },
+  { label: 'Singapore (SGT)', city: 'Singapore', zone: 'Asia/Singapore' },
+  { label: 'Frankfurt / Paris (CET/CEST)', city: 'Frankfurt', zone: 'Europe/Berlin' },
+  { label: 'Zurich (CET)', city: 'Zurich', zone: 'Europe/Zurich' },
+  { label: 'Sydney (AEST)', city: 'Sydney', zone: 'Australia/Sydney' },
+  { label: 'Mumbai / Delhi (IST)', city: 'Mumbai', zone: 'Asia/Kolkata' },
+  { label: 'Dubai (GST)', city: 'Dubai', zone: 'Asia/Dubai' },
+  { label: 'Chicago (CST/CDT)', city: 'Chicago', zone: 'America/Chicago' },
+  { label: 'San Francisco (PST/PDT)', city: 'San Francisco', zone: 'America/Los_Angeles' },
+  { label: 'Toronto (EST/EDT)', city: 'Toronto', zone: 'America/Toronto' },
+  { label: 'Sao Paulo (BRT)', city: 'São Paulo', zone: 'America/Sao_Paulo' },
+  { label: 'Shanghai (CST)', city: 'Shanghai', zone: 'Asia/Shanghai' },
+  { label: 'Seoul (KST)', city: 'Seoul', zone: 'Asia/Seoul' },
+  { label: 'Johannesburg (SAST)', city: 'Johannesburg', zone: 'Africa/Johannesburg' },
+]
+
+  // Configurable user clocks (1 to 3 clocks stored in localStorage)
+  const [clocks, setClocks] = useState<ClockItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('talvrin_user_clocks')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed) && parsed.length >= 1 && parsed.length <= 3) {
+          return parsed
+        }
+      }
+    } catch {
+      // fallback
+    }
+    return DEFAULT_CLOCKS
+  })
+  const [isClockSettingsOpen, setIsClockSettingsOpen] = useState(false)
+  const [editingClocks, setEditingClocks] = useState<ClockItem[]>(clocks)
+
+  const saveClocks = (newClocks: ClockItem[]) => {
+    setClocks(newClocks)
+    try {
+      localStorage.setItem('talvrin_user_clocks', JSON.stringify(newClocks))
+    } catch {
+      // ignore
+    }
+  }
+
   // Format real-time clock for a given IANA timezone
   const getZoneTime = (timeZone: string): { time: string; date: string } => {
     try {
@@ -91,10 +156,6 @@ export default function HomeDashboard({
       return { time: '--:--', date: '---' }
     }
   }
-
-  const london = getZoneTime('Europe/London')
-  const newYork = getZoneTime('America/New_York')
-  const tokyo = getZoneTime('Asia/Tokyo')
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -187,8 +248,8 @@ export default function HomeDashboard({
     },
   ]
 
-  // Dynamic tickers derived from live API overview or fallback
-  const tickers = overview?.tickers && overview.tickers.length > 0
+  // Dynamic tickers derived from live API overview or fallback, merged with live WebSocket stream
+  const baseTickers = overview?.tickers && overview.tickers.length > 0
     ? overview.tickers.map((t) => ({
         title: t.title,
         value: t.value,
@@ -198,6 +259,19 @@ export default function HomeDashboard({
         sparkline: toSvgPath(t.sparkline, t.is_up),
       }))
     : defaultTickers
+
+  const tickers = baseTickers.map((t) => {
+    const live = livePrices[t.title]
+    if (!live) return t
+    const isUp = live.direction === 'up'
+    const isDown = live.direction === 'down'
+    return {
+      ...t,
+      value: live.price,
+      change: `${isUp ? '▲' : isDown ? '▼' : '—'} ${live.change}`,
+      isUp,
+    }
+  })
 
   const keyDevelopments = [
     {
@@ -383,36 +457,188 @@ export default function HomeDashboard({
             </p>
           </div>
 
-          <div className="flex shrink-0 items-center gap-6 rounded-xl border border-border/60 bg-card/60 px-4 py-2.5 backdrop-blur-md">
-            <div>
-              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">London</div>
-              <div className="text-[14px] font-semibold font-mono text-foreground">{london.time}</div>
-              <div className="text-[10px] text-muted-foreground">{london.date}</div>
-            </div>
+          <div className="relative flex shrink-0 items-center gap-4 sm:gap-5 rounded-xl border border-border/60 bg-card/60 px-4 py-2.5 backdrop-blur-md">
+            {clocks.map((c, idx) => {
+              const t = getZoneTime(c.timeZone)
+              return (
+                <React.Fragment key={c.id}>
+                  {idx > 0 && <div className="h-7 w-px bg-border/80" />}
+                  <div>
+                    <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground truncate max-w-[100px]">
+                      {c.label}
+                    </div>
+                    <div className="text-[14px] font-semibold font-mono text-foreground">{t.time}</div>
+                    <div className="text-[10px] text-muted-foreground whitespace-nowrap">{t.date}</div>
+                  </div>
+                </React.Fragment>
+              )
+            })}
+
             <div className="h-7 w-px bg-border/80" />
-            <div>
-              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">New York</div>
-              <div className="text-[14px] font-semibold font-mono text-foreground">{newYork.time}</div>
-              <div className="text-[10px] text-muted-foreground">{newYork.date}</div>
-            </div>
-            <div className="h-7 w-px bg-border/80" />
-            <div>
-              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Tokyo</div>
-              <div className="text-[14px] font-semibold font-mono text-foreground">{tokyo.time}</div>
-              <div className="text-[10px] text-muted-foreground">{tokyo.date}</div>
-            </div>
-            <div className="h-7 w-px bg-border/80" />
-            <div className="flex items-center gap-2">
-              <div className="grid h-7 w-7 place-items-center rounded-lg bg-primary/10 text-primary">
-                <Globe className="h-4 w-4" />
+
+            {/* Settings button to customize world clocks */}
+            <button
+              type="button"
+              onClick={() => {
+                setEditingClocks([...clocks])
+                setIsClockSettingsOpen(true)
+              }}
+              title="Configure World Clocks (1 to 3)"
+              className="grid h-7 w-7 place-items-center rounded-lg border border-border/80 bg-background/60 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal: Customize Market Clocks */}
+        {isClockSettingsOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="w-full max-w-md rounded-2xl border border-border/80 bg-card p-5 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">Market Timezone Settings</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Customize up to 3 world clocks displayed on your dashboard.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsClockSettingsOpen(false)}
+                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <div>
-                <div className="text-[11px] font-medium text-foreground">Global Markets</div>
-                <div className="text-[10px] text-muted-foreground">TradingView & CMC</div>
+
+              <div className="space-y-3">
+                {editingClocks.map((clock, index) => (
+                  <div
+                    key={clock.id}
+                    className="flex items-center gap-2 rounded-xl border border-border/70 bg-background/50 p-3"
+                  >
+                    <div className="flex-1 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                          Clock {index + 1} Label
+                        </label>
+                        <input
+                          type="text"
+                          value={clock.label}
+                          onChange={(e) => {
+                            const updated = [...editingClocks]
+                            updated[index] = { ...updated[index], label: e.target.value }
+                            setEditingClocks(updated)
+                          }}
+                          placeholder="e.g. London"
+                          className="w-full rounded-md border border-border/70 bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                          Timezone
+                        </label>
+                        <select
+                          value={clock.timeZone}
+                          onChange={(e) => {
+                            const selectedOption = AVAILABLE_TIMEZONES.find((tz) => tz.zone === e.target.value)
+                            const updated = [...editingClocks]
+                            updated[index] = {
+                              ...updated[index],
+                              timeZone: e.target.value,
+                              label: selectedOption ? selectedOption.city : updated[index].label,
+                            }
+                            setEditingClocks(updated)
+                          }}
+                          className="w-full rounded-md border border-border/70 bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                        >
+                          {AVAILABLE_TIMEZONES.map((tz) => (
+                            <option key={tz.zone} value={tz.zone}>
+                              {tz.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {editingClocks.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingClocks(editingClocks.filter((_, i) => i !== index))
+                        }}
+                        title="Remove clock"
+                        className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+                {editingClocks.length < 3 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const unusedZone =
+                        AVAILABLE_TIMEZONES.find(
+                          (tz) => !editingClocks.some((c) => c.timeZone === tz.zone)
+                        ) || AVAILABLE_TIMEZONES[0]
+
+                      setEditingClocks([
+                        ...editingClocks,
+                        {
+                          id: String(Date.now()),
+                          label: unusedZone.city,
+                          timeZone: unusedZone.zone,
+                        },
+                      ])
+                    }}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-2.5 text-xs font-medium text-muted-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary transition-all"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Another Timer ({editingClocks.length}/3)
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-border/60">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingClocks(DEFAULT_CLOCKS)
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Reset defaults
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsClockSettingsOpen(false)}
+                    className="rounded-lg border border-border/80 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editingClocks.length >= 1 && editingClocks.length <= 3) {
+                        saveClocks(editingClocks)
+                        setIsClockSettingsOpen(false)
+                      }
+                    }}
+                    className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    Save Clocks
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Master Search Bar & Filter */}
         <div className="space-y-3">

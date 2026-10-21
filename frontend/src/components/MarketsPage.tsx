@@ -13,6 +13,7 @@ import {
   Layers,
   BarChart2,
   RefreshCw,
+  Bell,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -23,8 +24,11 @@ import {
   getLiveSyncedAssets,
 } from '@/lib/api'
 import TradingViewModal from '@/components/TradingViewModal'
+import SetAlertModal from '@/components/SetAlertModal'
+import { toast } from 'sonner'
 import TradingViewScreener from '@/components/TradingViewScreener'
 import type { TaggedAsset } from '@/data/mockReply'
+import { useLiveMarket } from '@/hooks/useLiveMarket'
 
 interface MarketsPageProps {
   initialSymbol?: string | null
@@ -85,9 +89,11 @@ export default function MarketsPage({
   const [addedItemSymbol, setAddedItemSymbol] = useState<string | null>(null)
   const [activeDropdownSymbol, setActiveDropdownSymbol] = useState<string | null>(null)
   const [selectedAsset, setSelectedAsset] = useState<MarketAsset | null>(null)
+  const [alertAsset, setAlertAsset] = useState<MarketAsset | null>(null)
   const [dynamicSyncedAssets, setDynamicSyncedAssets] = useState<MarketAsset[]>([])
   const [isSyncing, setIsSyncing] = useState(false)
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
+  const { livePrices } = useLiveMarket()
 
   useEffect(() => {
     void listWatchlists().then(setWatchlists).catch(() => {})
@@ -235,90 +241,85 @@ export default function MarketsPage({
   }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-background p-6 md:p-8">
+    <div className="flex h-full flex-col overflow-y-auto bg-background p-4 md:p-6 scrollbar-slim">
       {/* Header */}
-      <div className="mx-auto flex w-full max-w-7xl items-start justify-between gap-4 pb-6 border-b border-border">
-        <div>
-          <div className="flex items-center gap-2.5">
-            {onBack && (
-              <button
-                onClick={onBack}
-                aria-label="Back"
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground mr-1"
-              >
-                <ArrowLeft className="h-[18px] w-[18px]" />
-              </button>
-            )}
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
-              <Globe2 className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-                Global Markets Coverage
-              </h1>
-              <p className="text-[13px] text-muted-foreground">
-                Trusted multi-asset coverage powered by TradingView, CoinMarketCap, Primary Exchanges (NYSE, NASDAQ, LSE, BSE, NSE), Commodities (LBMA, CME), and Central Banks.
-              </p>
-            </div>
+      <div className="mx-auto flex w-full flex-col gap-4 pb-4 border-b border-border/70 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-start gap-3">
+          {onBack && (
+            <button
+              onClick={onBack}
+              aria-label="Back"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <ArrowLeft className="h-[18px] w-[18px]" />
+            </button>
+          )}
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
+            <Globe2 className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+              Global Markets Coverage
+            </h1>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 self-start lg:self-center">
           {/* View Switch: Curated Table vs Full World Screener */}
-          <div className="flex items-center rounded-xl border border-border bg-card/80 p-1 text-xs">
+          <div className="inline-flex items-center rounded-xl border border-border/80 bg-muted/40 p-1 text-xs">
             <button
               onClick={() => setViewMode('table')}
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-medium transition',
+                'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition cursor-pointer',
                 viewMode === 'table'
-                  ? 'bg-primary text-primary-foreground font-semibold shadow-xs'
+                  ? 'bg-background text-foreground font-semibold shadow-xs'
                   : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              <BarChart2 className="h-3.5 w-3.5" />
+              <BarChart2 className="h-3.5 w-3.5 shrink-0" />
               <span>Benchmarks Table</span>
             </button>
             <button
               onClick={() => setViewMode('screener')}
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-medium transition',
+                'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition cursor-pointer',
                 viewMode === 'screener'
-                  ? 'bg-primary text-primary-foreground font-semibold shadow-xs'
+                  ? 'bg-background text-foreground font-semibold shadow-xs'
                   : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              <Layers className="h-3.5 w-3.5" />
-              <span>World Screener (All Stocks)</span>
+              <Layers className="h-3.5 w-3.5 shrink-0" />
+              <span>World Screener</span>
             </button>
           </div>
 
           <button
             onClick={handleTriggerSync}
             disabled={isSyncing}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3.5 py-2 text-[13px] font-semibold text-foreground shadow-sm hover:bg-accent transition disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border/80 bg-background px-3.5 py-2 text-xs font-medium whitespace-nowrap text-foreground shadow-xs hover:bg-accent transition disabled:opacity-50 cursor-pointer"
             title="Auto-sync new assets from TwelveData, AMFI, and TradingView"
           >
-            <RefreshCw className={cn("h-4 w-4 text-primary", isSyncing && "animate-spin")} />
-            <span>{isSyncing ? "Syncing..." : lastSyncTime ? `Synced (${lastSyncTime})` : "Live Provider Sync"}</span>
+            <RefreshCw className={cn("h-3.5 w-3.5 shrink-0 text-primary", isSyncing && "animate-spin")} />
+            <span>{isSyncing ? "Syncing..." : lastSyncTime ? `Synced (${lastSyncTime})` : "Live Sync"}</span>
           </button>
 
           {onOpenWatchlists && (
             <button
               onClick={onOpenWatchlists}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3.5 py-2 text-[13px] font-semibold text-foreground shadow-sm hover:bg-accent transition"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border/80 bg-background px-3.5 py-2 text-xs font-medium whitespace-nowrap text-foreground shadow-xs hover:bg-accent transition cursor-pointer"
             >
-              <Bookmark className="h-4 w-4 text-primary" />
-              <span>Open Watchlists</span>
+              <Bookmark className="h-3.5 w-3.5 shrink-0 text-primary" />
+              <span>Watchlists</span>
             </button>
           )}
         </div>
       </div>
 
-      <div className="mx-auto mt-6 flex w-full max-w-7xl flex-1 flex-col gap-6">
-        {/* Filter and Search Bar */}
-        {/* Filter and Search Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border bg-card/60 p-4">
-          <div className="flex flex-wrap items-center gap-2">
+      <div className="mx-auto mt-4 flex w-full flex-1 flex-col gap-4">
+        {/* Unified Filter and Controls Bar */}
+        <div className="flex flex-col gap-3 rounded-xl border border-border/80 bg-card/60 p-3.5 shadow-xs backdrop-blur-sm">
+          {/* Asset Class Categories */}
+          <div className="flex flex-wrap items-center gap-1.5">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -327,7 +328,7 @@ export default function MarketsPage({
                   if (viewMode !== 'table') setViewMode('table')
                 }}
                 className={cn(
-                  'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition cursor-pointer',
+                  'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition cursor-pointer',
                   activeTab === tab.id
                     ? 'bg-primary text-primary-foreground font-semibold shadow-xs'
                     : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -336,7 +337,7 @@ export default function MarketsPage({
                 <span>{tab.label}</span>
                 <span
                   className={cn(
-                    'rounded-full px-1.5 py-0.2 text-[10.5px] font-semibold tabular-nums',
+                    'rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums leading-none',
                     activeTab === tab.id
                       ? 'bg-primary-foreground/20 text-primary-foreground'
                       : 'bg-muted text-muted-foreground'
@@ -348,124 +349,85 @@ export default function MarketsPage({
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {/* View Mode Quick Switcher in Filter Bar */}
-            <div className="flex items-center rounded-lg border border-border bg-background p-0.5 text-[11.5px]">
-              <button
-                onClick={() => setViewMode('table')}
-                className={cn(
-                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition cursor-pointer',
-                  viewMode === 'table' ? 'bg-primary text-primary-foreground font-semibold shadow-xs' : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                <BarChart2 className="h-3 w-3" />
-                <span>Benchmarks</span>
-              </button>
-              <button
-                onClick={() => setViewMode('screener')}
-                className={cn(
-                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition cursor-pointer',
-                  viewMode === 'screener' ? 'bg-primary text-primary-foreground font-semibold shadow-xs' : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                <Layers className="h-3 w-3" />
-                <span>World Screener</span>
-              </button>
-            </div>
+          <div className="h-px w-full bg-border/50" />
 
-            <div className="flex items-center gap-1 rounded-lg border border-border bg-background p-0.5 text-[11.5px]">
-              {(['ALL', 'UK', 'US', 'EU', 'APAC'] as const).map((reg) => (
-                <button
-                  key={reg}
-                  onClick={() => setActiveRegion(reg)}
-                  className={cn(
-                    'rounded-md px-2 py-0.5 font-medium transition',
-                    activeRegion === reg ? 'bg-primary/15 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  {reg}
-                </button>
-              ))}
-            </div>
+          {/* Secondary Controls: Region + Data Source + Search */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mr-1">
+                Region:
+              </span>
+              <div className="inline-flex h-8 items-center rounded-lg border border-border/80 bg-background p-0.5 text-xs">
+                {(['ALL', 'UK', 'US', 'EU', 'APAC'] as const).map((reg) => (
+                  <button
+                    key={reg}
+                    onClick={() => setActiveRegion(reg)}
+                    className={cn(
+                      'h-7 rounded-md px-2.5 text-xs font-medium transition cursor-pointer',
+                      activeRegion === reg
+                        ? 'bg-primary/15 text-primary font-semibold'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {reg}
+                  </button>
+                ))}
+              </div>
 
-            <select
-              value={activeSource}
-              onChange={(e) => setActiveSource(e.target.value)}
-              className="h-8 rounded-lg border border-border bg-background px-2.5 text-[12px] font-medium text-muted-foreground outline-none hover:text-foreground cursor-pointer focus:ring-1 focus:ring-primary"
-            >
-              <option value="ALL">All Sources (Global)</option>
-              <option value="TradingView">TradingView</option>
-              <option value="CoinMarketCap">CoinMarketCap</option>
-              <option value="Primary Exchanges">Primary Exchanges</option>
-              <option value="Commodities">Commodities (LBMA/CME/ICE)</option>
-              <option value="Central Banks">Central Banks & Treasury</option>
-            </select>
+              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mx-1">
+                Source:
+              </span>
+              <select
+                value={activeSource}
+                onChange={(e) => setActiveSource(e.target.value)}
+                className="h-8 rounded-lg border border-border/80 bg-background px-2.5 text-xs font-medium text-foreground outline-none hover:border-primary/50 cursor-pointer focus:ring-1 focus:ring-primary"
+              >
+                <option value="ALL">All Sources (Global)</option>
+                <option value="TradingView">TradingView</option>
+                <option value="CoinMarketCap">CoinMarketCap</option>
+                <option value="Primary Exchanges">Primary Exchanges</option>
+                <option value="Commodities">Commodities (LBMA/CME)</option>
+                <option value="Central Banks">Central Banks & Treasury</option>
+              </select>
+            </div>
 
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search markets or sources..."
+                placeholder="Search benchmark or ticker..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-8 w-48 rounded-lg border border-border bg-background pl-8 pr-3 text-[12.5px] text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-primary"
+                className="h-8 w-56 rounded-lg border border-border/80 bg-background pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary/70"
               />
             </div>
           </div>
         </div>
 
         {viewMode === 'screener' ? (
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between rounded-xl border border-border bg-card/60 px-4 py-3 text-xs text-muted-foreground gap-2">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-foreground">Global Screener Coverage:</span>
-                <span>All US, UK, European & International Equities with Real-Time Volume, P/E, Highs, Lows, and Technical Signals.</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setViewMode('table')}
-                  className="rounded-lg bg-primary/15 border border-primary/30 px-2.5 py-1 text-primary hover:bg-primary hover:text-primary-foreground font-semibold text-[11.5px] flex items-center gap-1 transition cursor-pointer"
-                >
-                  <BarChart2 className="h-3 w-3" />
-                  <span>&larr; Switch to Benchmarks Table ({GLOBAL_MARKET_ASSETS.length})</span>
-                </button>
-                <span className="text-[11px] text-muted-foreground hidden sm:inline">TradingView Engine</span>
-              </div>
-            </div>
+          <div className="flex flex-col gap-3 min-h-[850px] pb-6">
             <TradingViewScreener
               initialMarket={activeRegion === 'UK' ? 'uk' : activeRegion === 'EU' ? 'germany' : activeRegion === 'APAC' ? 'india' : 'america'}
-              height={700}
+              height={850}
               colorTheme="dark"
               onStartResearch={onStartResearch}
             />
           </div>
         ) : (
           /* Global Market Data Table */
-          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-foreground">Showing {filteredAssets.length} of {GLOBAL_MARKET_ASSETS.length} Curated Benchmarks</span>
-                <span>• Live TradingView, CoinMarketCap & Primary Exchange feeds</span>
-              </div>
-              <button
-                onClick={() => setViewMode('screener')}
-                className="text-primary hover:underline font-medium text-[11.5px] flex items-center gap-1 transition"
-              >
-                <span>Need 10,000+ international equities? Switch to World Screener &rarr;</span>
-              </button>
-            </div>
+          <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-xs">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-[13px]">
-                <thead className="border-b border-border bg-muted/40 text-[11.5px] font-medium uppercase tracking-wider text-muted-foreground">
+              <table className="w-full text-left text-xs min-w-[980px]">
+                <thead className="border-b border-border/80 bg-muted/50 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   <tr>
-                    <th className="py-3 pl-4 pr-3">Instrument</th>
-                    <th className="px-3 py-3">Class / Region</th>
-                    <th className="px-3 py-3 text-right">Price / Yield</th>
-                    <th className="px-3 py-3 text-right">Net Chg</th>
-                    <th className="px-3 py-3 text-right">% Chg</th>
-                    <th className="px-3 py-3 text-center">Trend (7D)</th>
-                    <th className="px-3 py-3">Data Origin</th>
-                    <th className="py-3 pl-3 pr-4 text-right">Actions</th>
+                    <th className="py-2.5 pl-4 pr-3 w-[24%]">Instrument</th>
+                    <th className="px-3 py-2.5 w-[14%]">Class / Region</th>
+                    <th className="px-3 py-2.5 text-right w-[11%]">Price / Yield</th>
+                    <th className="px-3 py-2.5 text-right w-[9%]">Net Chg</th>
+                    <th className="px-3 py-2.5 text-right w-[10%]">% Chg</th>
+                    <th className="px-3 py-2.5 text-center w-[9%]">Trend (7D)</th>
+                    <th className="px-3 py-2.5 w-[13%]">Data Origin</th>
+                    <th className="py-2.5 pl-3 pr-4 text-right w-[10%]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -522,8 +484,12 @@ export default function MarketsPage({
                     </tr>
                   ) : (
                     filteredAssets.map((asset) => {
-                      const isUp = asset.direction === 'up'
-                      const isDown = asset.direction === 'down'
+                      const live = livePrices[asset.symbol]
+                      const displayedPrice = live ? live.price : asset.price
+                      const displayedChange = live ? live.change : asset.change
+                      const currentDirection = live ? live.direction : asset.direction
+                      const isUp = currentDirection === 'up'
+                      const isDown = currentDirection === 'down'
                       const isAdded = addedItemSymbol === asset.symbol
 
                       return (
@@ -535,13 +501,19 @@ export default function MarketsPage({
                           {/* Instrument */}
                           <td className="py-3.5 pl-4 pr-3">
                             <div className="flex flex-col">
-                              <span className="font-semibold text-foreground group-hover:text-primary transition-colors flex items-center gap-1.5">
-                                {asset.symbol}
-                                <span className="opacity-0 group-hover:opacity-100 text-[10px] text-primary transition font-normal bg-primary/10 px-1 rounded">
-                                  View Chart
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-foreground group-hover:text-primary transition-colors whitespace-nowrap">
+                                  {asset.symbol}
                                 </span>
-                              </span>
-                              <span className="text-[11.5px] text-muted-foreground">
+                                {live && (
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping inline-block" title="Real-time WebSocket streaming" />
+                                )}
+                                <span className="opacity-0 group-hover:opacity-100 transition-all duration-150 inline-flex items-center gap-1 rounded-md bg-primary/15 border border-primary/25 px-1.5 py-0.5 text-[10.5px] font-medium text-primary whitespace-nowrap shadow-2xs">
+                                  <BarChart2 className="h-2.5 w-2.5" />
+                                  <span>View Chart</span>
+                                </span>
+                              </div>
+                              <span className="text-[11.5px] text-muted-foreground truncate max-w-xs">
                                 {asset.name}
                               </span>
                             </div>
@@ -561,7 +533,15 @@ export default function MarketsPage({
 
                           {/* Price / Yield */}
                           <td className="px-3 py-3.5 text-right font-mono font-semibold text-foreground">
-                            {asset.price}
+                            <span
+                              className={cn(
+                                'transition-colors rounded px-1 py-0.5',
+                                live?.direction === 'up' && 'bg-emerald-500/15 text-emerald-400 font-bold',
+                                live?.direction === 'down' && 'bg-rose-500/15 text-rose-400 font-bold'
+                              )}
+                            >
+                              {displayedPrice}
+                            </span>
                           </td>
 
                           {/* Net Change */}
@@ -571,7 +551,7 @@ export default function MarketsPage({
                               isUp ? 'text-emerald-500' : isDown ? 'text-rose-500' : 'text-muted-foreground'
                             )}
                           >
-                            {asset.change}
+                            {displayedChange}
                           </td>
 
                           {/* % Change Pill */}
@@ -588,7 +568,7 @@ export default function MarketsPage({
                             >
                               {isUp && <TrendingUp className="h-3 w-3" />}
                               {isDown && <TrendingDown className="h-3 w-3" />}
-                              {asset.pctChange}
+                              {live ? displayedChange : asset.pctChange}
                             </span>
                           </td>
 
@@ -600,23 +580,23 @@ export default function MarketsPage({
                           </td>
 
                           {/* Source */}
-                          <td className="px-3 py-3.5">
-                            <div className="flex flex-col">
-                              <span className="text-[12px] font-medium text-foreground flex items-center gap-1">
-                                <ShieldCheck className="h-3 w-3 text-primary" />
-                                {asset.source}
+                          <td className="px-3 py-3">
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-[11.5px] font-medium text-foreground flex items-center gap-1 truncate" title={asset.source}>
+                                <ShieldCheck className="h-3 w-3 shrink-0 text-primary" />
+                                <span className="truncate">{asset.source}</span>
                               </span>
-                              <span className="text-[11px] text-muted-foreground">
+                              <span className="text-[10.5px] text-muted-foreground whitespace-nowrap">
                                 {asset.freshness} • {asset.bitemporalStatus}
                               </span>
                             </div>
                           </td>
 
                           {/* Actions */}
-                          <td className="py-3.5 pl-3 pr-4 text-right">
+                          <td className="py-3 pl-3 pr-4 text-right whitespace-nowrap">
                             <div
                               onClick={(e) => e.stopPropagation()}
-                              className="relative flex items-center justify-end gap-1.5"
+                              className="relative inline-flex items-center justify-end gap-1.5"
                             >
                               <button
                                 onClick={() =>
@@ -632,10 +612,20 @@ export default function MarketsPage({
                                   })
                                 }
                                 title="Research Asset"
-                                className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary/60 px-2.5 py-1 text-[11.5px] font-semibold text-foreground hover:bg-primary hover:text-primary-foreground hover:border-primary transition shadow-xs"
+                                className="inline-flex h-7 items-center gap-1 rounded-md border border-border/80 bg-background px-2 text-[11px] font-semibold text-foreground hover:bg-primary hover:text-primary-foreground hover:border-primary transition shadow-2xs"
                               >
                                 <Search className="h-3 w-3" />
                                 <span>Research</span>
+                              </button>
+
+                              {/* Direct Set Alert trigger */}
+                              <button
+                                onClick={() => setAlertAsset(asset)}
+                                title="Set Market Trigger / Alert"
+                                className="inline-flex h-7 items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-2 text-[11px] font-medium text-primary hover:bg-primary/20 transition shadow-2xs"
+                              >
+                                <Bell className="h-3 w-3 text-primary" />
+                                <span>Alert</span>
                               </button>
 
                               {/* Add to Watchlist Dropdown Trigger */}
@@ -648,10 +638,10 @@ export default function MarketsPage({
                                   }
                                   title="Add to Watchlist"
                                   className={cn(
-                                    'inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11.5px] font-medium transition',
+                                    'inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition shadow-2xs',
                                     isAdded
                                       ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-400'
-                                      : 'border-border bg-card text-foreground hover:bg-accent'
+                                      : 'border-border/80 bg-background text-foreground hover:bg-accent'
                                   )}
                                 >
                                   {isAdded ? (
@@ -709,6 +699,7 @@ export default function MarketsPage({
       </div>
 
       {/* TradingView Charting Modal on Selected Asset */}
+      {/* Charting Modal on Selected Asset */}
       {selectedAsset && (
         <TradingViewModal
           symbol={selectedAsset.symbol}
@@ -729,6 +720,19 @@ export default function MarketsPage({
           onOpenMonitoring={(sym) => {
             setSelectedAsset(null)
             if (onOpenMonitoringForRule) onOpenMonitoringForRule(sym)
+          }}
+        />
+      )}
+
+      {/* Set Alert Modal from Markets Page */}
+      {alertAsset && (
+        <SetAlertModal
+          symbol={alertAsset.symbol}
+          name={alertAsset.name}
+          currentPrice={alertAsset.price}
+          onClose={() => setAlertAsset(null)}
+          onAlertCreated={(created) => {
+            toast.success(`Alert armed for ${created.assetSymbol} at ${created.threshold}`)
           }}
         />
       )}

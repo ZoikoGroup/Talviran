@@ -2,13 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bell,
   Bookmark,
-  Calendar,
   Check,
   ChevronRight,
   ChevronsLeft,
   Clock,
   Ellipsis,
-  Filter,
   Folder,
   FolderMinus,
   GitCompare,
@@ -19,8 +17,6 @@ import {
   PanelLeft,
   Pencil,
   Plus,
-  Search,
-  Shield,
   Trash2,
   X,
 } from 'lucide-react'
@@ -127,7 +123,6 @@ export default function Sidebar({
   onOpenHome,
   onOpenWatchlists,
   onOpenMarkets,
-  onOpenSearch,
   activeNav = 'home',
   mobileOpen,
   onMobileClose,
@@ -438,19 +433,6 @@ export default function Sidebar({
 
         {/* Scrollable icon rail body */}
         <div className="mt-3 flex flex-1 min-h-0 w-full flex-col items-center gap-1.5 overflow-y-auto px-2 scrollbar-none py-1">
-          {/* Quick Search */}
-          <button
-            onClick={() => {
-              if (onOpenSearch) onOpenSearch()
-              else if (onOpenHome) onOpenHome()
-            }}
-            tabIndex={rail}
-            aria-label="Universal Search"
-            title="Search Talvrin (⌘K)"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          >
-            <Search className="h-[18px] w-[18px]" />
-          </button>
 
           {/* Start New Research */}
           <button
@@ -535,12 +517,12 @@ export default function Sidebar({
             <Bookmark className="h-[18px] w-[18px]" />
           </button>
 
-          {/* Monitoring */}
+          {/* Alerts */}
           <button
             onClick={onOpenMonitoring}
             tabIndex={rail}
-            aria-label="Monitoring"
-            title="Monitoring (3)"
+            aria-label="Alerts"
+            title="Alerts (Notifications & Triggers)"
             className={cn(
               'relative grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
               activeNav === 'monitoring'
@@ -552,60 +534,6 @@ export default function Sidebar({
             <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-rose-500" />
           </button>
 
-          {/* Projects */}
-          <button
-            onClick={() => openView('projects')}
-            tabIndex={rail}
-            aria-label="Projects"
-            title="Projects"
-            className={cn(
-              'grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
-              view === 'projects'
-                ? 'text-sidebar-foreground bg-sidebar-accent'
-                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
-            )}
-          >
-            <Folder className="h-[18px] w-[18px]" />
-          </button>
-
-          {/* Evidence */}
-          <button
-            onClick={() => {
-              if (onOpenHome) onOpenHome()
-            }}
-            tabIndex={rail}
-            aria-label="Evidence"
-            title="Evidence"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          >
-            <Shield className="h-[18px] w-[18px]" />
-          </button>
-
-          {/* Economic Calendar */}
-          <button
-            onClick={() => {
-              if (onOpenHome) onOpenHome()
-            }}
-            tabIndex={rail}
-            aria-label="Economic Calendar"
-            title="Economic Calendar"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          >
-            <Calendar className="h-[18px] w-[18px]" />
-          </button>
-
-          {/* Screener */}
-          <button
-            onClick={() => {
-              if (onOpenHome) onOpenHome()
-            }}
-            tabIndex={rail}
-            aria-label="Screener"
-            title="Screener"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          >
-            <Filter className="h-[18px] w-[18px]" />
-          </button>
 
           {/* Compare */}
           <button
@@ -706,25 +634,6 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* Quick Search Talvrin Bar */}
-        <button
-          type="button"
-          onClick={() => {
-            if (onOpenSearch) onOpenSearch()
-            onMobileClose()
-          }}
-          tabIndex={tab}
-          className="group mx-3 mb-2 flex items-center justify-between rounded-xl border border-sidebar-border bg-sidebar-accent/50 px-3 py-1.5 text-[12.5px] text-sidebar-muted transition-all hover:border-sidebar-border/80 hover:bg-sidebar-accent hover:text-sidebar-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 text-left"
-        >
-          <div className="flex items-center gap-2">
-            <Search className="h-3.5 w-3.5 transition-colors group-hover:text-primary" />
-            <span>Search Talvrin</span>
-          </div>
-          <kbd className="rounded border border-sidebar-border bg-sidebar px-1.5 py-0.5 text-[10px] font-mono text-sidebar-muted group-hover:border-sidebar-muted/40">
-            ⌘ K
-          </kbd>
-        </button>
-
         {/* New Research Button with Gradient Glow */}
         <button
           onClick={() => {
@@ -732,7 +641,7 @@ export default function Sidebar({
             onMobileClose()
           }}
           tabIndex={tab}
-          className="mx-3 mb-3 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-indigo-600 px-4 py-2.5 text-center text-[13.5px] font-semibold text-white shadow-lg shadow-primary/25 transition-all hover:brightness-110 active:scale-[0.985]"
+          className="mx-3 mb-3 mt-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-primary to-indigo-600 px-4 py-2.5 text-center text-[13.5px] font-semibold text-white shadow-lg shadow-primary/25 transition-all hover:brightness-110 active:scale-[0.985]"
         >
           <Plus className="h-4 w-4" />
           New Research
@@ -834,7 +743,7 @@ export default function Sidebar({
               </span>
             </button>
 
-            {/* Monitoring */}
+            {/* Alerts */}
             <button
               onClick={() => {
                 onOpenMonitoring()
@@ -850,88 +759,15 @@ export default function Sidebar({
               <div className="flex items-center gap-2.5">
                 <Bell className="h-4 w-4 shrink-0" />
                 <div className="flex flex-col">
-                  <span className="font-medium text-foreground text-[13px] leading-tight">Monitoring</span>
-                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Alerts & updates</span>
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Alerts</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Custom notifications & triggers</span>
                 </div>
               </div>
               <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10.5px] font-bold text-rose-400 border border-rose-500/30">
-                3
+                Live
               </span>
             </button>
 
-            {/* Projects */}
-            <button
-              onClick={() => setView(view === 'projects' ? 'chats' : 'projects')}
-              className={cn(
-                'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
-                view === 'projects'
-                  ? 'text-sidebar-foreground bg-sidebar-accent'
-                  : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
-              )}
-            >
-              <div className="flex items-center gap-2.5">
-                <Folder className="h-4 w-4 shrink-0" />
-                <div className="flex flex-col">
-                  <span className="font-medium text-foreground text-[13px] leading-tight">Projects</span>
-                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Organize your research</span>
-                </div>
-              </div>
-              <ChevronRight className={cn('h-3.5 w-3.5 text-sidebar-muted/60 transition-transform', view === 'projects' && 'rotate-90')} />
-            </button>
-
-            {/* Evidence */}
-            <button
-              onClick={() => {
-                if (onOpenHome) onOpenHome()
-                onMobileClose()
-              }}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
-            >
-              <div className="flex items-center gap-2.5">
-                <Shield className="h-4 w-4 shrink-0" />
-                <div className="flex flex-col">
-                  <span className="font-medium text-foreground text-[13px] leading-tight">Evidence</span>
-                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Sources, documents, data</span>
-                </div>
-              </div>
-              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
-            </button>
-
-            {/* Economic Calendar */}
-            <button
-              onClick={() => {
-                if (onOpenHome) onOpenHome()
-                onMobileClose()
-              }}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
-            >
-              <div className="flex items-center gap-2.5">
-                <Calendar className="h-4 w-4 shrink-0" />
-                <div className="flex flex-col">
-                  <span className="font-medium text-foreground text-[13px] leading-tight">Economic Calendar</span>
-                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Key dates & events</span>
-                </div>
-              </div>
-              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
-            </button>
-
-            {/* Screener */}
-            <button
-              onClick={() => {
-                if (onOpenHome) onOpenHome()
-                onMobileClose()
-              }}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
-            >
-              <div className="flex items-center gap-2.5">
-                <Filter className="h-4 w-4 shrink-0" />
-                <div className="flex flex-col">
-                  <span className="font-medium text-foreground text-[13px] leading-tight">Screener</span>
-                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Find opportunities</span>
-                </div>
-              </div>
-              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
-            </button>
 
             {/* Compare */}
             <button
@@ -946,21 +782,6 @@ export default function Sidebar({
                 <div className="flex flex-col">
                   <span className="font-medium text-foreground text-[13px] leading-tight">Compare</span>
                   <span className="text-[11px] text-muted-foreground/80 leading-tight">Assets, sectors, indices</span>
-                </div>
-              </div>
-              <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
-            </button>
-
-            {/* Recent Research */}
-            <button
-              onClick={() => setView('chats')}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
-            >
-              <div className="flex items-center gap-2.5">
-                <Clock className="h-4 w-4 shrink-0" />
-                <div className="flex flex-col">
-                  <span className="font-medium text-foreground text-[13px] leading-tight">Recent Research</span>
-                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Your recent activity</span>
                 </div>
               </div>
               <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
