@@ -47,6 +47,8 @@ select = ["E", "F", "I", "UP", "B"]
 # Evidence research replies contain long statutory disclosure URLs, regulatory citations,
 # and deterministic legal notes that cannot be arbitrarily line-wrapped.
 "app/modules/evidence/service.py" = ["E501"]
+# HTML email dispatch templates contain inline CSS attributes and table structures.
+"app/modules/monitoring/delivery.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
