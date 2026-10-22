@@ -45,6 +45,56 @@ async def current_accepted_fact_at(
     ).scalar_one_or_none()
 
 
+async def accepted_fact_as_of(
+    session: AsyncSession, *, subject_id: uuid.UUID, metric_id: str, as_of_date: dt.date
+) -> AcceptedFact | None:
+    """The most recent fact Talvrin believed true for (subject_id,
+    metric_id) as of a historical KNOWLEDGE cutoff — the second bitemporal
+    axis current_accepted_fact_at/latest_accepted_fact deliberately don't
+    reach, since both only ever look at today's ACTIVE rows. Mirrors
+    latest_accepted_fact's own "most recent known value, not a value proven
+    true at one exact instant" relaxation (see its docstring for the real
+    bug that fixed), generalized to an arbitrary historical vantage point
+    instead of always "now".
+
+    reconcile.py never deletes or rewrites a superseded row — a correction
+    closes the old row's knowledge_range and flips status to SUPERSEDED,
+    then inserts a new ACTIVE row (see its own docstring) — so
+    reconstructing what was known at a past knowledge-time must search
+    across every status, not just ACTIVE, and match on knowledge_range,
+    not valid_range.
+
+    `as_of_date` names the knowledge cutoff only (the end of that calendar
+    day) — NOT also the real-world date the returned fact must describe.
+    A metric with any ingestion lag at all (both the BoE curve and the US
+    Treasury curve routinely publish a day or more behind the date they
+    describe — found live, 2026-10-22, when "what did Talvrin know on
+    <today>" returned nothing because today's own data hadn't been
+    ingested yet) means "what Talvrin knew by <date>" and "the value
+    effective ON <date>" are genuinely different questions; this answers
+    the former, matching the literal acceptance test's own phrasing
+    ("what did Talvrin know on <date>"), not the latter. A caller wanting
+    the latter should use current_accepted_fact_at with a historical
+    `at`, scoped to the facts ACTIVE at the time of calling — a feature
+    this function deliberately doesn't attempt, since "what was effective
+    on day X, using only facts known by day Y" needs two independent
+    dates, not one (a documented, not-yet-supported scope narrowing).
+    """
+    knowledge_cutoff = dt.datetime.combine(as_of_date, dt.time.max, tzinfo=dt.UTC)
+    return (
+        await session.execute(
+            select(AcceptedFact)
+            .where(
+                AcceptedFact.subject_id == subject_id,
+                AcceptedFact.metric_id == metric_id,
+                AcceptedFact.knowledge_range.contains(knowledge_cutoff),
+            )
+            .order_by(func.lower(AcceptedFact.valid_range).desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
 async def latest_accepted_fact(
     session: AsyncSession, *, subject_id: uuid.UUID, metric_id: str
 ) -> AcceptedFact | None:

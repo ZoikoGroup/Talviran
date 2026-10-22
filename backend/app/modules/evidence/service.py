@@ -39,15 +39,21 @@ could silently drift apart.
 import datetime as dt
 import re
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 import httpx
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.modules.calculation.models import CalculationResult
+from app.modules.calculation.models import (
+    CalculationInput,
+    CalculationResult,
+    CalculationSpecification,
+)
 from app.modules.calculation.pipeline.curve_pricing import METRIC_MODEL_IMPLIED_CLEAN_PRICE
 from app.modules.calculation.pipeline.gilt_risk_metrics_pricing import METRIC_GILT_RISK_METRICS
 from app.modules.calculation.queries import latest_calculation_result
@@ -63,11 +69,20 @@ from app.modules.evidence.models import (
 )
 from app.modules.evidence.pipeline.embed import search_chunks_by_semantic_query
 from app.modules.evidence.queries import search_chunks_by_text
+from app.modules.market.change_detection import DetectedChange, NoChangeDetected, detect_change
 from app.modules.market.freshness import compute_freshness
-from app.modules.market.models import AcceptedFact, FactObservationLink, SourceObservation
+from app.modules.market.models import (
+    AcceptedFact,
+    Dataset,
+    FactObservationLink,
+    Source,
+    SourceArtifact,
+    SourceObservation,
+)
 from app.modules.market.pipeline.curve_ingest import (
     METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
     SUBJECT_TYPE_YIELD_CURVE_POINT,
+    curve_point_subject_id,
 )
 from app.modules.market.pipeline.equity_ingest import METRIC_EQUITY_EOD_PRICE
 from app.modules.market.pipeline.fx_ingest import METRIC_FX_SPOT_RATE, fx_pair_subject_id
@@ -79,11 +94,20 @@ from app.modules.market.pipeline.identity_resolution import (
 from app.modules.market.pipeline.macro_ingest import macro_series_subject_id
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
 from app.modules.market.pipeline.tradeweb_price_ingest import METRIC_GILT_MARKET_CLOSE_PRICE
-from app.modules.market.queries import current_accepted_fact_at, latest_accepted_fact
+from app.modules.market.pipeline.treasury_curve_ingest import (
+    METRIC_US_TREASURY_PAR_YIELD_CURVE,
+    SUBJECT_TYPE_TREASURY_CURVE_POINT,
+    treasury_curve_point_subject_id,
+)
+from app.modules.market.queries import (
+    accepted_fact_as_of,
+    current_accepted_fact_at,
+    latest_accepted_fact,
+)
 from app.modules.policy.allowed_output_type import AllowedOutputType
 from app.modules.policy.pdp import PolicyContext, evaluate
 from app.modules.reference.models import Instrument, InstrumentAlias, Issuer
-from app.modules.rights.engine import RightsDecision, evaluate_action
+from app.modules.rights.engine import RightsAction, RightsDecision, evaluate_action
 from app.modules.rights.models import RightsProfile
 
 DEV_JURISDICTION = "GB"
@@ -493,6 +517,83 @@ _DEEP_EQUITY_PATTERN = re.compile(
 
 def _mentions_deep_equity(text: str) -> bool:
     return bool(_DEEP_EQUITY_PATTERN.search(text))
+
+
+#: Only unambiguous month-name date forms, never bare numeric ones
+#: ("15/09/2026") — DD/MM vs MM/DD is genuinely ambiguous between UK and
+#: US convention on this platform, and DATA-002's "never guess" doctrine
+#: applies just as much to parsing a date as to resolving an identity: an
+#: unparseable date must fall through honestly, never be silently
+#: misread as the wrong day.
+_MONTH_NAMES: dict[str, int] = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
+_ISO_DATE_PATTERN = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+_DAY_MONTH_YEAR_PATTERN = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\s+(\d{4})\b")
+_MONTH_DAY_YEAR_PATTERN = re.compile(
+    r"\b([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b"
+)
+_HISTORICAL_TRIGGER_PATTERN = re.compile(
+    r"\bwhat did (?:talvrin|you) know\b|\bwhat was known\b|\bas of\b|\bas at\b"
+    r"|\bback on\b|\bhistorically\b|\bused to (?:be|show)\b",
+    re.I,
+)
+
+_CHANGE_TRIGGER_PATTERN = re.compile(
+    r"\bwhat(?:'?s| is| has) changed\b|\bwhat changed\b|\bany changes?\b"
+    r"|\bhas .+ changed\b|\brecent changes?\b|\bmaterial changes?\b"
+    r"|\bwhat'?s new\b|\bchanges? to\b",
+    re.I,
+)
+
+
+def _mentions_change_query(text: str) -> bool:
+    return bool(_CHANGE_TRIGGER_PATTERN.search(text))
+
+
+def _parse_mentioned_date(text: str) -> dt.date | None:
+    iso = _ISO_DATE_PATTERN.search(text)
+    if iso is not None:
+        try:
+            return dt.date(int(iso.group(1)), int(iso.group(2)), int(iso.group(3)))
+        except ValueError:
+            return None
+
+    dmy = _DAY_MONTH_YEAR_PATTERN.search(text)
+    if dmy is not None:
+        month = _MONTH_NAMES.get(dmy.group(2).lower())
+        if month is not None:
+            try:
+                return dt.date(int(dmy.group(3)), month, int(dmy.group(1)))
+            except ValueError:
+                return None
+
+    mdy = _MONTH_DAY_YEAR_PATTERN.search(text)
+    if mdy is not None:
+        month = _MONTH_NAMES.get(mdy.group(1).lower())
+        if month is not None:
+            try:
+                return dt.date(int(mdy.group(3)), month, int(mdy.group(2)))
+            except ValueError:
+                return None
+
+    return None
+
+
+def _mentioned_historical_cutoff(text: str) -> dt.date | None:
+    """A historical cutoff is only ever recognised alongside an explicit
+    trigger phrase - a query that merely happens to contain a date (e.g.
+    "AZN reported results on 15 September 2026") is not a historical
+    question, and routing it as one would silently hide the user's actual
+    (present-tense) question behind a point-in-time reconstruction of
+    something they never asked to look back at.
+    """
+    if not _HISTORICAL_TRIGGER_PATTERN.search(text):
+        return None
+    return _parse_mentioned_date(text)
 
 
 def _mentioned_macro_series(text: str) -> tuple[str, str] | None:
@@ -986,6 +1087,463 @@ async def _document_backed_market_structure_reply(
     return await _excerpt_answer(session, query_text, chunks[0])
 
 
+async def _historical_yield_curve_reply(session: AsyncSession, as_of_date: dt.date) -> ResearchAnswer:
+    """Reconstructs the UK nominal gilt spot curve as Talvrin held it as of
+    a historical knowledge cutoff — mirrors _yield_curve_reply's shape
+    exactly, but each tenor is looked up via accepted_fact_as_of instead of
+    "whatever is currently ACTIVE", so a later correction never leaks into
+    this answer. The market-effective date of the curve returned can be
+    earlier than as_of_date itself (the BoE's own feed routinely publishes
+    a day or more behind - see accepted_fact_as_of's docstring), so both
+    dates are shown explicitly rather than conflated into one.
+    """
+    if not await _display_allowed(session, "boe.yield-curve"):
+        return _default_reply(f"UK yield curve as of {as_of_date.isoformat()}")
+
+    rows: list[tuple[str, str]] = []
+    used_facts: list[AcceptedFact] = []
+    for tenor, label in _BENCHMARK_TENORS:
+        fact = await accepted_fact_as_of(
+            session,
+            subject_id=curve_point_subject_id(tenor),
+            metric_id=METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+            as_of_date=as_of_date,
+        )
+        if fact is None:
+            continue
+        rows.append((label, f"{fact.value['spot_rate_pct']}%"))
+        used_facts.append(fact)
+
+    if not rows:
+        return _default_reply(f"UK yield curve as of {as_of_date.isoformat()}")
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION",
+        knowledge_time=dt.datetime.now(dt.UTC),
+        status="ASSEMBLING",
+    )
+    session.add(bundle)
+    await session.flush()
+    for fact in used_facts:
+        session.add(
+            EvidenceMember(evidence_bundle_id=bundle.id, kind="FACT", accepted_fact_id=fact.id)
+        )
+
+    earliest_known = min(
+        f.knowledge_range.lower for f in used_facts if f.knowledge_range.lower is not None
+    )
+    effective_date = max(
+        f.valid_range.lower for f in used_facts if f.valid_range.lower is not None
+    ).date()
+    return ResearchAnswer(
+        text=(
+            f"As Talvrin knew by the end of {as_of_date.isoformat()}, here is the UK nominal "
+            f"gilt spot curve — market-effective {effective_date.isoformat()} (first recorded "
+            f"{earliest_known.date().isoformat()}), not today's current, possibly since-revised "
+            f"state."
+        ),
+        facts=FactTable(
+            title=f"UK nominal gilt spot curve as known by {as_of_date.isoformat()}", rows=rows
+        ),
+        citations=[
+            Citation(
+                label="Bank of England — daily nominal gilt spot curve (historical reconstruction)",
+                meta=(
+                    f"Market-effective {effective_date.isoformat()}; "
+                    f"known to Talvrin by {as_of_date.isoformat()}"
+                ),
+                pill="SOURCE",
+                kind="doc",
+                url="https://www.bankofengland.co.uk/statistics/yield-curves",
+            )
+        ],
+        note=(
+            "This reconstructs a past knowledge state, not a live quote — any correction "
+            "made after your requested cutoff date is deliberately not reflected here."
+        ),
+        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        evidence_bundle_id=bundle.id,
+    )
+
+
+async def _historical_treasury_curve_reply(
+    session: AsyncSession, as_of_date: dt.date
+) -> ResearchAnswer:
+    """The US Treasury equivalent of _historical_yield_curve_reply — same
+    knowledge-cutoff reconstruction, same reasoning."""
+    if not await _display_allowed(session, "treasury.yield-curve"):
+        return _default_reply(f"US Treasury yield curve as of {as_of_date.isoformat()}")
+
+    rows: list[tuple[str, str]] = []
+    used_facts: list[AcceptedFact] = []
+    for field, label in _TREASURY_BENCHMARK_TENORS:
+        fact = await accepted_fact_as_of(
+            session,
+            subject_id=treasury_curve_point_subject_id(field),
+            metric_id=METRIC_US_TREASURY_PAR_YIELD_CURVE,
+            as_of_date=as_of_date,
+        )
+        if fact is None:
+            continue
+        rows.append((label, f"{fact.value['par_yield_pct']}%"))
+        used_facts.append(fact)
+
+    if not rows:
+        return _default_reply(f"US Treasury yield curve as of {as_of_date.isoformat()}")
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION",
+        knowledge_time=dt.datetime.now(dt.UTC),
+        status="ASSEMBLING",
+    )
+    session.add(bundle)
+    await session.flush()
+    for fact in used_facts:
+        session.add(
+            EvidenceMember(evidence_bundle_id=bundle.id, kind="FACT", accepted_fact_id=fact.id)
+        )
+
+    earliest_known = min(
+        f.knowledge_range.lower for f in used_facts if f.knowledge_range.lower is not None
+    )
+    effective_date = max(
+        f.valid_range.lower for f in used_facts if f.valid_range.lower is not None
+    ).date()
+    return ResearchAnswer(
+        text=(
+            f"As Talvrin knew by the end of {as_of_date.isoformat()}, here is the US Treasury "
+            f"par yield curve — market-effective {effective_date.isoformat()} (first recorded "
+            f"{earliest_known.date().isoformat()}), not today's current, possibly since-revised "
+            f"state."
+        ),
+        facts=FactTable(
+            title=f"US Treasury par yield curve as known by {as_of_date.isoformat()}", rows=rows
+        ),
+        citations=[
+            Citation(
+                label=(
+                    "U.S. Department of the Treasury — Daily Par Yield Curve Rates "
+                    "(historical reconstruction)"
+                ),
+                meta=(
+                    f"Market-effective {effective_date.isoformat()}; "
+                    f"known to Talvrin by {as_of_date.isoformat()}"
+                ),
+                pill="SOURCE",
+                kind="doc",
+                url="https://home.treasury.gov/resource-center/data-chart-center/interest-rates/",
+            )
+        ],
+        note=(
+            "This reconstructs a past knowledge state, not a live quote — any correction "
+            "made after your requested cutoff date is deliberately not reflected here."
+        ),
+        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        evidence_bundle_id=bundle.id,
+    )
+
+
+async def _historical_inventory_reply(session: AsyncSession, as_of_date: dt.date) -> ResearchAnswer:
+    """Bare "what did Talvrin know on <date>" with no specific subject
+    named — a point-in-time inventory of what Talvrin's fact store held,
+    grouped by subject_type/metric_id, since there's no single subject to
+    reconstruct a full value for in the first place. Matches the
+    acceptance test's own literal phrasing: "What did Talvrin know on 15
+    September 2026?" names no subject at all.
+    """
+    knowledge_cutoff = dt.datetime.combine(as_of_date, dt.time.max, tzinfo=dt.UTC)
+    facts = (
+        (
+            await session.execute(
+                select(AcceptedFact).where(
+                    AcceptedFact.knowledge_range.contains(knowledge_cutoff)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    if not facts:
+        return _default_reply(f"what Talvrin knew on {as_of_date.isoformat()}")
+
+    groups: dict[tuple[str, str], list[AcceptedFact]] = {}
+    for fact in facts:
+        groups.setdefault((fact.subject_type, fact.metric_id), []).append(fact)
+
+    rows = [
+        (f"{subject_type} / {metric_id}", f"{len(group)} subject(s) known")
+        for (subject_type, metric_id), group in sorted(groups.items())
+    ]
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION",
+        knowledge_time=dt.datetime.now(dt.UTC),
+        status="ASSEMBLING",
+    )
+    session.add(bundle)
+    await session.flush()
+    for group in groups.values():
+        # One representative fact per group is enough to make the
+        # inventory row auditable - a single curve group alone can hold
+        # 14+ individual tenor facts, not all of which need their own
+        # evidence-member row just to prove the group itself is real.
+        session.add(
+            EvidenceMember(
+                evidence_bundle_id=bundle.id, kind="FACT", accepted_fact_id=group[0].id
+            )
+        )
+
+    return ResearchAnswer(
+        text=(
+            f"As of the end of {as_of_date.isoformat()}, Talvrin's accepted-fact store held "
+            "the following, reconstructed from each fact's own knowledge_range (when it was "
+            "ingested, independent of any later correction):"
+        ),
+        facts=FactTable(title=f"What Talvrin knew on {as_of_date.isoformat()}", rows=rows),
+        citations=[
+            Citation(
+                label="Talvrin accepted-fact store — historical knowledge-time reconstruction",
+                meta=f"As known by the end of {as_of_date.isoformat()}",
+                pill="SOURCE",
+                kind="link",
+            )
+        ],
+        note=(
+            "This lists what had been accepted into Talvrin's fact store by this date — ask "
+            'about a specific subject (e.g. "what was the UK yield curve on this date") for '
+            "its full reconstructed value."
+        ),
+        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        evidence_bundle_id=bundle.id,
+    )
+
+
+async def _historical_reply(
+    session: AsyncSession, query_text: str, as_of_date: dt.date
+) -> ResearchAnswer:
+    """Routes a recognised historical question to the specific subject it
+    names (reusing the same keyword detectors the "live" branches use), or
+    to a general point-in-time inventory when no specific subject is named.
+    """
+    if _mentions_treasury(query_text):
+        return await _historical_treasury_curve_reply(session, as_of_date)
+    if _mentions_yield_curve(query_text) or _mentions_gilt(query_text):
+        return await _historical_yield_curve_reply(session, as_of_date)
+    return await _historical_inventory_reply(session, as_of_date)
+
+
+async def _change_detection_curve_reply(
+    session: AsyncSession,
+    *,
+    metric_id: str,
+    benchmark_tenors: list[tuple[Any, str]],
+    subject_id_fn: Callable[[Any], uuid.UUID],
+    rights_profile_code: str,
+    curve_label: str,
+    citation_label: str,
+    citation_url: str,
+) -> ResearchAnswer:
+    """Scans every benchmark tenor for a real before/after pair (a
+    correction, or the latest two real-world periods — see
+    change_detection.detect_change's own docstring for which), then
+    classifies each one's materiality with a fixed, deterministic
+    threshold (materiality.py) — no AI model call anywhere in this
+    function, matching the roadmap's own "works independently of the
+    LLM" requirement.
+    """
+    if not await _display_allowed(session, rights_profile_code):
+        return _default_reply(f"what changed in the {curve_label}")
+
+    changed: list[tuple[str, DetectedChange]] = []
+    for tenor_key, label in benchmark_tenors:
+        result = await detect_change(
+            session, subject_id=subject_id_fn(tenor_key), metric_id=metric_id
+        )
+        if isinstance(result, DetectedChange) and result.old_value != result.new_value:
+            changed.append((label, result))
+
+    if not changed:
+        return ResearchAnswer(
+            text=(
+                f"No recorded change in the {curve_label} — every tenor's latest recorded "
+                "value matches the one before it."
+            ),
+            facts=None, citations=[], note=None,
+            allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE, evidence_bundle_id=None,
+        )
+
+    material = [(label, c) for label, c in changed if c.is_material]
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION", knowledge_time=dt.datetime.now(dt.UTC),
+        status="ASSEMBLING",
+    )
+    session.add(bundle)
+    await session.flush()
+    rows: list[tuple[str, str]] = []
+    lines: list[str] = []
+    for label, change in changed:
+        session.add(
+            EvidenceMember(evidence_bundle_id=bundle.id, kind="FACT", accepted_fact_id=change.old_fact_id)
+        )
+        session.add(
+            EvidenceMember(evidence_bundle_id=bundle.id, kind="FACT", accepted_fact_id=change.new_fact_id)
+        )
+        rows.append((label, f"{'MATERIAL' if change.is_material else 'noise'}: {change.explanation}"))
+        lines.append(f"• {label}: {change.explanation}")
+
+    summary = (
+        f"{len(material)} of {len(changed)} changed tenor(s) crossed the materiality threshold."
+        if material
+        else f"{len(changed)} tenor(s) changed, but none crossed the materiality threshold — "
+        "likely normal day-to-day noise."
+    )
+
+    return ResearchAnswer(
+        text=f"What changed in the {curve_label}:\n\n" + "\n".join(lines) + f"\n\n{summary}",
+        facts=FactTable(title=f"{curve_label} — before vs after", rows=rows),
+        citations=[
+            Citation(
+                label=citation_label, meta=None, pill="SOURCE", kind="doc", url=citation_url
+            )
+        ],
+        note=(
+            "Materiality is classified by a fixed, deterministic threshold per metric — "
+            "no AI model is involved in this comparison."
+        ),
+        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        evidence_bundle_id=bundle.id,
+    )
+
+
+async def _change_detection_single_reply(
+    session: AsyncSession,
+    *,
+    subject_id: uuid.UUID,
+    metric_id: str,
+    rights_profile_code: str,
+    subject_label: str,
+    display_field: str,
+    citation_label: str,
+    citation_url: str | None,
+) -> ResearchAnswer:
+    """The single-subject equivalent of _change_detection_curve_reply - one
+    subject_id, not a scan over many tenors.
+    """
+    if not await _display_allowed(session, rights_profile_code):
+        return _default_reply(f"what changed for {subject_label}")
+
+    result = await detect_change(session, subject_id=subject_id, metric_id=metric_id)
+    if isinstance(result, NoChangeDetected):
+        return ResearchAnswer(
+            text=f"No recorded change for {subject_label}: {result.reason}.",
+            facts=None, citations=[], note=None,
+            allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE, evidence_bundle_id=None,
+        )
+    if result.old_value == result.new_value:
+        return ResearchAnswer(
+            text=(
+                f"No recorded change for {subject_label} — the latest recorded value "
+                "matches the one before it."
+            ),
+            facts=None, citations=[], note=None,
+            allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE, evidence_bundle_id=None,
+        )
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION", knowledge_time=dt.datetime.now(dt.UTC),
+        status="ASSEMBLING",
+    )
+    session.add(bundle)
+    await session.flush()
+    session.add(
+        EvidenceMember(evidence_bundle_id=bundle.id, kind="FACT", accepted_fact_id=result.old_fact_id)
+    )
+    session.add(
+        EvidenceMember(evidence_bundle_id=bundle.id, kind="FACT", accepted_fact_id=result.new_fact_id)
+    )
+
+    rows = [
+        ("Before", str(result.old_value.get(display_field))),
+        ("After", str(result.new_value.get(display_field))),
+        ("Material?", "Yes" if result.is_material else "No"),
+    ]
+
+    return ResearchAnswer(
+        text=f"What changed for {subject_label}:\n\n{result.explanation}",
+        facts=FactTable(title=f"{subject_label} — before vs after", rows=rows),
+        citations=[
+            Citation(
+                label=citation_label, meta=None, pill="SOURCE", kind="doc", url=citation_url
+            )
+        ],
+        note=(
+            "Materiality is classified by a fixed, deterministic threshold — no AI model "
+            "is involved in this comparison."
+        ),
+        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        evidence_bundle_id=bundle.id,
+    )
+
+
+async def _change_detection_reply(session: AsyncSession, query_text: str) -> ResearchAnswer:
+    """Routes a recognised "what changed" question to the specific subject
+    it names, reusing the same keyword detectors the "live" and historical
+    branches already use. Scope decision: covers the market-wide subjects
+    (both yield curves, FX, macro) — a specific gilt/equity instrument's
+    own before/after is a natural, well-scoped follow-up (it would reuse
+    this same detect_change core), not yet wired into this dispatcher.
+    """
+    if _mentions_treasury(query_text):
+        return await _change_detection_curve_reply(
+            session,
+            metric_id=METRIC_US_TREASURY_PAR_YIELD_CURVE,
+            benchmark_tenors=_TREASURY_BENCHMARK_TENORS,
+            subject_id_fn=treasury_curve_point_subject_id,
+            rights_profile_code="treasury.yield-curve",
+            curve_label="US Treasury par yield curve",
+            citation_label="U.S. Department of the Treasury — Daily Par Yield Curve Rates",
+            citation_url="https://home.treasury.gov/resource-center/data-chart-center/interest-rates/",
+        )
+    if _mentions_yield_curve(query_text) or _mentions_gilt(query_text):
+        return await _change_detection_curve_reply(
+            session,
+            metric_id=METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+            benchmark_tenors=_BENCHMARK_TENORS,
+            subject_id_fn=curve_point_subject_id,
+            rights_profile_code="boe.yield-curve",
+            curve_label="UK nominal gilt spot curve",
+            citation_label="Bank of England — daily nominal gilt spot curve",
+            citation_url="https://www.bankofengland.co.uk/statistics/yield-curves",
+        )
+    if _mentions_fx(query_text):
+        return await _change_detection_single_reply(
+            session,
+            subject_id=fx_pair_subject_id("GBP", "USD"),
+            metric_id=METRIC_FX_SPOT_RATE,
+            rights_profile_code="frankfurter.fx",
+            subject_label="GBP/USD exchange rate",
+            display_field="rate",
+            citation_label="Frankfurter — ECB-blended exchange rates",
+            citation_url="https://www.frankfurter.app/",
+        )
+    if (macro_match := _mentioned_macro_series(query_text)) is not None:
+        metric_id, country = macro_match
+        series_code = _MACRO_SERIES_CODES[(metric_id, country)]
+        return await _change_detection_single_reply(
+            session,
+            subject_id=macro_series_subject_id("WB", "WDI", series_code),
+            metric_id=metric_id,
+            rights_profile_code="dbnomics.macro",
+            subject_label=f"{_MACRO_COUNTRY_LABELS[country]} {_MACRO_INDICATOR_LABELS[metric_id]}",
+            display_field="value",
+            citation_label="World Bank — World Development Indicators (via DBnomics)",
+            citation_url="https://db.nomics.world/",
+        )
+    return _default_reply(query_text)
+
+
 def _default_reply(query: str) -> ResearchAnswer:
     return ResearchAnswer(
         text=(
@@ -993,8 +1551,8 @@ def _default_reply(query: str) -> ResearchAnswer:
             "Talvrin only answers from accepted facts and deterministic "
             "calculations, and doesn't yet have reconciled data covering this "
             "question — currently live: UK gilt terms and real market prices, "
-            "the BoE yield curve, GBP/USD exchange rates, US equity prices, and "
-            "UK/US macroeconomic indicators."
+            "the BoE yield curve, the US Treasury par yield curve, GBP/USD "
+            "exchange rates, US equity prices, and UK/US macroeconomic indicators."
         ),
         facts=None,
         citations=[],
@@ -1504,6 +2062,133 @@ async def _yield_curve_reply(session: AsyncSession) -> ResearchAnswer:
     )
 
 
+#: A subset of the ~14 published tenors, mirroring _BENCHMARK_TENORS'
+#: own narrowing to the figures actually quoted in practice (industry
+#: headlines cite "US10Y"/"US30Y", not the 4-month bill) - every published
+#: tenor is still ingested as its own curve point, this list only controls
+#: which ones render in a reply.
+_TREASURY_BENCHMARK_TENORS: list[tuple[str, str]] = [
+    ("BC_1MONTH", "1 Month"),
+    ("BC_3MONTH", "3 Month"),
+    ("BC_6MONTH", "6 Month"),
+    ("BC_1YEAR", "1 Year"),
+    ("BC_2YEAR", "2 Year"),
+    ("BC_5YEAR", "5 Year"),
+    ("BC_10YEAR", "10 Year"),
+    ("BC_20YEAR", "20 Year"),
+    ("BC_30YEAR", "30 Year"),
+]
+
+
+async def _latest_treasury_curve_date(session: AsyncSession) -> dt.datetime | None:
+    return (
+        await session.execute(
+            select(func.lower(AcceptedFact.valid_range))
+            .where(
+                AcceptedFact.subject_type == SUBJECT_TYPE_TREASURY_CURVE_POINT,
+                AcceptedFact.metric_id == METRIC_US_TREASURY_PAR_YIELD_CURVE,
+                AcceptedFact.status == "ACTIVE",
+            )
+            .order_by(func.lower(AcceptedFact.valid_range).desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+async def _treasury_curve_point_facts_at(
+    session: AsyncSession, *, at: dt.datetime
+) -> list[AcceptedFact]:
+    return list(
+        (
+            await session.execute(
+                select(AcceptedFact).where(
+                    AcceptedFact.subject_type == SUBJECT_TYPE_TREASURY_CURVE_POINT,
+                    AcceptedFact.metric_id == METRIC_US_TREASURY_PAR_YIELD_CURVE,
+                    AcceptedFact.status == "ACTIVE",
+                    AcceptedFact.valid_range.contains(at),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def _treasury_yield_curve_reply(session: AsyncSession) -> ResearchAnswer:
+    """Mirrors _yield_curve_reply's own shape exactly: the published par
+    yield curve itself, not a single headline number, since the feed
+    directly names every tenor's own constant-maturity yield (see
+    treasury_yield_curve/mapping.py's docstring for why tenor identity is
+    the source's own field name, never a derived fractional-year number).
+    """
+    if not await _display_allowed(session, "treasury.yield-curve"):
+        return _default_reply("US Treasury yield curve")
+
+    latest_date = await _latest_treasury_curve_date(session)
+    if latest_date is None:
+        return _default_reply("US Treasury yield curve")
+
+    curve_facts = await _treasury_curve_point_facts_at(session, at=latest_date)
+    if not curve_facts:
+        return _default_reply("US Treasury yield curve")
+
+    by_field = {f.value["tenor_field"]: f for f in curve_facts}
+    rows: list[tuple[str, str]] = []
+    used_facts: list[AcceptedFact] = []
+    for field, label in _TREASURY_BENCHMARK_TENORS:
+        fact = by_field.get(field)
+        if fact is None:
+            continue
+        rows.append((label, f"{fact.value['par_yield_pct']}%"))
+        used_facts.append(fact)
+
+    if not rows:
+        return _default_reply("US Treasury yield curve")
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION",
+        knowledge_time=dt.datetime.now(dt.UTC),
+        status="ASSEMBLING",
+    )
+    session.add(bundle)
+    await session.flush()
+    for fact in used_facts:
+        session.add(
+            EvidenceMember(evidence_bundle_id=bundle.id, kind="FACT", accepted_fact_id=fact.id)
+        )
+
+    as_of = latest_date.date().isoformat()
+    # The oldest knowledge-time among the points actually shown, not the
+    # newest - a curve pill must never claim to be fresher than its
+    # least-fresh contributing point.
+    oldest_knowledge_time = min(
+        fact.knowledge_range.lower for fact in used_facts if fact.knowledge_range.lower is not None
+    )
+    return ResearchAnswer(
+        text=(
+            f"Here is the US Treasury's daily par yield curve as of {as_of} "
+            "— the government's own published constant-maturity yields, not "
+            "any specific security's traded price."
+        ),
+        facts=FactTable(title="US Treasury par yield curve", rows=rows),
+        citations=[
+            Citation(
+                label="U.S. Department of the Treasury — Daily Par Yield Curve Rates",
+                meta=f"Published {as_of}",
+                pill=compute_freshness(
+                    metric_id=METRIC_US_TREASURY_PAR_YIELD_CURVE,
+                    knowledge_time=oldest_knowledge_time,
+                ),
+                kind="doc",
+                url="https://home.treasury.gov/resource-center/data-chart-center/interest-rates/",
+            )
+        ],
+        note=None,
+        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        evidence_bundle_id=bundle.id,
+    )
+
+
 def _not_yet_connected_reply(query_text: str, *, asset_class: str) -> ResearchAnswer:
     """Honest stand-in for a whole family of functions removed 2026-10-21:
     each used to return hand-typed, fabricated prices/ratios/yields dressed
@@ -1526,8 +2211,9 @@ def _not_yet_connected_reply(query_text: str, *, asset_class: str) -> ResearchAn
             f"{asset_class} yet, so it won't answer with invented figures - it only "
             "ever answers from accepted facts and deterministic calculations that "
             "trace back to a verifiable source. Currently live: UK gilt terms and "
-            "prices, the BoE yield curve, GBP/USD exchange rates, US equity prices "
-            "for a small pilot list, and UK/US macroeconomic indicators."
+            "prices, the BoE yield curve, the US Treasury par yield curve, GBP/USD "
+            "exchange rates, US equity prices for a small pilot list, and UK/US "
+            "macroeconomic indicators."
         ),
         facts=None,
         citations=[],
@@ -1572,6 +2258,79 @@ async def _confirming_source_count(session: AsyncSession, accepted_fact_id: uuid
         .all()
     )
     return len(set(rights_profile_ids))
+
+
+async def _fact_provenance(
+    session: AsyncSession, accepted_fact_id: uuid.UUID
+) -> tuple[set[uuid.UUID], set[str]]:
+    """Distinct rights_profile_ids AND publisher names backing one accepted
+    fact, via the same FactObservationLink join _confirming_source_count
+    already uses — extended one hop further (SourceArtifact -> Dataset ->
+    Source) to resolve the actual publisher's name, not just count profiles.
+    Empty sets for a fact with no linked observations at all (shouldn't
+    happen for a real ingested fact, but never crashes over it).
+    """
+    rows = (
+        await session.execute(
+            select(SourceObservation.rights_profile_id, Source.name)
+            .select_from(FactObservationLink)
+            .join(
+                SourceObservation,
+                FactObservationLink.source_observation_id == SourceObservation.id,
+            )
+            .join(SourceArtifact, SourceObservation.source_artifact_id == SourceArtifact.id)
+            .join(Dataset, SourceArtifact.dataset_id == Dataset.id)
+            .join(Source, Dataset.source_id == Source.id)
+            .where(FactObservationLink.accepted_fact_id == accepted_fact_id)
+        )
+    ).all()
+    return {row[0] for row in rows}, {row[1] for row in rows}
+
+
+#: Only the actions a user would actually recognise as describing further
+#: use of a fact, not Talvrin's own internal plumbing (retrieve/store/cache
+#: aren't meaningful to show, and display is trivial - anything reaching
+#: this function is already being displayed, or the PDP would have blocked
+#: it before evidence assembly ever started).
+_SURFACED_RIGHTS_ACTIONS: tuple[RightsAction, ...] = ("export", "redistribute", "ai")
+_RIGHTS_ACTION_LABELS: dict[str, str] = {
+    "export": "Export",
+    "redistribute": "Redistribution",
+    "ai": "AI-composed use",
+}
+
+
+async def _permitted_use_summary(
+    session: AsyncSession, rights_profile_ids: set[uuid.UUID]
+) -> str | None:
+    """A short, plain-language summary of what a user may do with a fact
+    beyond viewing it - never the raw PDP decision trace, a rights-profile
+    code, or any other internal policy detail (RIGHTS-001's own per-action
+    doctrine means "permitted to display" says nothing about export or
+    redistribution, so those are surfaced explicitly instead of implied).
+
+    None when no governing rights profile can be resolved at all - an
+    honest "unknown", never a fabricated default.
+
+    Conservative across more than one governing source (a fact backed by
+    several agreeing observations): ALL of them must allow a given action
+    for the combined fact to be described as permitted for it - the most
+    restrictive source's limitation applies to the whole fact, matching
+    evaluate_action's own fail-closed doctrine.
+    """
+    if not rights_profile_ids:
+        return None
+
+    parts: list[str] = []
+    for action in _SURFACED_RIGHTS_ACTIONS:
+        decisions = [
+            await evaluate_action(session, action, profile_id)
+            for profile_id in rights_profile_ids
+        ]
+        allowed = all(decision == RightsDecision.ALLOW for decision in decisions)
+        label = _RIGHTS_ACTION_LABELS[action]
+        parts.append(f"{label}: {'permitted' if allowed else 'not permitted'}")
+    return " · ".join(parts)
 
 
 async def _fx_rate_reply(session: AsyncSession) -> ResearchAnswer:
@@ -1898,8 +2657,32 @@ async def assemble_research_answer(
         answer = _closing_reply()
     elif _is_help_request(query_text):
         answer = _help_reply()
+    elif (historical_cutoff := _mentioned_historical_cutoff(query_text)) is not None:
+        # Checked before every other keyword branch: a historical question
+        # ("what did Talvrin know on 15 September 2026?") can still mention
+        # "gilt"/"treasury"/"yield curve", and those branches only ever
+        # reconstruct TODAY's current state - routing here first is what
+        # lets _historical_reply re-apply the same subject keywords against
+        # a genuine point-in-time reconstruction instead.
+        answer = await _historical_reply(session, query_text, historical_cutoff)
+    elif _mentions_change_query(query_text):
+        # Checked before every other keyword branch, same reasoning as the
+        # historical branch above: "what's changed in the gilt yield
+        # curve?" still mentions "gilt"/"yield curve", and those branches
+        # only ever show today's single current state, never a before/
+        # after comparison.
+        answer = await _change_detection_reply(session, query_text)
     elif _mentions_accrued(query_text):
         answer = await _document_backed_accrued_reply(session) or _accrued_reply()
+    elif _mentions_treasury(query_text):
+        # Checked before _mentions_yield_curve: that pattern's generic
+        # "<N> year ... yield" fallback (added for a UK gilt-tenor miss)
+        # also matches "US 10 year treasury yield" - found live, 2026-10-22,
+        # misrouting a genuine Treasury question to the UK curve reply.
+        # Safe to check first because _mentions_treasury already excludes
+        # anything gilt-related (its own "gilt"/"glit"/_mentions_gilt
+        # guard), so nothing intended for the UK branch is stolen here.
+        answer = await _treasury_yield_curve_reply(session)
     elif _mentions_yield_curve(query_text):
         answer = await _yield_curve_reply(session)
     elif _mentions_fx(query_text):
@@ -1935,8 +2718,6 @@ async def assemble_research_answer(
             )
         else:
             answer = await _gilt_facts_reply(session, query_text)
-    elif _mentions_treasury(query_text):
-        answer = _not_yet_connected_reply(query_text, asset_class="US Treasury yields")
     elif _mentions_etf(query_text):
         answer = _not_yet_connected_reply(query_text, asset_class="ETFs")
     elif _mentions_crypto(query_text):
@@ -1980,7 +2761,29 @@ class EvidenceItem:
     metric_id: str | None
     value: dict[str, object] | None
     basis: str | None
+    # Knowledge/ingestion time ONLY - when Talvrin came to hold this exact
+    # value, never the real-world date/period it describes (see
+    # effective_time for that). Previously conflated for CALCULATION items
+    # (as_of held the market-effective as_of_date, not a knowledge time at
+    # all) - PRD P2's own traceability gap, fixed here: as_of is now always
+    # "when Talvrin knew this", uniformly across every kind.
     as_of: str | None
+    # Market-effective time - the real-world date/period this value
+    # describes. Deliberately a SEPARATE field from as_of: the whole point
+    # of showing both is that they can differ (an ingestion lag, or - for a
+    # correction - the same effective date known at two different times).
+    effective_time: str | None = None
+    # Plain publisher/computation attribution (e.g. "Bank of England", or
+    # "Talvrin calculation (gilt_price_yield_v1 v1)") - never a raw
+    # rights-profile code or policy-engine identifier.
+    source: str | None = None
+    # A short, plain-language summary of what a user may do with this fact
+    # beyond viewing it (export/redistribute/AI-composed use) - RIGHTS-001's
+    # own per-action doctrine means "permitted to display" says nothing
+    # about these, so they're surfaced explicitly rather than implied.
+    # None when no governing rights profile can be resolved at all, never
+    # a fabricated default (see _permitted_use_summary).
+    permitted_use: str | None = None
     # DOCUMENT_SPAN only - a fact/calculation item is self-describing via
     # metric_id/value, but a document excerpt needs its own source title
     # and text to be renderable at all (see _resolve_bundle_items).
@@ -2104,6 +2907,7 @@ async def _resolve_bundle_items(session: AsyncSession, bundle_id: uuid.UUID) -> 
             fact = facts_by_id.get(member.accepted_fact_id)
             if fact is not None:
                 assert fact.knowledge_range.lower is not None  # our own rows always set this
+                fact_rights_profile_ids, source_names = await _fact_provenance(session, fact.id)
                 items.append(
                     EvidenceItem(
                         kind="FACT",
@@ -2112,11 +2916,40 @@ async def _resolve_bundle_items(session: AsyncSession, bundle_id: uuid.UUID) -> 
                         value=fact.value,
                         basis=None,
                         as_of=fact.knowledge_range.lower.isoformat(),
+                        effective_time=(
+                            fact.valid_range.lower.isoformat()
+                            if fact.valid_range.lower is not None
+                            else None
+                        ),
+                        source=", ".join(sorted(source_names)) if source_names else None,
+                        permitted_use=await _permitted_use_summary(
+                            session, fact_rights_profile_ids
+                        ),
                     )
                 )
         elif member.kind == "CALCULATION" and member.calculation_result_id is not None:
             result = results_by_id.get(member.calculation_result_id)
             if result is not None:
+                input_fact_ids = (
+                    (
+                        await session.execute(
+                            select(CalculationInput.accepted_fact_id).where(
+                                CalculationInput.calculation_result_id == result.id
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                calc_rights_profile_ids: set[uuid.UUID] = set()
+                for input_fact_id in input_fact_ids:
+                    input_rights_ids, _ = await _fact_provenance(session, input_fact_id)
+                    calc_rights_profile_ids |= input_rights_ids
+
+                spec = await session.get(
+                    CalculationSpecification, result.calculation_specification_id
+                )
+                spec_label = f"{spec.code} v{spec.version}" if spec is not None else "unknown spec"
                 items.append(
                     EvidenceItem(
                         kind="CALCULATION",
@@ -2124,7 +2957,17 @@ async def _resolve_bundle_items(session: AsyncSession, bundle_id: uuid.UUID) -> 
                         metric_id=result.metric_id,
                         value=result.value,
                         basis=result.basis,
-                        as_of=result.as_of_date.isoformat(),
+                        # Knowledge time for a CALCULATION is when Talvrin
+                        # computed it, NOT the market-effective date the
+                        # calculation is for (that's effective_time, below)
+                        # - previously conflated here, part of the gap this
+                        # feature exists to close.
+                        as_of=result.created_at.isoformat(),
+                        effective_time=result.as_of_date.isoformat(),
+                        source=f"Talvrin calculation ({spec_label})",
+                        permitted_use=await _permitted_use_summary(
+                            session, calc_rights_profile_ids
+                        ),
                     )
                 )
         elif member.kind == "DOCUMENT_SPAN" and member.document_chunk_id is not None:

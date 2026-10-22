@@ -48,6 +48,11 @@ from app.modules.market.pipeline.fx_ingest import METRIC_FX_SPOT_RATE, fx_pair_s
 from app.modules.market.pipeline.macro_ingest import macro_series_subject_id
 from app.modules.market.pipeline.stages import METRIC_GILT_REFERENCE_TERMS
 from app.modules.market.pipeline.tradeweb_price_ingest import METRIC_GILT_MARKET_CLOSE_PRICE
+from app.modules.market.pipeline.treasury_curve_ingest import (
+    METRIC_US_TREASURY_PAR_YIELD_CURVE,
+    SUBJECT_TYPE_TREASURY_CURVE_POINT,
+    treasury_curve_point_subject_id,
+)
 from app.modules.policy.allowed_output_type import AllowedOutputType
 from app.modules.policy.models import ActivationRecord, CapabilityStatus
 from app.modules.reference.models import Instrument, InstrumentAlias, Issuer
@@ -240,6 +245,34 @@ async def _seed_curve_points(
                     lower=knowledge_time or dt.datetime.now(dt.UTC), upper=None, bounds="[)"
                 ),
                 value={"tenor_years": tenor, "spot_rate_pct": rate},
+                status="ACTIVE",
+            )
+        )
+    await session.flush()
+
+
+async def _seed_treasury_curve_points(
+    session: AsyncSession,
+    field_to_rate: dict[str, str],
+    *,
+    knowledge_time: dt.datetime | None = None,
+) -> None:
+    labels = {
+        "BC_1MONTH": "1 Month", "BC_3MONTH": "3 Month", "BC_6MONTH": "6 Month",
+        "BC_1YEAR": "1 Year", "BC_2YEAR": "2 Year", "BC_5YEAR": "5 Year",
+        "BC_10YEAR": "10 Year", "BC_20YEAR": "20 Year", "BC_30YEAR": "30 Year",
+    }
+    for field, rate in field_to_rate.items():
+        session.add(
+            AcceptedFact(
+                subject_type=SUBJECT_TYPE_TREASURY_CURVE_POINT,
+                subject_id=treasury_curve_point_subject_id(field),
+                metric_id=METRIC_US_TREASURY_PAR_YIELD_CURVE,
+                valid_range=_CURVE_DAY_RANGE,
+                knowledge_range=Range(
+                    lower=knowledge_time or dt.datetime.now(dt.UTC), upper=None, bounds="[)"
+                ),
+                value={"tenor_field": field, "tenor_label": labels[field], "par_yield_pct": rate},
                 status="ACTIVE",
             )
         )
@@ -1428,6 +1461,214 @@ async def test_yield_curve_query_with_no_curve_data_falls_back(db_session: Async
     assert answer.evidence_bundle_id is None
 
 
+_TREASURY_CURVE_FIXTURE = {
+    "BC_1MONTH": "4.09", "BC_3MONTH": "4.25", "BC_6MONTH": "4.35",
+    "BC_1YEAR": "4.52", "BC_2YEAR": "4.81", "BC_5YEAR": "4.95",
+    "BC_10YEAR": "5.13", "BC_20YEAR": "5.47", "BC_30YEAR": "5.42",
+}
+
+
+async def test_treasury_query_returns_real_curve_points(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_treasury_curve_points(db_session, _TREASURY_CURVE_FIXTURE)
+    await _seed_rights_profile(db_session, code="treasury.yield-curve", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the 10 year treasury yield?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.allowed_output_type == AllowedOutputType.FACTUAL_EVIDENCE
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows == {
+        "1 Month": "4.09%", "3 Month": "4.25%", "6 Month": "4.35%",
+        "1 Year": "4.52%", "2 Year": "4.81%", "5 Year": "4.95%",
+        "10 Year": "5.13%", "20 Year": "5.47%", "30 Year": "5.42%",
+    }
+    assert len(answer.citations) == 1
+    assert (
+        answer.citations[0].label
+        == "U.S. Department of the Treasury — Daily Par Yield Curve Rates"
+    )
+    assert answer.citations[0].pill == "CURRENT", "these are real published facts, not an estimate"
+    assert answer.evidence_bundle_id is not None
+
+
+async def test_treasury_query_does_not_misroute_to_fabrication_fallback(
+    db_session: AsyncSession,
+) -> None:
+    """Regression guard for the 8 removed fabrication functions - a treasury
+    query must reach the real curve reply (or the honest default fallback),
+    never a hand-written answer with invented numbers.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_treasury_curve_points(db_session, _TREASURY_CURVE_FIXTURE)
+    await _seed_rights_profile(db_session, code="treasury.yield-curve", actions=["display"])
+
+    answer = await assemble_research_answer(
+        db_session, query_text="US Treasury yields outlook", principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert answer.facts.title == "US Treasury par yield curve"
+
+
+async def test_treasury_query_without_display_rights_falls_back(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_treasury_curve_points(db_session, _TREASURY_CURVE_FIXTURE)
+    # No RightsGrant for "treasury.yield-curve" -> fail-closed DENY on display.
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what is the us treasury yield?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+
+
+async def test_treasury_query_with_no_curve_data_falls_back(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="treasury.yield-curve", actions=["display"])
+    # No curve points seeded at all.
+
+    answer = await assemble_research_answer(
+        db_session, query_text="us treasury bond yield", principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+
+
+async def _seed_corrected_uk_curve_point(
+    session: AsyncSession,
+    *,
+    tenor: Decimal,
+    valid_day: dt.date,
+    ingested_at: dt.datetime,
+    corrected_at: dt.datetime,
+    original_rate: str,
+    corrected_rate: str,
+) -> None:
+    valid_range: Range[dt.datetime] = Range(
+        lower=dt.datetime.combine(valid_day, dt.time.min, tzinfo=dt.UTC),
+        upper=dt.datetime.combine(valid_day, dt.time.min, tzinfo=dt.UTC) + dt.timedelta(days=1),
+        bounds="[)",
+    )
+    subject_id = curve_point_subject_id(tenor)
+    old_fact = AcceptedFact(
+        subject_type=SUBJECT_TYPE_YIELD_CURVE_POINT, subject_id=subject_id,
+        metric_id=METRIC_UK_GILT_NOMINAL_SPOT_CURVE, valid_range=valid_range,
+        knowledge_range=Range(lower=ingested_at, upper=corrected_at, bounds="[)"),
+        value={"tenor_years": str(tenor), "spot_rate_pct": original_rate}, status="SUPERSEDED",
+    )
+    session.add(old_fact)
+    await session.flush()
+    new_fact = AcceptedFact(
+        subject_type=SUBJECT_TYPE_YIELD_CURVE_POINT, subject_id=subject_id,
+        metric_id=METRIC_UK_GILT_NOMINAL_SPOT_CURVE, valid_range=valid_range,
+        knowledge_range=Range(lower=corrected_at, upper=None, bounds="[)"),
+        value={"tenor_years": str(tenor), "spot_rate_pct": corrected_rate}, status="ACTIVE",
+    )
+    session.add(new_fact)
+    await session.flush()  # new_fact.id must exist before being assigned below
+    old_fact.superseded_by_id = new_fact.id
+    await session.flush()
+
+
+async def test_historical_query_returns_pre_correction_value_not_todays_state(
+    db_session: AsyncSession,
+) -> None:
+    """The acceptance test this whole feature exists to satisfy: asking
+    about a historical date must return what Talvrin believed THEN, not
+    today's since-revised state.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="boe.yield-curve", actions=["display"])
+    valid_day = dt.date(2026, 9, 10)
+    await _seed_corrected_uk_curve_point(
+        db_session, tenor=Decimal("10"), valid_day=valid_day,
+        ingested_at=dt.datetime(2026, 9, 10, 16, 0, tzinfo=dt.UTC),
+        corrected_at=dt.datetime(2026, 9, 15, 9, 0, tzinfo=dt.UTC),
+        original_rate="5.100000", corrected_rate="5.250000",
+    )
+
+    answer = await assemble_research_answer(
+        db_session,
+        query_text="What did Talvrin know about the gilt yield curve on 10 September 2026?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["10Y"] == "5.100000%", "must show the ORIGINAL value, not the later correction"
+    assert answer.citations[0].pill == "SOURCE"
+    assert answer.evidence_bundle_id is not None
+
+
+async def test_historical_query_with_no_subject_returns_general_inventory(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="boe.yield-curve", actions=["display"])
+    await _seed_corrected_uk_curve_point(
+        db_session, tenor=Decimal("10"), valid_day=dt.date(2026, 9, 10),
+        ingested_at=dt.datetime(2026, 9, 10, 16, 0, tzinfo=dt.UTC),
+        corrected_at=dt.datetime(2026, 9, 15, 9, 0, tzinfo=dt.UTC),
+        original_rate="5.100000", corrected_rate="5.250000",
+    )
+
+    # Matches the acceptance test's own literal wording - no subject named.
+    answer = await assemble_research_answer(
+        db_session, query_text="What did Talvrin know on 10 September 2026?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert answer.facts.title == "What Talvrin knew on 2026-09-10"
+    rows = dict(answer.facts.rows)
+    assert f"{SUBJECT_TYPE_YIELD_CURVE_POINT} / {METRIC_UK_GILT_NOMINAL_SPOT_CURVE}" in rows
+    assert answer.evidence_bundle_id is not None
+
+
+async def test_historical_query_future_date_with_no_data_falls_back(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="boe.yield-curve", actions=["display"])
+    # Nothing seeded at all for this date.
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what did Talvrin know on 1 January 2030?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+
+
+async def test_historical_query_does_not_misfire_on_an_unrelated_date_mention(
+    db_session: AsyncSession,
+) -> None:
+    """A date mentioned in passing, with no historical-intent framing, must
+    still reach the ordinary live gilt-yield-curve branch, not the
+    historical one.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="boe.yield-curve", actions=["display"])
+    await _seed_curve_points(db_session, _CURVE_FIXTURE)
+
+    answer = await assemble_research_answer(
+        db_session,
+        query_text="The budget was announced on 15 September 2026 - what's the yield curve?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert answer.facts.title == "UK nominal gilt spot curve (Bank of England)"
+
+
 async def test_help_query_lists_real_current_topics(db_session: AsyncSession) -> None:
     await _seed_capability_and_jurisdiction(db_session)
 
@@ -1658,3 +1899,149 @@ async def test_gilt_data_question_still_reaches_the_facts_branch(
     assert answer.allowed_output_type == AllowedOutputType.FACTUAL_EVIDENCE
     assert answer.facts is not None
     assert dict(answer.facts.rows)["ISIN"] == SEED_GILT_ISIN
+
+
+async def test_change_query_for_uk_yield_curve_shows_material_move(
+    db_session: AsyncSession,
+) -> None:
+    """The acceptance test for P4 (#3, "what changed in the market"): a
+    before/after comparison with both states, supporting evidence, and a
+    materiality verdict - no AI model call anywhere in this code path.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="boe.yield-curve", actions=["display"])
+    # 40bp move on the 10Y point - well past the 5bp materiality threshold.
+    await _seed_corrected_uk_curve_point(
+        db_session, tenor=Decimal("10"), valid_day=dt.date(2026, 9, 10),
+        ingested_at=dt.datetime(2026, 9, 10, 16, 0, tzinfo=dt.UTC),
+        corrected_at=dt.datetime(2026, 9, 15, 9, 0, tzinfo=dt.UTC),
+        original_rate="5.000000", corrected_rate="5.400000",
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what changed in the UK gilt yield curve?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert answer.facts.title == "UK nominal gilt spot curve — before vs after"
+    rows = dict(answer.facts.rows)
+    assert "MATERIAL" in rows["10Y"]
+    assert "5.000000" in rows["10Y"]
+    assert "5.400000" in rows["10Y"]
+    assert "1 of 1" in answer.text
+    assert answer.evidence_bundle_id is not None
+    assert "no AI model is involved" in (answer.note or "")
+
+
+async def test_change_query_for_treasury_curve_shows_material_move(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="treasury.yield-curve", actions=["display"])
+
+    valid_range: Range[dt.datetime] = Range(
+        lower=dt.datetime(2026, 10, 21, tzinfo=dt.UTC),
+        upper=dt.datetime(2026, 10, 22, tzinfo=dt.UTC), bounds="[)",
+    )
+    subject_id = treasury_curve_point_subject_id("BC_10YEAR")
+    old_fact = AcceptedFact(
+        subject_type=SUBJECT_TYPE_TREASURY_CURVE_POINT, subject_id=subject_id,
+        metric_id=METRIC_US_TREASURY_PAR_YIELD_CURVE, valid_range=valid_range,
+        knowledge_range=Range(
+            lower=dt.datetime(2026, 10, 21, 9, 0, tzinfo=dt.UTC),
+            upper=dt.datetime(2026, 10, 22, 9, 0, tzinfo=dt.UTC), bounds="[)",
+        ),
+        value={"tenor_field": "BC_10YEAR", "tenor_label": "10 Year", "par_yield_pct": "5.000"},
+        status="SUPERSEDED",
+    )
+    db_session.add(old_fact)
+    await db_session.flush()
+    new_fact = AcceptedFact(
+        subject_type=SUBJECT_TYPE_TREASURY_CURVE_POINT, subject_id=subject_id,
+        metric_id=METRIC_US_TREASURY_PAR_YIELD_CURVE, valid_range=valid_range,
+        knowledge_range=Range(
+            lower=dt.datetime(2026, 10, 22, 9, 0, tzinfo=dt.UTC), upper=None, bounds="[)"
+        ),
+        value={"tenor_field": "BC_10YEAR", "tenor_label": "10 Year", "par_yield_pct": "5.300"},
+        status="ACTIVE",
+    )
+    db_session.add(new_fact)
+    await db_session.flush()
+    old_fact.superseded_by_id = new_fact.id
+    await db_session.flush()
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what's changed in US treasury yields?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert answer.facts.title == (
+        "US Treasury par yield curve — before vs after"
+    )
+    rows = dict(answer.facts.rows)
+    assert "MATERIAL" in rows["10 Year"]
+    assert answer.evidence_bundle_id is not None
+
+
+async def test_change_query_for_fx_shows_material_move(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="frankfurter.fx", actions=["display"])
+
+    subject_id = fx_pair_subject_id("GBP", "USD")
+    old_fact = AcceptedFact(
+        subject_type="FX_PAIR", subject_id=subject_id, metric_id=METRIC_FX_SPOT_RATE,
+        valid_range=_CURVE_DAY_RANGE,
+        knowledge_range=Range(
+            lower=dt.datetime(2026, 9, 10, tzinfo=dt.UTC),
+            upper=dt.datetime(2026, 9, 11, tzinfo=dt.UTC), bounds="[)",
+        ),
+        value={"base_currency": "GBP", "quote_currency": "USD", "rate": "1.3000"},
+        status="SUPERSEDED",
+    )
+    db_session.add(old_fact)
+    await db_session.flush()
+    new_fact = AcceptedFact(
+        subject_type="FX_PAIR", subject_id=subject_id, metric_id=METRIC_FX_SPOT_RATE,
+        valid_range=_CURVE_DAY_RANGE,
+        knowledge_range=Range(
+            lower=dt.datetime(2026, 9, 11, tzinfo=dt.UTC), upper=None, bounds="[)"
+        ),
+        value={"base_currency": "GBP", "quote_currency": "USD", "rate": "1.3200"},
+        status="ACTIVE",
+    )
+    db_session.add(new_fact)
+    await db_session.flush()
+    old_fact.superseded_by_id = new_fact.id
+    await db_session.flush()
+
+    answer = await assemble_research_answer(
+        db_session, query_text="any changes to the GBP USD exchange rate?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["Material?"] == "Yes"
+    assert rows["Before"] == "1.3000"
+    assert rows["After"] == "1.3200"
+    assert answer.evidence_bundle_id is not None
+
+
+async def test_change_query_with_nothing_to_compare_falls_back_honestly(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="boe.yield-curve", actions=["display"])
+    # Only today's "live" curve is seeded (no predecessor at all).
+    await _seed_curve_points(db_session, _CURVE_FIXTURE)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what changed in the yield curve?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+    assert "No recorded change" in answer.text

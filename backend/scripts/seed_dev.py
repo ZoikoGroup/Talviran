@@ -49,6 +49,8 @@ UK_DMO_METHODOLOGY_RIGHTS_PROFILE_CODE = "uk-dmo.methodology"
 FRANKFURTER_FX_RIGHTS_PROFILE_CODE = "frankfurter.fx"
 DBNOMICS_MACRO_RIGHTS_PROFILE_CODE = "dbnomics.macro"
 TWELVE_DATA_EQUITY_RIGHTS_PROFILE_CODE = "twelve-data.equity"
+US_TREASURY_YIELD_CURVE_RIGHTS_PROFILE_CODE = "treasury.yield-curve"
+TREASURY_DIRECT_SECURITIES_RIGHTS_PROFILE_CODE = "treasurydirect.securities"
 #: A genuinely different license than UK_DMO_GILTS_RIGHTS_PROFILE_CODE
 #: (its own source, its own terms) - "non-professional and
 #: non-commercial use" only, confirmed live from the export flow's own
@@ -291,6 +293,18 @@ async def seed() -> None:
         )
         await _seed_rights_profile(
             session, BOE_YIELD_CURVE_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
+        )
+        # A real, public, free US government feed (home.treasury.gov) - no
+        # license terms restricting reuse, same openness as the BoE curve.
+        await _seed_rights_profile(
+            session, US_TREASURY_YIELD_CURVE_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
+        )
+        # treasurydirect.gov's own auctioned-securities feed - same open,
+        # free, public US government data as the yield curve above.
+        await _seed_rights_profile(
+            session,
+            TREASURY_DIRECT_SECURITIES_RIGHTS_PROFILE_CODE,
+            ["retrieve", "store", "display"],
         )
         # Document rights are evaluated independently of whatever profile
         # governs price data from the same publisher (EVID-001 doctrine) -
