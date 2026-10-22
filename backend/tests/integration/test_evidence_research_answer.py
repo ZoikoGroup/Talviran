@@ -476,6 +476,44 @@ async def test_equity_query_matches_by_uppercase_ticker(db_session: AsyncSession
     assert answer.evidence_bundle_id is not None
 
 
+async def test_equity_query_resolves_dual_listed_ticker_by_data_availability(
+    db_session: AsyncSession,
+) -> None:
+    """A real bug found live (not in this test suite originally): a
+    dual-listed issuer onboarded under two exchanges sharing the same bare
+    symbol ("VOD" on both LSE and, via its NASDAQ ADR) made every bare-
+    ticker query see 2 matches and silently fall through to "no data" -
+    even though only the NASDAQ listing actually has a tracked price.
+    Breaking the tie by which listing has real accepted_fact data is
+    still deterministic (the symbol match itself was never ambiguous),
+    not a guess about identity.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="twelve-data.equity", actions=["display"])
+    lse_instrument = await _seed_equity(
+        db_session, issuer_name="Vodafone Group", symbol="VOD", exchange="LSE"
+    )
+    nasdaq_instrument = await _seed_equity(
+        db_session, issuer_name="Vodafone Group", symbol="VOD", exchange="NASDAQ"
+    )
+    # LSE listing deliberately has NO accepted_fact - never ingested,
+    # matching the real pilot data (only the ADR line is tracked).
+    await _seed_equity_fact(
+        db_session, instrument_id=nasdaq_instrument.id, close_price="16.49",
+        symbol="VOD", exchange="NASDAQ",
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="VOD", principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None, "bare 'VOD' must resolve to NASDAQ, not fall through"
+    rows = dict(answer.facts.rows)
+    assert rows["Ticker"] == "NASDAQ:VOD"
+    assert rows["Close price"] == "16.49 USD"
+    assert lse_instrument.id != nasdaq_instrument.id  # sanity: genuinely two instruments
+
+
 async def test_equity_query_matches_by_lowercase_company_name(db_session: AsyncSession) -> None:
     await _seed_capability_and_jurisdiction(db_session)
     await _seed_rights_profile(db_session, code="twelve-data.equity", actions=["display"])

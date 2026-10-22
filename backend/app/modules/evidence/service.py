@@ -1,4 +1,4 @@
-"""Assembles a research answer (P1 week 13) — this is `POST /api/v1/research`'s
+﻿"""Assembles a research answer (P1 week 13) — this is `POST /api/v1/research`'s
 actual logic, gated through the PDP before any content reaches a caller.
 
 Ports mockReply.ts's four-way intent classification (advice-redirect /
@@ -1504,956 +1504,35 @@ async def _yield_curve_reply(session: AsyncSession) -> ResearchAnswer:
     )
 
 
-def _treasury_yield_reply(query_text: str = "") -> ResearchAnswer:
-    rows = [
-        ("Benchmark Instrument", "10-Year U.S. Treasury Note"),
-        ("Market Identifier", "US10Y (TVC:US10Y)"),
-        ("Asset Class", "SOVEREIGN"),
-        ("Indicative Constant Yield", "4.327%"),
-        ("Daily Rate Delta", "+1.1 bps (+0.25%)"),
-        ("Primary Issuance Authority", "United States Department of the Treasury"),
-        ("Day Count Fraction", "ACT/ACT (ICMA / Treasury)"),
-        ("Authoritative Statistical Feed", "Federal Reserve Board H.15 / U.S. Treasury"),
-        ("Bitemporal Fact State", "CANONICAL (reconciled, 0 conflicts)"),
-    ]
+def _not_yet_connected_reply(query_text: str, *, asset_class: str) -> ResearchAnswer:
+    """Honest stand-in for a whole family of functions removed 2026-10-21:
+    each used to return hand-typed, fabricated prices/ratios/yields dressed
+    up with fake citations to SEC EDGAR/Federal Reserve/AMFI/TradingView and
+    a false "Bitemporal Fact State: CANONICAL (reconciled)" claim - none of
+    it ever touched accepted_fact or a real connector. A live production
+    query ("what is CPI" for India) was answered with a fabricated Apple
+    equity-research report because one of these (_equity_deep_research_reply)
+    had an unconditional else-branch defaulting to Apple for any unmatched
+    query, reachable via `query_text.strip().startswith("[")` alone. This
+    platform's entire premise is that it never answers without a real,
+    traceable source (see policy.pdp, AI-001) - a fabricated answer is a
+    worse failure mode than an honest "not yet connected" for an asset
+    class this platform genuinely doesn't have a live source for yet.
+    """
     return ResearchAnswer(
         text=(
-            "### Institutional Evidence & Market Analysis: 10-Year U.S. Treasury Note\n\n"
-            "• **Benchmark Yield & Pricing:** The indicative constant maturity market yield "
-            "is quoted at **4.327%** (+1.1 bps).\n"
-            "• **Market Structure & Issuance:** U.S. 10-Year Treasury obligations represent the "
-            "primary global risk-free sovereign pricing anchor. Issues are auctioned via "
-            "competitive bidding through certified Primary Dealers and cleared under DTCC/FICC "
-            "netting protocols.\n"
-            "• **Key Economic Drivers:** Sovereign yield dynamics across the 10-year tenor reflect "
-            "three deterministic components: market expectations for the Federal Open Market "
-            "Committee (FOMC) policy rate path, estimated term premium (ACM / Kim-Wright models), "
-            "and 10-year TIPS breakeven inflation rates.\n"
-            "• **Deterministic Policy Perimeter:** Talvrin provides verified empirical "
-            "observations and reproducible calculations only. Under platform policy PDP-001, "
-            "no recommendation, buy/sell stance, or forecast suitability rating is generated."
+            f'You asked about {asset_class}.\n\n'
+            "Talvrin doesn't have a real, reconciled data source connected for "
+            f"{asset_class} yet, so it won't answer with invented figures - it only "
+            "ever answers from accepted facts and deterministic calculations that "
+            "trace back to a verifiable source. Currently live: UK gilt terms and "
+            "prices, the BoE yield curve, GBP/USD exchange rates, US equity prices "
+            "for a small pilot list, and UK/US macroeconomic indicators."
         ),
-        facts=FactTable(title="U.S. 10-Year Treasury Note Benchmark Terms", rows=rows),
-        citations=[
-            Citation(
-                label="Federal Reserve Board — H.15 Selected Interest Rates",
-                meta="Daily statistical release · constant maturity sovereign yields",
-                pill="CURRENT",
-                kind="doc",
-                url="https://www.federalreserve.gov/releases/h15/",
-            ),
-            Citation(
-                label="U.S. Department of the Treasury — Daily Par Yield Curve Rates",
-                meta="Official constant maturity curve tables · Office of Debt Management",
-                pill="CURRENT",
-                kind="link",
-                url="https://home.treasury.gov/resource-center/data-chart-center/interest-rates/",
-            ),
-            Citation(
-                label="Bank of England — Comparative International Yields",
-                meta="Cross-market benchmark rate and sovereign spread analysis",
-                pill="SOURCE",
-                kind="book",
-                url="https://www.bankofengland.co.uk/statistics/yield-curves",
-            ),
-            Citation(
-                label="Accepted Fact Set · canonical bitemporal audit store",
-                meta="Primary evidence bundle · verified deterministic data",
-                pill="CURRENT",
-                kind="link",
-            ),
-        ],
-        note=(
-            "Every material number in this answer resolves directly to authoritative "
-            "central bank and treasury statistical releases."
-        ),
-        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
-        evidence_bundle_id=None,
-    )
-
-
-def _crypto_market_reply(query_text: str = "") -> ResearchAnswer:
-    q = query_text.lower()
-    if "eth" in q or "ethereum" in q:
-        symbol, name = "ETH/USD", "Ethereum"
-        price, change = "$2,645.50", "+58.20 (+2.25%)"
-        mcap, vol = "$318.4 Billion", "$16.8 Billion"
-        circulating = "120.4M ETH"
-        consensus = "Proof of Stake (Ethereum 2.0 Consensus Layer)"
-        tv_sym = "BINANCE:ETHUSDT"
-    elif "sol" in q or "solana" in q:
-        symbol, name = "SOL/USD", "Solana"
-        price, change = "$154.20", "+6.80 (+4.61%)"
-        mcap, vol = "$72.1 Billion", "$4.1 Billion"
-        circulating = "468.2M SOL"
-        consensus = "Proof of History (PoH) + Proof of Stake"
-        tv_sym = "BINANCE:SOLUSDT"
-    elif "xrp" in q or "ripple" in q:
-        symbol, name = "XRP/USD", "XRP Ledger"
-        price, change = "$0.5420", "+0.012 (+2.26%)"
-        mcap, vol = "$30.8 Billion", "$1.2 Billion"
-        circulating = "56.8B XRP"
-        consensus = "Federated Byzantine Agreement (UNL Consensus)"
-        tv_sym = "BINANCE:XRPUSDT"
-    elif "bnb" in q or "binance" in q:
-        symbol, name = "BNB/USD", "BNB Chain"
-        price, change = "$582.40", "+10.60 (+1.85%)"
-        mcap, vol = "$85.2 Billion", "$1.1 Billion"
-        circulating = "146.3M BNB"
-        consensus = "Proof of Staked Authority (PoSA)"
-        tv_sym = "BINANCE:BNBUSDT"
-    elif "ada" in q or "cardano" in q:
-        symbol, name = "ADA/USD", "Cardano"
-        price, change = "$0.3540", "+0.006 (+1.72%)"
-        mcap, vol = "$12.7 Billion", "$340 Million"
-        circulating = "35.8B ADA"
-        consensus = "Ouroboros Praos (Proof of Stake)"
-        tv_sym = "BINANCE:ADAUSDT"
-    elif "doge" in q:
-        symbol, name = "DOGE/USD", "Dogecoin"
-        price, change = "$0.1145", "+0.0035 (+3.15%)"
-        mcap, vol = "$16.7 Billion", "$820 Million"
-        circulating = "146.4B DOGE"
-        consensus = "Proof of Work (Scrypt Auxiliary PoW)"
-        tv_sym = "BINANCE:DOGEUSDT"
-    else:
-        symbol, name = "BTC/USD", "Bitcoin"
-        price, change = "$67,420.00", "+1,850.00 (+2.82%)"
-        mcap, vol = "$1,330.5 Billion ($1.33T)", "$34.2 Billion"
-        circulating = "19.76M BTC (94.1% of 21.0M cap)"
-        consensus = "Nakamoto Proof of Work (SHA-256d)"
-        tv_sym = "BINANCE:BTCUSDT"
-
-    rows = [
-        ("Benchmark Asset", name),
-        ("Market Identifier", f"{symbol} ({tv_sym})"),
-        ("Asset Class", "CRYPTO"),
-        ("Index Reference Price", price),
-        ("24h Price Movement", change),
-        ("Market Capitalization", mcap),
-        ("24h Aggregate Volume", vol),
-        ("Circulating Supply", circulating),
-        ("Consensus Architecture", consensus),
-        ("Primary Aggregation Feeds", "CoinMarketCap / TradingView Multi-Exchange Index"),
-        ("Bitemporal Fact State", "CANONICAL (reconciled, 0 conflicts)"),
-    ]
-
-    return ResearchAnswer(
-        text=(
-            f"### Institutional Market Evidence: {name} ({symbol})\n\n"
-            f"• **Benchmark Index Pricing:** The volume-weighted aggregate market price for "
-            f"**{name}** is quoted at **{price}** ({change}).\n"
-            f"• **Market Capitalization & Liquidity:** Total market capitalization is **{mcap}** "
-            f"with 24-hour multi-exchange global volume of **{vol}** across verified spot and "
-            f"derivatives venues.\n"
-            f"• **Consensus & Protocol Mechanics:** Settlement operates natively under "
-            f"**{consensus}** with a circulating supply of {circulating}.\n"
-            f"• **Deterministic Policy Perimeter:** Talvrin provides verified empirical market "
-            f"observations and reproducible metrics only. Under platform policy PDP-001, no "
-            f"recommendation, buy/sell stance, or forward speculative target is generated."
-        ),
-        facts=FactTable(title=f"{name} ({symbol}) Market Fundamentals", rows=rows),
-        citations=[
-            Citation(
-                label="CoinMarketCap — Global Crypto Benchmark & Market Capitalization",
-                meta=(
-                    "Consolidated index pricing, circulating supply & liquidity across "
-                    "700+ exchanges"
-                ),
-                pill="CURRENT",
-                kind="link",
-                url="https://coinmarketcap.com/",
-            ),
-            Citation(
-                label="TradingView — Multi-Exchange Aggregate Real-Time Feeds",
-                meta="Streaming volume profile, order book depth & multi-clearinghouse candles",
-                pill="CURRENT",
-                kind="link",
-                url="https://www.tradingview.com/markets/cryptocurrencies/",
-            ),
-            Citation(
-                label="CME Group — Regulated Cryptocurrency Futures & Reference Rates",
-                meta="Institutional regulated benchmark settlement rates (BRR / ETHRR)",
-                pill="SOURCE",
-                kind="link",
-                url="https://www.cmegroup.com/markets/cryptocurrencies.html",
-            ),
-            Citation(
-                label="Accepted Fact Set · canonical bitemporal audit store",
-                meta="Primary evidence bundle · verified deterministic data",
-                pill="CURRENT",
-                kind="link",
-            ),
-        ],
-        note=(
-            "Every material cryptocurrency metric resolves directly to audited multi-exchange "
-            "and index feeds."
-        ),
-        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
-        evidence_bundle_id=None,
-    )
-
-
-def _commodity_market_reply(query_text: str = "") -> ResearchAnswer:
-    q = query_text.lower()
-    if "silver" in q or "xag" in q:
-        commodity, spec = "Spot Silver (XAG/USD)", "LBMA Silver Price Benchmark"
-        price, change = "$31.85 / troy oz", "+$0.45 (+1.43%)"
-        clearing = "London Bullion Market (LBMA) / COMEX (SI)"
-        deliverable = "LBMA Good Delivery (minimum 99.9% fine silver, 1,000 oz bar)"
-        tv_sym = "TVC:SILVER"
-    elif "brent" in q or "ukoil" in q:
-        commodity, spec = "Brent Crude Oil Continuous Futures", "Light Sweet Seaborne Crude"
-        price, change = "$74.82 / barrel", "-$0.68 (-0.90%)"
-        clearing = "ICE Futures Europe (B)"
-        deliverable = "Financial settlement against ICE Brent Index (North Sea crudes BFOET)"
-        tv_sym = "TVC:UKOIL"
-    elif "wti" in q or "usoil" in q or "oil" in q:
-        commodity, spec = "WTI Light Sweet Crude Oil", "Cushing Benchmark Physical Crude"
-        price, change = "$70.94 / barrel", "-$0.72 (-1.01%)"
-        clearing = "NYMEX / CME Group (CL)"
-        deliverable = "Physical pipeline delivery at Cushing, Oklahoma (API 37-42°, sulfur <0.42%)"
-        tv_sym = "TVC:USOIL"
-    elif "gas" in q:
-        commodity = "Henry Hub Natural Gas Continuous Futures"
-        spec = "North American Pipeline Benchmark"
-        price, change = "$2.68 / MMBtu", "-$0.04 (-1.47%)"
-        clearing = "NYMEX / CME Group (NG)"
-        deliverable = "Physical delivery into Sabine Pipe Line LLC Henry Hub in Louisiana"
-        tv_sym = "TVC:NATGAS"
-    elif "copper" in q:
-        commodity, spec = "High Grade Copper Continuous Futures", "Industrial Grade Copper Cathode"
-        price, change = "$4.38 / lb", "+$0.05 (+1.15%)"
-        clearing = "COMEX / CME Group (HG)"
-        deliverable = "Grade 1 electrolytic copper conforming to ASTM B115 specifications"
-        tv_sym = "COMEX:HG1!"
-    else:
-        commodity, spec = "Spot Gold (XAU/USD)", "LBMA Gold Price Benchmark"
-        price, change = "$2,735.40 / troy oz", "+$18.20 (+0.67%)"
-        clearing = "London Bullion Market (LBMA) / COMEX (GC)"
-        deliverable = "LBMA Good Delivery (minimum 99.5% fine gold, ~400 oz bar)"
-        tv_sym = "TVC:GOLD"
-
-    rows = [
-        ("Benchmark Commodity", commodity),
-        ("Market Identifier", f"{commodity.split()[0]} ({tv_sym})"),
-        ("Asset Class", "COMMODITIES"),
-        ("Benchmark Spot/Futures Price", price),
-        ("Daily Price Delta", change),
-        ("Contract Specification", spec),
-        ("Primary Clearinghouse", clearing),
-        ("Physical Deliverable Standard", deliverable),
-        ("Day Count Fraction", "ACT/ACT or Exchange Specific"),
-        ("Authoritative Pricing Feed", "LBMA / CME Group / ICE / TradingView"),
-        ("Bitemporal Fact State", "CANONICAL (reconciled, 0 conflicts)"),
-    ]
-
-    return ResearchAnswer(
-        text=(
-            f"### Institutional Commodity Evidence: {commodity}\n\n"
-            f"• **Benchmark Spot & Futures Pricing:** The indicative market price is quoted at "
-            f"**{price}** ({change}).\n"
-            f"• **Market Structure & Clearing:** Contracts clear under central counterparty "
-            f"protocols at **{clearing}**, ensuring daily mark-to-market netting and physical "
-            f"delivery assurance.\n"
-            f"• **Deliverable Standards:** Specifications adhere to **{deliverable}**.\n"
-            f"• **Deterministic Policy Perimeter:** Talvrin provides verified empirical market "
-            f"observations and reproducible calculation evidence only. Under platform policy "
-            f"PDP-001, no recommendation or forward commodity price forecast is generated."
-        ),
-        facts=FactTable(title=f"{commodity} Institutional Specifications", rows=rows),
-        citations=[
-            Citation(
-                label="London Bullion Market Association (LBMA) — Official Precious Metal Fixings",
-                meta="Global OTC wholesale benchmark prices for Loco London Gold & Silver",
-                pill="CURRENT",
-                kind="link",
-                url="https://www.lbma.org.uk/prices-and-data/precious-metal-prices",
-            ),
-            Citation(
-                label="CME Group / NYMEX / COMEX — Regulated Energy & Metals Futures",
-                meta="Central counterparty clearing & physical delivery settlement protocols",
-                pill="CURRENT",
-                kind="link",
-                url="https://www.cmegroup.com/markets/commodities.html",
-            ),
-            Citation(
-                label="ICE (Intercontinental Exchange) — Benchmark Energy Clearing",
-                meta="Global seaborne crude pricing anchor & daily ICE Brent Index",
-                pill="CURRENT",
-                kind="link",
-                url="https://www.theice.com/products/219/Brent-Crude-Futures",
-            ),
-            Citation(
-                label="TradingView — Continuous Commodity Futures & Multi-Asset Charts",
-                meta="Interactive technical quotes, basis spreads & historical term structures",
-                pill="CURRENT",
-                kind="link",
-                url="https://www.tradingview.com/markets/commodities/",
-            ),
-            Citation(
-                label="Accepted Fact Set · canonical bitemporal audit store",
-                meta="Primary evidence bundle · verified deterministic data",
-                pill="CURRENT",
-                kind="link",
-            ),
-        ],
-        note=(
-            "Every material commodity price resolves directly to official clearinghouse "
-            "and exchange fixings."
-        ),
-        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
-        evidence_bundle_id=None,
-    )
-
-
-def _global_index_reply(query_text: str = "") -> ResearchAnswer:
-    q = query_text.lower()
-    if "nasdaq" in q or "ndx" in q:
-        idx_name, sym = "NASDAQ-100 Benchmark Index", "NDX (FOREXCOM:NAS100)"
-        price, change = "21,410.80", "+142.30 (+0.67%)"
-        exchange = "Nasdaq Global Indexes / CME E-mini Futures (NQ)"
-        currency = "USD"
-        weighting = "Modified Market-Capitalization Weighted"
-    elif "dow" in q or "djia" in q:
-        idx_name, sym = "Dow Jones Industrial Average", "DJI (FOREXCOM:DJI)"
-        price, change = "43,077.70", "+337.98 (+0.79%)"
-        exchange = "S&P Dow Jones Indices / CBOT Futures (YM)"
-        currency = "USD"
-        weighting = "Price-Weighted Index of 30 Leading US Blue Chips"
-    elif "ftse" in q:
-        idx_name, sym = "FTSE 100 Index", "UKX (FOREXCOM:UK100)"
-        price, change = "8,261.40", "+23.10 (+0.28%)"
-        exchange = "London Stock Exchange (LSE) / ICE Futures Europe"
-        currency = "GBP"
-        weighting = "Free-Float Capitalization Weighted"
-    elif "dax" in q:
-        idx_name, sym = "DAX 40 Benchmark Index", "DAX (XETR:DAX)"
-        price, change = "19,580.20", "+72.40 (+0.37%)"
-        exchange = "Deutsche Börse Xetra / Eurex (FDAX)"
-        currency = "EUR"
-        weighting = "Free-Float Capitalization Weighted (40 German Prime Standard Equities)"
-    elif "nikkei" in q:
-        idx_name, sym = "Nikkei 225 Stock Average", "NI225 (TVC:NI225)"
-        price, change = "38,911.10", "+112.50 (+0.29%)"
-        exchange = "Tokyo Stock Exchange (TSE) / OSE / CME"
-        currency = "JPY"
-        weighting = "Price-Weighted Index of Top 225 Tokyo Prime Equities"
-    elif "nifty" in q:
-        idx_name, sym = "NIFTY 50 Benchmark Index", "NIFTY (NSE:NIFTY)"
-        price, change = "25,014.60", "+110.40 (+0.44%)"
-        exchange = "National Stock Exchange of India (NSE)"
-        currency = "INR"
-        weighting = "Free-Float Market Capitalization Weighted"
-    elif "sensex" in q:
-        idx_name, sym = "S&P BSE SENSEX Index", "SENSEX (BSE:SENSEX)"
-        price, change = "81,894.20", "+380.50 (+0.47%)"
-        exchange = "Bombay Stock Exchange (BSE)"
-        currency = "INR"
-        weighting = "Free-Float Market Capitalization Weighted (30 Financially Sound Companies)"
-    else:
-        idx_name, sym = "Standard & Poor's 500 Composite Index", "SPX (FOREXCOM:SPXUSD)"
-        price, change = "6,589.34", "+40.60 (+0.62%)"
-        exchange = "S&P Dow Jones Indices / Cboe / CME (ES)"
-        currency = "USD"
-        weighting = "Float-Adjusted Market-Capitalization Weighted"
-
-    rows = [
-        ("Benchmark Index", idx_name),
-        ("Market Identifier", sym),
-        ("Asset Class", "EQUITY"),
-        ("Current Index Level", price),
-        ("Daily Net Change", change),
-        ("Quotation Currency", currency),
-        ("Calculation Authority", exchange),
-        ("Constituent Weighting", weighting),
-        ("Authoritative Statistical Feed", "TradingView Screener / Primary Exchanges"),
-        ("Bitemporal Fact State", "CANONICAL (reconciled, 0 conflicts)"),
-    ]
-
-    return ResearchAnswer(
-        text=(
-            f"### Institutional Market Evidence: {idx_name}\n\n"
-            f"• **Benchmark Index Level:** The official composite index value is quoted at "
-            f"**{price}** {currency} ({change}).\n"
-            f"• **Calculation Authority & Methodology:** Managed and calculated under "
-            f"**{exchange}**, utilizing a **{weighting}** methodology.\n"
-            f"• **Trading Venues & Liquidity:** Component equities trade on primary exchanges with "
-            f"consolidated tape volume cleared through central securities depositories (e.g., "
-            f"DTCC, Euroclear, NSDL).\n"
-            f"• **Deterministic Policy Perimeter:** Talvrin provides verified empirical market "
-            f"observations and reproducible calculation evidence only. Under platform policy "
-            f"PDP-001, no recommendation or forward performance rating is generated."
-        ),
-        facts=FactTable(title=f"{idx_name} Benchmark Facts", rows=rows),
-        citations=[
-            Citation(
-                label="TradingView — Institutional Market Screener & Global Aggregates",
-                meta="Real-time multi-exchange consolidated index ticks & volume profiles",
-                pill="CURRENT",
-                kind="link",
-                url="https://www.tradingview.com/",
-            ),
-            Citation(
-                label="Primary Stock Exchange & Settlement Facility",
-                meta="Official closing auctions & clearinghouse continuous net settlement",
-                pill="CURRENT",
-                kind="link",
-                url="https://www.nyse.com/",
-            ),
-            Citation(
-                label="U.S. SEC EDGAR / Primary Regulatory Repository",
-                meta="Mandatory corporate filings, quarterly 10-Q & annual 10-K disclosures",
-                pill="SOURCE",
-                kind="doc",
-                url="https://www.sec.gov/edgar",
-            ),
-            Citation(
-                label="Accepted Fact Set · canonical bitemporal audit store",
-                meta="Primary evidence bundle · verified deterministic data",
-                pill="CURRENT",
-                kind="link",
-            ),
-        ],
-        note=(
-            "Every material market figure resolves directly to authoritative national exchanges "
-            "and benchmark publishers."
-        ),
-        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
-        evidence_bundle_id=None,
-    )
-
-
-def _etf_market_reply(query_text: str = "") -> ResearchAnswer:
-    q = query_text.lower()
-    if "qqq" in q or "nasdaq-100" in q:
-        ticker, name = "QQQ", "Invesco QQQ Trust Series 1"
-        price, change = "$492.30", "+$3.45 (+0.71%)"
-        aum, expense = "$298.5 Billion", "0.20%"
-        benchmark = "NASDAQ-100 Index (Top 100 non-financial large caps)"
-        sponsor = "Invesco Capital Management LLC"
-        holdings = "Apple (8.9%), Microsoft (8.4%), NVIDIA (7.8%), Broadcom (5.1%), Amazon (4.9%)"
-        tv_sym = "NASDAQ:QQQ"
-    elif "voo" in q or "vanguard 500" in q:
-        ticker, name = "VOO", "Vanguard S&P 500 ETF"
-        price, change = "$533.80", "+$2.20 (+0.41%)"
-        aum, expense = "$485.2 Billion", "0.03%"
-        benchmark = "S&P 500 Index (Float-adjusted market cap)"
-        sponsor = "The Vanguard Group, Inc."
-        holdings = "Apple (7.2%), Microsoft (6.8%), NVIDIA (6.2%), Amazon (3.8%), Alphabet (3.4%)"
-        tv_sym = "AMEX:VOO"
-    elif "tlt" in q or "20+ year treasury" in q:
-        ticker, name = "TLT", "iShares 20+ Year Treasury Bond ETF"
-        price, change = "$92.40", "+$0.65 (+0.71%)"
-        aum, expense = "$54.2 Billion", "0.15%"
-        benchmark = "ICE U.S. Treasury 20+ Year Bond Index"
-        sponsor = "BlackRock Fund Advisors / iShares"
-        holdings = "U.S. Treasury Bonds with maturities > 20 years (effective duration: 16.8y)"
-        tv_sym = "NASDAQ:TLT"
-    elif "gld" in q or "gold etf" in q:
-        ticker, name = "GLD", "SPDR Gold Shares"
-        price, change = "$252.40", "+$1.65 (+0.66%)"
-        aum, expense = "$72.8 Billion", "0.40%"
-        benchmark = "LBMA Gold Price PM USD"
-        sponsor = "World Gold Trust Services / State Street SPDR"
-        holdings = "100% Allocated Physical Gold Bullion Bars in London Vaults (HSBC Custody)"
-        tv_sym = "AMEX:GLD"
-    elif "smh" in q or "semiconductor" in q:
-        ticker, name = "SMH", "VanEck Semiconductor ETF"
-        price, change = "$258.90", "+$4.10 (+1.61%)"
-        aum, expense = "$22.4 Billion", "0.35%"
-        benchmark = "MVIS US Listed Semiconductor 25 Index"
-        sponsor = "VanEck Associates Corporation"
-        holdings = "NVIDIA (20.5%), TSMC (12.4%), Broadcom (8.2%), ASML (5.4%), Qualcomm (4.8%)"
-        tv_sym = "NASDAQ:SMH"
-    else:
-        ticker, name = "SPY", "SPDR S&P 500 ETF Trust"
-        price, change = "$580.45", "+$2.40 (+0.42%)"
-        aum, expense = "$582.4 Billion", "0.0945%"
-        benchmark = "S&P 500 Benchmark Index (US Large-Cap Composite)"
-        sponsor = "State Street Global Advisors (SSGA) / PDR Services"
-        holdings = "Microsoft (7.1%), Apple (6.9%), NVIDIA (6.3%), Amazon (3.7%), Meta (2.5%)"
-        tv_sym = "AMEX:SPY"
-
-    rows = [
-        ("Fund Identifier", f"{ticker} ({tv_sym})"),
-        ("Official Fund Name", name),
-        ("Asset Class", "EXCHANGE TRADED FUND (ETF)"),
-        ("Net Asset Value / Market Close", price),
-        ("Daily Net Change", change),
-        ("Assets Under Management (AUM)", aum),
-        ("Net Annual Expense Ratio", expense),
-        ("Benchmark Target Index", benchmark),
-        ("Fund Sponsor & Custodian", sponsor),
-        ("Key Top Portfolio Holdings", holdings),
-        ("Regulatory Filing Basis", "SEC Form N-PORT / Form N-CEN (1940 Act)"),
-        ("Bitemporal Fact State", "CANONICAL (reconciled, 0 conflicts)"),
-    ]
-
-    return ResearchAnswer(
-        text=(
-            f"### Institutional ETF Research & Evidence: {name} ({ticker})\n\n"
-            f"• **Market Price & Inav Valuation:** {name} is quoted at **{price}** ({change}) "
-            f"reflecting continuous creation/redemption arbitrage across authorized participants.\n"
-            f"• **Scale & Cost Structure:** Total Assets Under Management stand at **{aum}** with "
-            f"an institutional net expense ratio of **{expense}**.\n"
-            f"• **Target Benchmark & Portfolio Weights:** Designed to track the **{benchmark}**. "
-            f"Top concentrated asset allocations include: {holdings}.\n"
-            f"• **Regulatory Perimeter:** Mandated quarterly transparency disclosures filed under "
-            f"SEC Form N-PORT and Form N-CEN. Under platform policy PDP-001, empirical portfolio "
-            f"facts are reported without forward investment recommendation."
-        ),
-        facts=FactTable(title=f"{name} ({ticker}) Portfolio Fundamentals", rows=rows),
-        citations=[
-            Citation(
-                label="U.S. SEC EDGAR — Registered Investment Company Filings",
-                meta="Mandatory Form N-PORT, Form N-CEN & Statutory Prospectus Disclosures",
-                pill="CURRENT",
-                kind="doc",
-                url="https://www.sec.gov/edgar",
-            ),
-            Citation(
-                label="State Street / BlackRock / Vanguard / Invesco Fund Reporting",
-                meta="Daily official NAV fixing, constituent basket shares & cash component",
-                pill="CURRENT",
-                kind="link",
-                url="https://www.ssga.com/spdrs",
-            ),
-            Citation(
-                label="TradingView — Consolidated ETF Tape & Intraday Liquidity",
-                meta="Real-time multi-exchange volume profile, VWAP & bid-ask spreads",
-                pill="CURRENT",
-                kind="link",
-                url="https://www.tradingview.com/",
-            ),
-            Citation(
-                label="Accepted Fact Set · canonical bitemporal audit store",
-                meta="Primary evidence bundle · verified deterministic data",
-                pill="CURRENT",
-                kind="link",
-            ),
-        ],
-        note=(
-            "Every material ETF metric resolves directly to official SEC filings and "
-            "sponsor disclosures."
-        ),
-        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
-        evidence_bundle_id=None,
-    )
-
-
-def _equity_deep_research_reply(query_text: str = "") -> ResearchAnswer:
-    q = query_text.lower()
-    if "nvda" in q or "nvidia" in q:
-        ticker, name = "NVDA", "NVIDIA Corporation"
-        exchange, sector = "NASDAQ Global Select", "Semiconductors / Accelerated Computing"
-        price, change = "$135.20", "+$4.10 (+3.13%)"
-        mcap, pe_ttm = "$3,320 Billion ($3.32T)", "58.4x"
-        rev_ttm = "$96.3 Billion (+122% YoY)"
-        margins = "Gross Margin: 75.1% | Operating Margin: 62.1%"
-        fcf, beta = "$46.8 Billion", "1.68 (5Y Monthly)"
-        range_52w = "$45.20 - $140.76"
-        cik = "0001045810 (SEC Form 10-K)"
-    elif "msft" in q or "microsoft" in q:
-        ticker, name = "MSFT", "Microsoft Corporation"
-        exchange, sector = "NASDAQ Global Select", "Enterprise Cloud & Software"
-        price, change = "$418.50", "+$3.20 (+0.77%)"
-        mcap, pe_ttm = "$3,110 Billion ($3.11T)", "34.2x"
-        rev_ttm = "$245.1 Billion (+15% YoY)"
-        margins = "Gross Margin: 69.8% | Operating Margin: 44.6%"
-        fcf, beta = "$74.1 Billion", "0.89 (5Y Monthly)"
-        range_52w = "$366.50 - $468.35"
-        cik = "0000789019 (SEC Form 10-K)"
-    elif "goog" in q or "alphabet" in q:
-        ticker, name = "GOOGL", "Alphabet Inc. (Class A)"
-        exchange = "NASDAQ Global Select"
-        sector = "Digital Services, Cloud & AI Infrastructure"
-        price, change = "$165.80", "-$0.95 (-0.57%)"
-        mcap, pe_ttm = "$2,060 Billion ($2.06T)", "23.8x"
-        rev_ttm = "$328.3 Billion (+14% YoY)"
-        margins = "Gross Margin: 57.6% | Operating Margin: 32.2%"
-        fcf, beta = "$69.4 Billion", "1.04 (5Y Monthly)"
-        range_52w = "$120.21 - $191.75"
-        cik = "0001652044 (SEC Form 10-K)"
-    elif "amzn" in q or "amazon" in q:
-        ticker, name = "AMZN", "Amazon.com, Inc."
-        exchange = "NASDAQ Global Select"
-        sector = "Cloud Infrastructure (AWS) & E-Commerce"
-        price, change = "$188.40", "+$2.10 (+1.13%)"
-        mcap, pe_ttm = "$1,960 Billion ($1.96T)", "43.5x"
-        rev_ttm = "$604.3 Billion (+11% YoY)"
-        margins = "Gross Margin: 48.2% | Operating Margin: 9.8%"
-        fcf, beta = "$53.0 Billion", "1.15 (5Y Monthly)"
-        range_52w = "$118.35 - $201.20"
-        cik = "0001018724 (SEC Form 10-K)"
-    elif "meta" in q or "facebook" in q:
-        ticker, name = "META", "Meta Platforms, Inc."
-        exchange, sector = "NASDAQ Global Select", "Social Technologies & Family of Apps"
-        price, change = "$585.60", "+$6.40 (+1.11%)"
-        mcap, pe_ttm = "$1,480 Billion ($1.48T)", "28.6x"
-        rev_ttm = "$149.8 Billion (+22% YoY)"
-        margins = "Gross Margin: 81.5% | Operating Margin: 38.1%"
-        fcf, beta = "$48.2 Billion", "1.22 (5Y Monthly)"
-        range_52w = "$279.40 - $602.95"
-        cik = "0001326801 (SEC Form 10-K)"
-    elif "tsla" in q or "tesla" in q:
-        ticker, name = "TSLA", "Tesla, Inc."
-        exchange, sector = "NASDAQ Global Select", "Electric Mobility & Energy Storage"
-        price, change = "$221.30", "-$3.80 (-1.69%)"
-        mcap, pe_ttm = "$708 Billion", "61.2x"
-        rev_ttm, margins = "$97.1 Billion (+2% YoY)", "Gross Margin: 17.8% | Operating Margin: 8.2%"
-        fcf, beta = "$3.6 Billion", "2.32 (5Y Monthly)"
-        range_52w = "$138.80 - $271.00"
-        cik = "0001318605 (SEC Form 10-K)"
-    elif "tsm" in q or "taiwan semi" in q:
-        ticker, name = "TSM", "Taiwan Semiconductor Manufacturing Co."
-        exchange = "NYSE / Taiwan Stock Exchange (TWSE)"
-        sector = "Semiconductor Foundry"
-        price, change = "$198.50", "+$4.20 (+2.16%)"
-        mcap, pe_ttm = "$1,029 Billion ($1.03T)", "29.4x"
-        rev_ttm = "$78.4 Billion (+28% YoY)"
-        margins = "Gross Margin: 54.3% | Operating Margin: 42.8%"
-        fcf, beta = "$25.4 Billion", "1.25 (5Y Monthly)"
-        range_52w = "$85.20 - $205.84"
-        cik = "0001046179 (SEC Form 20-F)"
-    elif "asml" in q:
-        ticker, name = "ASML", "ASML Holding N.V."
-        exchange, sector = "Euronext Amsterdam / NASDAQ", "Extreme Ultraviolet (EUV) Lithography"
-        price, change = "€685.20", "+€11.40 (+1.69%)"
-        mcap, pe_ttm = "€271 Billion", "38.5x"
-        rev_ttm, margins = "€27.6 Billion", "Gross Margin: 51.3% | Operating Margin: 30.5%"
-        fcf, beta = "€5.8 Billion", "1.18 (5Y Monthly)"
-        range_52w = "€535.00 - €1,021.00"
-        cik = "0000937966 (SEC Form 20-F)"
-    elif "jpm" in q or "jpmorgan" in q:
-        ticker, name = "JPM", "JPMorgan Chase & Co."
-        exchange = "New York Stock Exchange (NYSE)"
-        sector = "Diversified Global Banking & Financials"
-        price, change = "$224.80", "+$2.10 (+0.94%)"
-        mcap, pe_ttm = "$642 Billion", "12.4x"
-        rev_ttm, margins = "$168.4 Billion", "Return on Equity (ROE): 17.2% | CET1 Ratio: 15.3%"
-        fcf, beta = "N/A (Financial Institution)", "1.08 (5Y Monthly)"
-        range_52w = "$140.20 - $228.40"
-        cik = "0000019617 (SEC Form 10-K)"
-    elif "reliance" in q:
-        ticker, name = "RELIANCE.NS", "Reliance Industries Limited"
-        exchange = "National Stock Exchange of India (NSE)"
-        sector = "Conglomerate (Energy, Retail, Telecom)"
-        price, change = "₹2,745.80", "+₹18.50 (+0.68%)"
-        mcap, pe_ttm = "₹18,580 Billion ($221B)", "26.5x"
-        rev_ttm, margins = "₹9,800 Billion", "EBITDA Margin: 17.5%"
-        fcf, beta = "₹480 Billion", "0.95"
-        range_52w = "₹2,220.00 - ₹3,217.00"
-        cik = "BSE:500325 / NSE:RELIANCE (MCA India)"
-    else:
-        # Benchmark Apple / General Large Cap
-        ticker, name = "AAPL", "Apple Inc."
-        exchange, sector = "NASDAQ Global Select", "Consumer Technology, Hardware & Services"
-        price, change = "$232.15", "+$1.85 (+0.80%)"
-        mcap, pe_ttm = "$3,540 Billion ($3.54T)", "34.8x"
-        rev_ttm = "$385.6 Billion (+2% YoY)"
-        margins = "Gross Margin: 46.2% | Operating Margin: 31.4%"
-        fcf, beta = "$108.8 Billion", "1.08 (5Y Monthly)"
-        range_52w = "$164.08 - $237.23"
-        cik = "0000320193 (SEC Form 10-K)"
-
-    rows = [
-        ("Company / Issuer", f"{name} ({ticker})"),
-        ("Primary Exchange / Sector", f"{exchange} · {sector}"),
-        ("Asset Classification", "EQUITY_COMMON"),
-        ("Last Consolidated Trade", price),
-        ("Net Price Delta", change),
-        ("Market Capitalization", mcap),
-        ("Price to Earnings (P/E TTM)", pe_ttm),
-        ("Annual Revenue Run-Rate", rev_ttm),
-        ("Operating Efficiency", margins),
-        ("Free Cash Flow Generation", fcf),
-        ("52-Week Trading Range", range_52w),
-        ("Systematic Risk (Beta)", beta),
-        ("Authoritative Filing CIK", cik),
-        ("Bitemporal Fact State", "CANONICAL (reconciled, 0 conflicts)"),
-    ]
-
-    return ResearchAnswer(
-        text=(
-            f"### Institutional Equity Research: {name} ({ticker})\n\n"
-            f"• **Consolidated Market Quote:** **{name}** traded at **{price}** ({change}) "
-            f"on primary volume with a market capitalization of **{mcap}**.\n"
-            f"• **Valuation Multiples:** Currently valued at **{pe_ttm}** trailing earnings with a "
-            f"52-week trading range of {range_52w} and systematic beta of {beta}.\n"
-            f"• **Operating Fundamentals:** Total revenue reached **{rev_ttm}** with operating "
-            f"performance characterized by: {margins}.\n"
-            f"• **Free Cash Flow:** Reported annual free cash flow generation of **{fcf}** "
-            f"supporting capital return and reinvestment programs.\n"
-            f"• **Regulatory Filings:** Official audited financial disclosures filed under "
-            f"**{cik}**. Under platform policy PDP-001, factual metrics are presented without "
-            f"forward speculative ratings or buy/sell recommendations."
-        ),
-        facts=FactTable(title=f"{name} ({ticker}) Deep Fundamentals", rows=rows),
-        citations=[
-            Citation(
-                label="U.S. SEC EDGAR — Official Corporate Disclosures",
-                meta=f"Audited Form 10-K Annual Report & Form 10-Q Financial Statements ({cik})",
-                pill="CURRENT",
-                kind="doc",
-                url="https://www.sec.gov/edgar",
-            ),
-            Citation(
-                label="TradingView — Real-Time Multi-Exchange Consolidated Tape",
-                meta="Live continuous market data, order book depth & historical multiples",
-                pill="CURRENT",
-                kind="link",
-                url="https://www.tradingview.com/",
-            ),
-            Citation(
-                label="Primary Listing Exchange & Consolidated Tape Association (CTA)",
-                meta=f"Official closing auction & continuous net settlement ({exchange})",
-                pill="CURRENT",
-                kind="link",
-                url="https://www.nasdaq.com/",
-            ),
-            Citation(
-                label="Accepted Fact Set · canonical bitemporal audit store",
-                meta="Primary evidence bundle · verified deterministic data",
-                pill="CURRENT",
-                kind="link",
-            ),
-        ],
-        note=(
-            "Every material financial metric resolves directly to official corporate filings "
-            "and exchange feeds."
-        ),
-        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
-        evidence_bundle_id=None,
-    )
-
-
-def _ipo_research_reply(query_text: str = "") -> ResearchAnswer:
-    q = query_text.lower()
-    if "jio" in q:
-        company = "Jio Platforms Limited (Reliance Jio)"
-        status = "Pre-IPO / Proposed Listing (Expected 2025-2026)"
-        regulator = "SEBI (Securities and Exchange Board of India)"
-        estimated_val = "$100 - $112 Billion (~Rs. 8.4 - 9.4 Lakh Crore)"
-        issue_size = "$4.5 - $6.0 Billion (~Rs. 38,000 - 50,000 Crore) - Expected Mega-Issue"
-        price_band = "Not Announced (Pending Draft Red Herring Prospectus [DRHP] Filing)"
-        lead_managers = "Morgan Stanley, Goldman Sachs, Kotak Mahindra Capital (Anticipated)"
-        listing_exchange = "NSE / BSE (National Stock Exchange of India / Bombay Stock Exchange)"
-        summary = (
-            "• **Regulatory Listing Status:** Jio Platforms is currently in **pre-IPO regulatory preparation**. "
-            "Under Indian market regulations (SEBI ICDR Regulations), no official public price band, GMP, "
-            "or retail bid window exists until an approved Draft Red Herring Prospectus (DRHP) is registered.\n"
-            "• **Valuation Benchmark:** Institutional investment rounds (Silver Lake, KKR, Meta, Google) "
-            f"and analyst consensus estimate enterprise valuation between **{estimated_val}**.\n"
-            "• **Primary Market Mechanics:** An Initial Public Offering (IPO) allows private companies to raise equity capital "
-            "from institutional (QIB), non-institutional (NII/HNI), and retail individual investors (RII).\n"
-            "• **Platform Policy Perimeter:** Talvrin strictly tracks verifiable regulatory filings and exchange observations. "
-            "No unverified grey-market premium (GMP) or speculative price target is computed."
-        )
-    elif "hyundai" in q:
-        company = "Hyundai Motor India Limited"
-        status = "Historic Listing / Landmark Auto Mega-IPO (October 2024)"
-        regulator = "SEBI Registered (DRHP / RHP Approved)"
-        estimated_val = "Rs. 1,59,258 Crore ($19.0 Billion)"
-        issue_size = "Rs. 27,870 Crore ($3.3 Billion) - 100% Offer For Sale (OFS)"
-        price_band = "Rs. 1,865 - Rs. 1,960 per equity share"
-        lead_managers = (
-            "Kotak Mahindra Capital, Citigroup Global Markets, HSBC Securities, J.P. Morgan"
-        )
-        listing_exchange = "NSE: HYUNDAI / BSE: 544274"
-        summary = (
-            "• **Listing Milestone:** Hyundai Motor India concluded India's largest-ever IPO, raising **Rs. 27,870 Crore** "
-            "via a 100% Offer For Sale (OFS) by parent Hyundai Motor Company.\n"
-            f"• **Pricing & Capitalization:** The issue was priced at the upper band of **{price_band}**, establishing a market "
-            f"capitalization of **{estimated_val}**.\n"
-            "• **Institutional Book Building:** The Qualified Institutional Buyer (QIB) portion was subscribed ~6.97x, with substantial anchor "
-            "allocations to sovereign wealth funds (GIC, ADIA) and domestic mutual funds.\n"
-            "• **Deterministic Audit:** Historical allotment ratios and listing day prints are archived under bitemporal audit."
-        )
-    elif "swiggy" in q:
-        company = "Swiggy Limited"
-        status = "Completed Public Offering / Listed (November 2024)"
-        regulator = "SEBI Registered (SEBI ICDR Compliant)"
-        estimated_val = "Rs. 87,200 Crore ($10.4 Billion)"
-        issue_size = "Rs. 11,327 Crore (Fresh Issue: Rs. 4,499 Cr + OFS: Rs. 6,828 Cr)"
-        price_band = "Rs. 371 - Rs. 390 per equity share"
-        lead_managers = "Kotak Mahindra Capital, Citigroup, Jefferies, BofA Securities"
-        listing_exchange = "NSE: SWIGGY / BSE: 544285"
-        summary = (
-            "• **Issue Architecture:** Swiggy raised **Rs. 11,327 Crore** combining growth capital expansion and early investor liquidity.\n"
-            f"• **Primary Pricing:** Cleared at the upper bound of **{price_band}** with strong anchor institutional participation.\n"
-            "• **Operational Focus:** Capital earmarked for dark store expansion (Instamart quick commerce) and cloud infrastructure."
-        )
-    else:
-        # General / Concept: "what is an ipo?", "ipo means?"
-        company = "Initial Public Offering (IPO) Market Structure"
-        status = "Core Capital Markets Concept (Primary Market Underwriting)"
-        regulator = "SEC (US) / FCA (UK) / SEBI (India) / ESMA (EU)"
-        estimated_val = "N/A (Corporate Issuance Mechanism)"
-        issue_size = "Determined by Primary Issuance Capital Needs"
-        price_band = "Determined via Book Building / Auction"
-        lead_managers = "Book Running Lead Managers (BRLM) / Underwriting Syndicate"
-        listing_exchange = "Primary Exchanges (NYSE, NASDAQ, LSE, BSE, NSE)"
-        summary = (
-            "• **What is an IPO?** An Initial Public Offering (IPO) is the process by which a privately held company "
-            "issues shares to the public for the first time, transitioning into a publicly traded corporate entity.\n"
-            "• **Key Mechanisms & Stages:**\n"
-            "  1. **Prospectus Filing (DRHP/Form S-1):** Mandatory legal disclosure of audited financials, risk factors, and promoter holdings.\n"
-            "  2. **Book Building & Price Discovery:** An investment banking syndicate tests institutional demand to set a **Price Band** (floor and cap).\n"
-            "  3. **Allotment & Settlement:** Bids are allocated across Institutional, HNI/NII, and Retail tranches before trading begins on secondary exchanges.\n"
-            "• **Difference from Secondary Market:** In an IPO (Primary Market), capital flows directly from investors to the company or selling shareholders. "
-            "After listing, shares trade between market participants on stock exchanges."
-        )
-
-    rows = [
-        ("Offering Entity", company),
-        ("Offering Structure", "INITIAL PUBLIC OFFERING (IPO) / PRIMARY MARKET"),
-        ("Regulatory & Listing Status", status),
-        ("Jurisdictional Oversight", regulator),
-        ("Benchmark Valuation / Target", estimated_val),
-        ("Issue Size / Capital Raised", issue_size),
-        ("Official Price Band", price_band),
-        ("Lead Underwriters (BRLM)", lead_managers),
-        ("Trading Venue / Ticker", listing_exchange),
-        ("Bitemporal Fact State", "CANONICAL (regulatory disclosure archive)"),
-    ]
-
-    return ResearchAnswer(
-        text=(
-            f"### Institutional Market Evidence: {company}\n\n"
-            f"{summary}\n\n"
-            f"• **Deterministic Policy Perimeter:** Talvrin provides verified empirical market observations, "
-            f"regulatory prospectus data, and primary market facts only. Under platform policy PDP-001, "
-            f"no subscription recommendation, buy/sell stance, or speculative grey-market projection is produced."
-        ),
-        facts=FactTable(title=f"{company} — Primary Market Terms", rows=rows),
-        citations=[
-            Citation(
-                label="SEBI / Primary Market Issuance Repository",
-                meta="Official DRHP, RHP & Final Offer Documents (ICDR Regulations)",
-                pill="SOURCE",
-                kind="doc",
-                url="https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=10",
-            ),
-            Citation(
-                label="U.S. SEC EDGAR — Form S-1 Registration Statements",
-                meta="Mandatory IPO registration statements and financial disclosures under the Securities Act of 1933",
-                pill="SOURCE",
-                kind="doc",
-                url="https://www.sec.gov/edgar",
-            ),
-            Citation(
-                label="National Stock Exchange (NSE India) — IPO & Forthcoming Listings",
-                meta="Public issue status, bid verification & basis of allotment feeds",
-                pill="CURRENT",
-                kind="link",
-                url="https://www.nseindia.com/market-data/all-upcoming-issues-ipo",
-            ),
-            Citation(
-                label="Accepted Fact Set · canonical bitemporal audit store",
-                meta="Primary evidence bundle · verified deterministic data",
-                pill="CURRENT",
-                kind="link",
-            ),
-        ],
-        note="Every material number and date resolves directly to audited regulatory filings and exchange clearing data.",
-        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
-        evidence_bundle_id=None,
-    )
-
-
-def _mutual_fund_reply(query_text: str = "") -> ResearchAnswer:
-    q = query_text.lower()
-    if "sbi" in q:
-        fund_name, sym = "SBI Bluechip Fund (Direct - Growth)", "SBIBLUE:IN"
-        nav = "Rs. 92.45"
-        aum = "Rs. 48,250 Crore ($5.8 Billion)"
-        expense = "0.85% (Direct) / 1.55% (Regular)"
-        benchmark = "S&P BSE 100 TRI"
-        manager = "SBI Funds Management Limited (SBI Mutual Fund)"
-        top_holdings = "HDFC Bank (8.8%), ICICI Bank (7.6%), Reliance Industries (7.2%), Infosys (5.4%), L&T (4.2%)"
-        category = "Equity: Large Cap Mutual Fund"
-    elif "parag" in q or "ppfas" in q:
-        fund_name, sym = "Parag Parikh Flexi Cap Fund (Direct - Growth)", "PPFCF:IN"
-        nav = "Rs. 84.12"
-        aum = "Rs. 76,400 Crore ($9.1 Billion)"
-        expense = "0.62% (Direct) / 1.32% (Regular)"
-        benchmark = "NIFTY 500 TRI"
-        manager = "PPFAS Asset Management Private Limited"
-        top_holdings = "HDFC Bank (8.1%), ITC (7.4%), Bajaj Holdings (6.8%), Power Grid (5.9%), Alphabet Inc. (4.8%), Microsoft (4.1%)"
-        category = "Equity: Flexi Cap (Domestic + International Diversified)"
-    elif "vanguard" in q or "500" in q:
-        fund_name, sym = "Vanguard 500 Index Fund Admiral Shares (VFIAX)", "MUTF:VFIAX"
-        nav = "$534.20"
-        aum = "$1,150 Billion ($1.15 Trillion Composite)"
-        expense = "0.04% (Industry-Leading Low Cost)"
-        benchmark = "S&P 500 Index"
-        manager = "The Vanguard Group, Inc."
-        top_holdings = "Microsoft (7.1%), Apple (6.9%), NVIDIA (6.3%), Amazon (3.7%), Meta (2.5%)"
-        category = "US Equity: Large Blend Index Mutual Fund"
-    else:
-        # General / Definition: "what is a mutual fund?", "mutual fund vs etf"
-        fund_name, sym = (
-            "Mutual Fund Investment Architecture & Net Asset Value (NAV)",
-            "ASSET_MANAGEMENT:MF",
-        )
-        nav = "Calculated Daily at Market Close: (Total Assets - Liabilities) / Outstanding Units"
-        aum = "$65+ Trillion Global Open-End Regulated Funds"
-        expense = "Total Expense Ratio (TER): Management Fees + Custody + Administrative Expenses"
-        benchmark = "Category Composite Benchmark (TRI - Total Return Index)"
-        manager = "Regulated Asset Management Company (AMC)"
-        top_holdings = "Diversified Equities, Sovereign & Corporate Debt, Money Market Instruments"
-        category = "Regulated Investment Company (RIC) / SEBI Mutual Fund"
-
-    rows = [
-        ("Scheme Name", fund_name),
-        ("Identifier / Ticker", sym),
-        ("Asset Category", category),
-        ("Net Asset Value (NAV)", nav),
-        ("Total AUM (Fund Size)", aum),
-        ("Expense Ratio (TER)", expense),
-        ("Benchmark Index", benchmark),
-        ("Asset Management Entity", manager),
-        ("Top Representative Holdings", top_holdings),
-        ("Bitemporal Fact State", "CANONICAL (AMFI / SEC verified)"),
-    ]
-
-    return ResearchAnswer(
-        text=(
-            f"### Institutional Fund Evidence: {fund_name}\n\n"
-            f"• **Net Asset Value (NAV) Mechanics:** Quoted at **{nav}**. Mutual funds calculate NAV at the end of each trading day "
-            f"based on official market closing valuations of portfolio assets minus liabilities.\n"
-            f"• **Asset Base & Cost Efficiency:** Total Assets Under Management (AUM) is **{aum}** with a Total Expense Ratio (TER) of **{expense}**.\n"
-            f"• **Benchmark & Active Mandate:** Managed by **{manager}** against benchmark **{benchmark}**.\n"
-            f"• **Portfolio Exposure:** Top holdings include: {top_holdings}.\n"
-            f"• **Deterministic Policy Perimeter:** Talvrin provides verified empirical fund observations, NAV histories, "
-            f"and portfolio facts only. Under platform policy PDP-001, no buy/sell recommendation, rating, or suitability conclusion is generated."
-        ),
-        facts=FactTable(title=f"{fund_name} — Fund Architecture", rows=rows),
-        citations=[
-            Citation(
-                label="AMFI (Association of Mutual Funds in India) — Official Daily NAVs",
-                meta="Authoritative statutory daily NAV feed and scheme information",
-                pill="CURRENT",
-                kind="link",
-                url="https://www.amfiindia.com/net-asset-value/nav-history",
-            ),
-            Citation(
-                label="U.S. SEC EDGAR — Form N-CEN & N-PORT Mutual Fund Disclosures",
-                meta="Audited portfolio holdings, expense ratios, and risk metrics for registered investment companies",
-                pill="SOURCE",
-                kind="doc",
-                url="https://www.sec.gov/edgar",
-            ),
-            Citation(
-                label="Accepted Fact Set · canonical bitemporal audit store",
-                meta="Primary evidence bundle · verified deterministic data",
-                pill="CURRENT",
-                kind="link",
-            ),
-        ],
-        note="Every material NAV and fund figure resolves directly to official statutory depository records.",
-        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        facts=None,
+        citations=[],
+        note=None,
+        allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
         evidence_bundle_id=None,
     )
 
@@ -2604,6 +1683,27 @@ async def _match_equity_instrument(
 
     if len(matches) == 1:
         return matches[0]
+    if len(matches) > 1:
+        # A real, previously-undiscovered collision: a dual-listed issuer
+        # (e.g. Vodafone on both LSE and, via ADR, NASDAQ) is onboarded as
+        # two separate instruments sharing the same bare ticker symbol
+        # ("VOD"), so a bare-symbol query matches both and was silently
+        # treated as ambiguous - even when only one listing is actually
+        # tracked (PILOT_EQUITIES only ingests the NASDAQ/NYSE line, never
+        # the LSE one). This is not fuzzy resolution: the symbol match
+        # itself is still exact on both candidates; this only breaks the
+        # tie by which one has real accepted_fact data, which is a fact
+        # about data availability, not a guess about identity.
+        with_data = [
+            m
+            for m in matches
+            if await latest_accepted_fact(
+                session, subject_id=m[0].id, metric_id=METRIC_EQUITY_EOD_PRICE
+            )
+            is not None
+        ]
+        if len(with_data) == 1:
+            return with_data[0]
     return None
 
 
@@ -2764,6 +1864,18 @@ _POLICY_BLOCKED_REPLY = ResearchAnswer(
 )
 
 
+#: The frontend prepends this wrapper to the wire query whenever the user has
+#: an asset "tagged" in the compose box (App.tsx's `wireQuery`), on every
+#: message sent while that tag is active - including ones with nothing to do
+#: with the tagged asset. No backend code has ever intentionally parsed this
+#: format (confirmed: nothing in this codebase references "Tagged Asset"), so
+#: it was reaching the keyword classifiers below as untouched text - a tagged
+#: Apple caused a live "what is CPI" question to be classified as an equity
+#: query because the wrapper itself contains "Apple"/"AAPL". Stripped here so
+#: classification and every downstream branch sees only the real question.
+_TAGGED_ASSET_CONTEXT_PREFIX = re.compile(r"^\[Context: Tagged Asset [^\]]*\]\.\s*Query:\s*", re.I)
+
+
 async def assemble_research_answer(
     session: AsyncSession,
     *,
@@ -2777,6 +1889,7 @@ async def assemble_research_answer(
     other branch works identically without it, and passing None just
     means the fallback degrades to lexical-only search, never an error.
     """
+    query_text = _TAGGED_ASSET_CONTEXT_PREFIX.sub("", query_text, count=1)
     if _is_advice(query_text):
         answer = _advice_reply()
     elif _is_greeting(query_text):
@@ -2823,21 +1936,23 @@ async def assemble_research_answer(
         else:
             answer = await _gilt_facts_reply(session, query_text)
     elif _mentions_treasury(query_text):
-        answer = _treasury_yield_reply(query_text)
+        answer = _not_yet_connected_reply(query_text, asset_class="US Treasury yields")
     elif _mentions_etf(query_text):
-        answer = _etf_market_reply(query_text)
+        answer = _not_yet_connected_reply(query_text, asset_class="ETFs")
     elif _mentions_crypto(query_text):
-        answer = _crypto_market_reply(query_text)
+        answer = _not_yet_connected_reply(query_text, asset_class="cryptocurrencies")
     elif _mentions_commodity(query_text):
-        answer = _commodity_market_reply(query_text)
+        answer = _not_yet_connected_reply(query_text, asset_class="commodities")
     elif _mentions_ipo(query_text):
-        answer = _ipo_research_reply(query_text)
+        answer = _not_yet_connected_reply(query_text, asset_class="IPOs")
     elif _mentions_mutual_fund(query_text):
-        answer = _mutual_fund_reply(query_text)
+        answer = _not_yet_connected_reply(query_text, asset_class="mutual funds")
     elif _mentions_global_index(query_text):
-        answer = _global_index_reply(query_text)
-    elif _mentions_deep_equity(query_text) or query_text.strip().startswith("["):
-        answer = _equity_deep_research_reply(query_text)
+        answer = _not_yet_connected_reply(query_text, asset_class="global market indices")
+    elif _mentions_deep_equity(query_text):
+        answer = _not_yet_connected_reply(
+            query_text, asset_class="equity fundamentals / deep research"
+        )
     else:
         answer = await _document_backed_fallback_reply(session, query_text, http) or _default_reply(
             query_text
