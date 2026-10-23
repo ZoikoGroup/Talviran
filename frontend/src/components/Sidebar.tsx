@@ -69,6 +69,7 @@ interface SidebarProps {
   onOpenMarkets?: () => void
   onOpenCompare?: () => void
   onOpenSearch?: () => void
+  onOpenPricing?: () => void
   activeNav?: 'home' | 'research' | 'monitoring' | 'settings' | 'watchlists' | 'markets' | 'compare'
   /** Below `lg` the sidebar is an off-canvas drawer rather than a permanent
    * column — there is no room for the icon rail, so it is simply open or
@@ -125,6 +126,7 @@ export default function Sidebar({
   onOpenWatchlists,
   onOpenMarkets,
   onOpenCompare,
+  onOpenPricing,
   activeNav = 'home',
   mobileOpen,
   onMobileClose,
@@ -1027,24 +1029,39 @@ export default function Sidebar({
         </nav>
 
         <div className="border-t border-sidebar-border/70 p-3 space-y-1">
-          {/* User profile row - opens Settings */}
-          <div
-            onClick={() => {
-              onOpenSettings()
-              onMobileClose()
-            }}
-            className="flex items-center gap-2.5 rounded-xl p-2 transition-colors hover:bg-sidebar-accent cursor-pointer"
-          >
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-indigo-950 text-indigo-300 border border-indigo-700/50 text-[12px] font-semibold">
-              {currentUser.initials}
-            </span>
-            <div className="flex flex-col min-w-0 flex-1">
-              <span className="truncate text-[13px] font-semibold text-foreground">{currentUser.name}</span>
-              <span className="text-[11px] text-muted-foreground capitalize">
-                {currentUser.plan.toLowerCase() === 'enterprise' ? 'Enterprise' : 'Pro Plan'}
+          {/* User profile row - opens Settings with Upgrade CTA */}
+          <div className="flex items-center gap-2 rounded-xl p-2 transition-colors hover:bg-sidebar-accent">
+            <div
+              onClick={() => {
+                onOpenSettings()
+                onMobileClose()
+              }}
+              className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+            >
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-indigo-950 text-indigo-300 border border-indigo-700/50 text-[12px] font-semibold">
+                {currentUser.initials}
               </span>
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="truncate text-[13px] font-semibold text-foreground">{currentUser.name}</span>
+                <span className="text-[11px] text-muted-foreground capitalize">
+                  {currentUser.plan.toLowerCase() === 'enterprise' ? 'Enterprise' : 'Professional'}
+                </span>
+              </div>
             </div>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+
+            {onOpenPricing && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onOpenPricing()
+                  onMobileClose()
+                }}
+                className="shrink-0 rounded-lg border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary hover:text-primary-foreground transition-all shadow-sm"
+              >
+                Upgrade
+              </button>
+            )}
           </div>
         </div>
       </div>

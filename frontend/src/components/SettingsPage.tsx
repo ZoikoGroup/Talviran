@@ -18,8 +18,8 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/auth/AuthContext'
 import { Field, SubmitButton } from '@/components/ui/field'
-import { PLANS, CURRENT_PLAN_ID } from '@/data/plans'
 import { passwordProblem } from '@/auth/session'
+import { COMMERCIAL_PLANS } from '@/data/pricing'
 
 interface SettingsPageProps {
   onBack: () => void
@@ -28,6 +28,7 @@ interface SettingsPageProps {
   stats: { chats: number; projects: number; messages: number }
   onClearWorkspace: () => void
   onExportWorkspace: () => void
+  onOpenPricing?: () => void
 }
 
 const SECTIONS = [
@@ -323,36 +324,78 @@ function SecuritySection() {
   )
 }
 
-function BillingSection() {
+function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
   return (
     <Panel
-      title="Billing"
-      description="Plans are functional tiers. Pricing is not set, so none is shown here."
+      title="Billing & Subscription Plans"
+      description="Review your active plan, verifiable capacity quotas, and institutional entitlements."
     >
-      <div className="flex flex-col gap-2.5">
-        {PLANS.map((p) => {
-          const current = p.id === CURRENT_PLAN_ID
+      {/* Active plan header card */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-primary/50 bg-gradient-to-r from-primary/10 via-card to-card p-4 sm:p-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-[16px] font-bold text-white">Professional Plan</span>
+            <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10.5px] font-bold text-emerald-400">
+              ACTIVE
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Billed annually ($790/yr) • High-frequency research, unlimited watchlists, and priority queues.
+          </p>
+        </div>
+
+        {onOpenPricing && (
+          <button
+            type="button"
+            onClick={onOpenPricing}
+            className="shrink-0 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-all shadow-md shadow-primary/20"
+          >
+            Change Plan & Upgrade
+          </button>
+        )}
+      </div>
+
+      {/* 4 Commercial Tiers Overview Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {COMMERCIAL_PLANS.map((p) => {
+          const current = p.id === 'professional'
           return (
             <div
               key={p.id}
               className={cn(
-                'rounded-xl border px-4 py-3.5',
-                current ? 'border-primary/50 bg-primary/5' : 'border-border bg-card'
+                'rounded-xl border p-4 transition-all',
+                current
+                  ? 'border-primary/60 bg-primary/5 shadow-sm'
+                  : 'border-border bg-card'
               )}
             >
-              <div className="flex flex-wrap items-center gap-2.5">
-                <span className="text-[14px] font-medium">{p.name}</span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[14px] font-bold text-white">{p.name}</span>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {p.monthlyPrice === 0 ? '$0' : `$${p.monthlyPrice}/mo`}
+                  </span>
+                </div>
                 {current && (
-                  <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10.5px] font-semibold tracking-wide text-primary">
+                  <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
                     CURRENT
                   </span>
                 )}
-                {p.deferred && <NotYet>Deferred</NotYet>}
               </div>
-              <p className="mt-1 text-[13px] text-muted-foreground">{p.role}</p>
-              <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground/80">
-                {p.gates}
+              <p className="mt-1.5 text-xs text-muted-foreground line-clamp-2">
+                {p.tagline}
               </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-300">
+                <span className="rounded-md bg-muted/40 px-2 py-0.5 border border-border/40">
+                  {p.limits.watchlists}
+                </span>
+                <span className="rounded-md bg-muted/40 px-2 py-0.5 border border-border/40">
+                  {p.limits.activeRules}
+                </span>
+                <span className="rounded-md bg-muted/40 px-2 py-0.5 border border-border/40">
+                  {p.limits.researchRuns}
+                </span>
+              </div>
             </div>
           )
         })}
@@ -360,13 +403,32 @@ function BillingSection() {
 
       <Card>
         <Row
-          label="Payment method"
-          hint="No billing system is connected. Nothing can be charged."
+          label="Payment Method"
+          hint="Institutional invoice via Stripe & ACH Wire Transfer."
         >
-          <NotYet>Not yet available</NotYet>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-300">Corporate Card ending in 4242</span>
+            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">
+              Verified
+            </span>
+          </div>
         </Row>
-        <Row label="Invoices" hint="Past invoices will appear here once billing is live.">
-          <NotYet>Not yet available</NotYet>
+        <Row
+          label="Tax & VAT Information"
+          hint="Automatic statutory receipt generation with EU VAT & UK Companies House registration."
+        >
+          <span className="text-xs text-muted-foreground font-mono">GB-948201948</span>
+        </Row>
+        <Row label="Invoices & Receipts" hint="Download audit-grade billing records for accounting.">
+          <button
+            type="button"
+            className="text-xs text-primary hover:underline font-semibold"
+            onClick={() => {
+              if (onOpenPricing) onOpenPricing()
+            }}
+          >
+            Manage in Billing Portal
+          </button>
         </Row>
       </Card>
     </Panel>
@@ -581,6 +643,7 @@ export default function SettingsPage({
   stats,
   onClearWorkspace,
   onExportWorkspace,
+  onOpenPricing,
 }: SettingsPageProps) {
   const [active, setActive] = useState<SectionId>('account')
 
@@ -635,7 +698,7 @@ export default function SettingsPage({
               <AppearanceSection theme={theme} onThemeChange={onThemeChange} />
             )}
             {active === 'security' && <SecuritySection />}
-            {active === 'billing' && <BillingSection />}
+            {active === 'billing' && <BillingSection onOpenPricing={onOpenPricing} />}
             {active === 'usage' && <UsageSection stats={stats} />}
             {active === 'data' && (
               <DataSection

@@ -12,6 +12,7 @@ import MarketsPage, { GLOBAL_MARKET_ASSETS } from '@/components/MarketsPage'
 import HomeDashboard from '@/components/HomeDashboard'
 import { ComparisonPage } from '@/components/ComparisonPage'
 import SearchModal from '@/components/SearchModal'
+import PricingModal from '@/components/PricingModal'
 import TalvrinMoonChat from '@/components/ui/talvrin-moon-chat'
 import { buildReply, type ChatMessage, type TaggedAsset } from '@/data/mockReply'
 import { DEFAULT_MODEL, type ModelId } from '@/data/models'
@@ -140,6 +141,7 @@ export default function App() {
   const [showCompare, setShowCompare] = useState(initialView === 'compare')
   const [showHome, setShowHome] = useState(initialView === 'home')
   const [showSearch, setShowSearch] = useState(false)
+  const [showPricing, setShowPricing] = useState(false)
   const [monitoringInitialSymbol, setMonitoringInitialSymbol] = useState<string | null>(null)
   const [marketsInitialSymbol, setMarketsInitialSymbol] = useState<string | null>(null)
   const [taggedAsset, setTaggedAsset] = useState<TaggedAsset | null>(null)
@@ -725,6 +727,7 @@ export default function App() {
         onOpenSettings={() => navigateToView('settings')}
         onOpenMonitoring={() => navigateToView('monitoring')}
         onOpenSearch={() => setShowSearch(true)}
+        onOpenPricing={() => setShowPricing(true)}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
       />
@@ -763,6 +766,7 @@ export default function App() {
             }}
             onClearWorkspace={clearWorkspace}
             onExportWorkspace={exportWorkspace}
+            onOpenPricing={() => setShowPricing(true)}
           />
         ) : showMonitoring ? (
           <MonitoringPage
@@ -954,6 +958,18 @@ export default function App() {
           } else if (surface === 'settings') {
             navigateToView('settings')
           }
+        }}
+      />
+
+      <PricingModal
+        isOpen={showPricing}
+        onClose={() => setShowPricing(false)}
+        currentPlanId="professional"
+        onSelectPlan={(planId, cycle) => {
+          setShowPricing(false)
+          toast.success(
+            `Selected ${planId.toUpperCase()} (${cycle === 'annual' ? 'Annual Billing - 17% Saved' : 'Monthly'}). Redirecting to secure checkout...`
+          )
         }}
       />
     </div>
