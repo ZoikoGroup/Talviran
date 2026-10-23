@@ -378,7 +378,7 @@ export function ComparisonPage({
     }
   }, [selectedSymbols, activeChartSymbol])
 
-  const [chartStyle, setChartStyle] = useState<'2' | '1'>('2') // '2' is clean Line comparison, '1' is Candlestick
+  const [chartStyle, setChartStyle] = useState<'10' | '2' | '1'>('10') // '10' is Baseline (0.00% reference), '2' is % Return Line, '1' is Candlestick
 
   // Embed verified live TradingView market comparison chart
   useEffect(() => {
@@ -419,6 +419,13 @@ export function ComparisonPage({
       overrides: {
         'mainSeriesProperties.priceAxisProperties.percentage': true,
         'mainSeriesProperties.priceAxisProperties.log': false,
+        'mainSeriesProperties.baselineStyle.baselineValue': 0,
+        'mainSeriesProperties.baselineStyle.topLineColor': '#10b981',
+        'mainSeriesProperties.baselineStyle.bottomLineColor': '#ef4444',
+        'mainSeriesProperties.baselineStyle.topFillColor1': 'rgba(16, 185, 129, 0.12)',
+        'mainSeriesProperties.baselineStyle.topFillColor2': 'rgba(16, 185, 129, 0.02)',
+        'mainSeriesProperties.baselineStyle.bottomFillColor1': 'rgba(239, 68, 68, 0.02)',
+        'mainSeriesProperties.baselineStyle.bottomFillColor2': 'rgba(239, 68, 68, 0.12)',
       },
       compareSymbols: compareSymbolsConfig,
     })
@@ -679,8 +686,19 @@ export function ComparisonPage({
                 })}
               </div>
 
-              {/* Format Toggle: Normalized % Return vs Candlestick */}
+              {/* Format Toggle: Baseline vs % Return Line vs Candlestick */}
               <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-lg border border-slate-800">
+                <button
+                  onClick={() => setChartStyle('10')}
+                  className={`px-2.5 py-0.5 text-xs font-semibold rounded transition-all ${
+                    chartStyle === '10'
+                      ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400/50'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Baseline mode: 0.00% reference line separating positive from negative relative returns"
+                >
+                  Baseline (0.0%)
+                </button>
                 <button
                   onClick={() => setChartStyle('2')}
                   className={`px-2 py-0.5 text-xs font-semibold rounded transition-all ${
