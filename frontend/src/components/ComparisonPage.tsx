@@ -416,6 +416,8 @@ export function ComparisonPage({
       hide_top_toolbar: false,
       hide_legend: false,
       scaleMode: 'Percentage',
+      withdateranges: true,
+      range: 'YTD',
       overrides: {
         'mainSeriesProperties.priceAxisProperties.percentage': true,
         'mainSeriesProperties.priceAxisProperties.log': false,
