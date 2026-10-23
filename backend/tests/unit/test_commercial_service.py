@@ -17,7 +17,7 @@ from app.modules.commercial.service import (
 
 
 @pytest.mark.asyncio
-async def test_get_catalog():
+async def test_get_catalog() -> None:
     catalog = get_catalog()
     assert len(catalog) == 5
     tier_ids = [plan.id for plan in catalog]
@@ -37,7 +37,7 @@ async def test_get_catalog():
 
 
 @pytest.mark.asyncio
-async def test_create_checkout_session():
+async def test_create_checkout_session() -> None:
     account_id = uuid.uuid4()
     req_annual = CheckoutSessionRequest(
         plan_tier=PlanTier.PROFESSIONAL,
@@ -73,7 +73,7 @@ class _MockSession:
 
 
 @pytest.mark.asyncio
-async def test_resolve_account_entitlement():
+async def test_resolve_account_entitlement() -> None:
     session = cast(AsyncSession, _MockSession())
     account_id = uuid.uuid4()
     entitlement = await resolve_account_entitlement(session, account_id)
@@ -85,7 +85,7 @@ async def test_resolve_account_entitlement():
 
 
 @pytest.mark.asyncio
-async def test_commercial_api_plans_endpoint():
+async def test_commercial_api_plans_endpoint() -> None:
     app = create_app()
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

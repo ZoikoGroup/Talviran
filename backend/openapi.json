@@ -1,6 +1,78 @@
 {
   "components": {
     "schemas": {
+      "AccountEntitlement": {
+        "properties": {
+          "account_id": {
+            "title": "Account Id",
+            "type": "string"
+          },
+          "billing_cadence": {
+            "$ref": "#/components/schemas/BillingCadence"
+          },
+          "current_period_end": {
+            "title": "Current Period End",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "plan_tier": {
+            "$ref": "#/components/schemas/PlanTier"
+          },
+          "quotas": {
+            "$ref": "#/components/schemas/QuotaLimits"
+          },
+          "seat_count": {
+            "title": "Seat Count",
+            "type": "integer"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/AccountUsage"
+          }
+        },
+        "required": [
+          "account_id",
+          "plan_tier",
+          "billing_cadence",
+          "is_active",
+          "current_period_end",
+          "seat_count",
+          "quotas",
+          "usage"
+        ],
+        "title": "AccountEntitlement",
+        "type": "object"
+      },
+      "AccountUsage": {
+        "properties": {
+          "active_rules_count": {
+            "title": "Active Rules Count",
+            "type": "integer"
+          },
+          "evidence_exports_this_month": {
+            "title": "Evidence Exports This Month",
+            "type": "integer"
+          },
+          "research_runs_this_month": {
+            "title": "Research Runs This Month",
+            "type": "integer"
+          },
+          "watchlists_count": {
+            "title": "Watchlists Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "watchlists_count",
+          "active_rules_count",
+          "research_runs_this_month",
+          "evidence_exports_this_month"
+        ],
+        "title": "AccountUsage",
+        "type": "object"
+      },
       "AlertOut": {
         "properties": {
           "alert_type": {
@@ -90,6 +162,14 @@
         ],
         "title": "AlertOut",
         "type": "object"
+      },
+      "BillingCadence": {
+        "enum": [
+          "monthly",
+          "annual"
+        ],
+        "title": "BillingCadence",
+        "type": "string"
       },
       "CalculationInputOut": {
         "properties": {
@@ -232,6 +312,81 @@
           "status"
         ],
         "title": "CalculationResultOut",
+        "type": "object"
+      },
+      "CheckoutSessionRequest": {
+        "properties": {
+          "additional_seats": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Additional Seats",
+            "type": "integer"
+          },
+          "billing_cadence": {
+            "$ref": "#/components/schemas/BillingCadence",
+            "default": "annual"
+          },
+          "cancel_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Url"
+          },
+          "plan_tier": {
+            "$ref": "#/components/schemas/PlanTier"
+          },
+          "success_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Success Url"
+          }
+        },
+        "required": [
+          "plan_tier"
+        ],
+        "title": "CheckoutSessionRequest",
+        "type": "object"
+      },
+      "CheckoutSessionResponse": {
+        "properties": {
+          "billing_cadence": {
+            "$ref": "#/components/schemas/BillingCadence"
+          },
+          "checkout_url": {
+            "title": "Checkout Url",
+            "type": "string"
+          },
+          "plan_tier": {
+            "$ref": "#/components/schemas/PlanTier"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "total_amount_usd": {
+            "title": "Total Amount Usd",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "checkout_url",
+          "plan_tier",
+          "billing_cadence",
+          "total_amount_usd"
+        ],
+        "title": "CheckoutSessionResponse",
         "type": "object"
       },
       "CitationOut": {
@@ -1204,6 +1359,86 @@
         "title": "PageOut[RuleOut]",
         "type": "object"
       },
+      "PlanDefinition": {
+        "properties": {
+          "annual_price_per_month_usd": {
+            "title": "Annual Price Per Month Usd",
+            "type": "integer"
+          },
+          "annual_savings_percent": {
+            "title": "Annual Savings Percent",
+            "type": "integer"
+          },
+          "annual_total_usd": {
+            "title": "Annual Total Usd",
+            "type": "integer"
+          },
+          "badge": {
+            "title": "Badge",
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/PlanTier"
+          },
+          "included_features": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Included Features",
+            "type": "array"
+          },
+          "is_popular": {
+            "default": false,
+            "title": "Is Popular",
+            "type": "boolean"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/QuotaLimits"
+          },
+          "monthly_price_usd": {
+            "title": "Monthly Price Usd",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "seats_included": {
+            "title": "Seats Included",
+            "type": "integer"
+          },
+          "tagline": {
+            "title": "Tagline",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "badge",
+          "tagline",
+          "seats_included",
+          "monthly_price_usd",
+          "annual_price_per_month_usd",
+          "annual_total_usd",
+          "annual_savings_percent",
+          "limits",
+          "included_features"
+        ],
+        "title": "PlanDefinition",
+        "type": "object"
+      },
+      "PlanTier": {
+        "enum": [
+          "explorer",
+          "research",
+          "professional",
+          "teams",
+          "enterprise"
+        ],
+        "title": "PlanTier",
+        "type": "string"
+      },
       "PrincipalOut": {
         "properties": {
           "account_id": {
@@ -1265,6 +1500,94 @@
           "created_at"
         ],
         "title": "ProjectOut",
+        "type": "object"
+      },
+      "QuotaLimits": {
+        "properties": {
+          "active_monitoring_rules": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "const": "unlimited",
+                "type": "string"
+              }
+            ],
+            "title": "Active Monitoring Rules"
+          },
+          "evidence_dossier_exports_per_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "const": "unlimited",
+                "type": "string"
+              }
+            ],
+            "title": "Evidence Dossier Exports Per Month"
+          },
+          "filing_history_years": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "const": "unlimited",
+                "type": "string"
+              }
+            ],
+            "title": "Filing History Years"
+          },
+          "seat_count": {
+            "title": "Seat Count",
+            "type": "integer"
+          },
+          "team_workspaces": {
+            "title": "Team Workspaces",
+            "type": "boolean"
+          },
+          "tick_level_realtime": {
+            "title": "Tick Level Realtime",
+            "type": "boolean"
+          },
+          "verified_research_runs_per_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "const": "unlimited",
+                "type": "string"
+              }
+            ],
+            "title": "Verified Research Runs Per Month"
+          },
+          "watchlists": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "const": "unlimited",
+                "type": "string"
+              }
+            ],
+            "title": "Watchlists"
+          }
+        },
+        "required": [
+          "watchlists",
+          "active_monitoring_rules",
+          "verified_research_runs_per_month",
+          "evidence_dossier_exports_per_month",
+          "filing_history_years",
+          "tick_level_realtime",
+          "team_workspaces",
+          "seat_count"
+        ],
+        "title": "QuotaLimits",
         "type": "object"
       },
       "ResearchIn": {
@@ -3040,6 +3363,96 @@
         "summary": "List Shares",
         "tags": [
           "research"
+        ]
+      }
+    },
+    "/api/v1/commercial/checkout": {
+      "post": {
+        "description": "Initialize a verified checkout session for upgrades or seat additions.",
+        "operationId": "start_checkout_api_v1_commercial_checkout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Checkout",
+        "tags": [
+          "commercial"
+        ]
+      }
+    },
+    "/api/v1/commercial/entitlement": {
+      "get": {
+        "description": "Retrieve active plan, quotas, and real-time usage for the authenticated account.",
+        "operationId": "get_entitlement_api_v1_commercial_entitlement_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountEntitlement"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Entitlement",
+        "tags": [
+          "commercial"
+        ]
+      }
+    },
+    "/api/v1/commercial/plans": {
+      "get": {
+        "description": "Retrieve full commercial price book and entitlement specifications (Chapter 5 & 7).",
+        "operationId": "list_plans_api_v1_commercial_plans_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlanDefinition"
+                  },
+                  "title": "Response List Plans Api V1 Commercial Plans Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Plans",
+        "tags": [
+          "commercial"
         ]
       }
     },
