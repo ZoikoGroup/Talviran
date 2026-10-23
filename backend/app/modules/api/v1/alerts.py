@@ -12,8 +12,8 @@ from fastapi import APIRouter, Query
 from app.core.errors import ErrorCode, TalvrinAPIError
 from app.core.pagination import PageOut
 from app.modules.api.v1.deps import IdentityDep, SessionDep
-from app.modules.monitoring import service
-from app.modules.monitoring.schemas import AlertOut
+from app.modules.monitoring import delivery, service
+from app.modules.monitoring.schemas import AlertOut, TriggerAlertIn
 
 router = APIRouter(prefix="/alerts", tags=["monitoring"])
 
@@ -56,3 +56,31 @@ async def get_alert(
     if alert is None:
         raise _not_found()
     return AlertOut.model_validate(alert)
+
+
+@router.post("/trigger")
+async def trigger_and_dispatch_alert(
+    body: TriggerAlertIn,
+    identity: IdentityDep,
+) -> dict[str, str | bool]:
+    """Receives touched alert from active surveillance, dispatches email to user account,
+    and returns delivery confirmation.
+    """
+    recipient = body.recipient_email or identity.email
+    email_dispatched = False
+    if recipient:
+        email_dispatched = delivery.send_market_alert_email(
+            recipient_email=recipient,
+            asset_symbol=body.asset_symbol,
+            asset_name=body.asset_name,
+            threshold_value=body.threshold_value,
+            observed_value=body.observed_value,
+            predicate=body.predicate,
+        )
+
+    return {
+        "status": "triggered",
+        "email_dispatched": email_dispatched,
+        "recipient": recipient,
+        "asset_symbol": body.asset_symbol,
+    }
