@@ -1869,6 +1869,56 @@
         "title": "TradingViewAlertPayload",
         "type": "object"
       },
+      "TriggerAlertIn": {
+        "properties": {
+          "asset_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Name"
+          },
+          "asset_symbol": {
+            "title": "Asset Symbol",
+            "type": "string"
+          },
+          "observed_value": {
+            "title": "Observed Value",
+            "type": "string"
+          },
+          "predicate": {
+            "default": "CROSSES_ABOVE",
+            "title": "Predicate",
+            "type": "string"
+          },
+          "recipient_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient Email"
+          },
+          "threshold_value": {
+            "title": "Threshold Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_symbol",
+          "threshold_value",
+          "observed_value"
+        ],
+        "title": "TriggerAlertIn",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -2207,6 +2257,59 @@
           }
         },
         "summary": "List Alerts",
+        "tags": [
+          "monitoring"
+        ]
+      }
+    },
+    "/api/v1/alerts/trigger": {
+      "post": {
+        "description": "Receives touched alert from active surveillance, dispatches email to user account,\nand returns delivery confirmation.",
+        "operationId": "trigger_and_dispatch_alert_api_v1_alerts_trigger_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerAlertIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  },
+                  "title": "Response Trigger And Dispatch Alert Api V1 Alerts Trigger Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trigger And Dispatch Alert",
         "tags": [
           "monitoring"
         ]

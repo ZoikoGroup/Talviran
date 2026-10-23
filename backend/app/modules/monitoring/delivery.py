@@ -1,5 +1,6 @@
 """Alert delivery (MON-001 §14) - transports: IN_APP and EMAIL via Resend."""
 
+import datetime as dt
 import json
 import logging
 import urllib.request
@@ -63,6 +64,59 @@ def _send_resend_email(
         return False
 
 
+def send_market_alert_email(
+    *,
+    recipient_email: str,
+    asset_symbol: str,
+    asset_name: str | None,
+    threshold_value: str,
+    observed_value: str,
+    predicate: str = "CROSSES_ABOVE",
+) -> bool:
+    """Dispatches a market threshold alert using canonical Talvrin template design and branding."""
+    settings = get_settings()
+    if not settings.resend_api_key:
+        logger.warning("Cannot dispatch alert email: resend_api_key is not configured")
+        return False
+
+    direction_str = "rises above" if predicate == "CROSSES_ABOVE" else "falls below"
+    display_title = f"{asset_symbol}" + (f" ({asset_name})" if asset_name else "")
+    subject = f"Verified threshold event: {display_title}"
+    preheader = f"Monitored threshold crossed: {asset_symbol} touched {observed_value} ({direction_str} {threshold_value})."
+    time_str = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M:%S") + " UTC"
+
+    body_text = (
+        f"A monitored price condition was met using an entitled, validated price observation on your Talvrin account.\n\n"
+        f"Asset: {display_title}\n"
+        f"Target Threshold: {threshold_value} ({direction_str})\n"
+        f"Observed / Touched Price: {observed_value}\n"
+        f"Trigger Reference Time: {time_str}\n\n"
+        f"This alert has touched its target, is now fulfilled, and has been archived into your Trigger History."
+    )
+
+    from app.core.email_templates.engine import render_talvrin_email_html
+
+    html_content = render_talvrin_email_html(
+        subject=subject,
+        preheader=preheader,
+        body_text=body_text,
+        cta_label="Inspect Price Evidence",
+        action_url="https://app.talvrin.com",
+        badge_label="Objective Alert",
+        notice_reference="TAL-EML-MO-PRICE_CROSS",
+    )
+
+    return _send_resend_email(
+        to_email=recipient_email,
+        subject=subject,
+        html_content=html_content,
+        api_key=settings.resend_api_key,
+        from_email=settings.alerts_from_email,
+    )
+
+
+
+
 async def deliver_alert(
     session: AsyncSession, *, alert_id: uuid.UUID, recipient_email: str | None = None
 ) -> Delivered | DeliverySkipped:
@@ -98,70 +152,26 @@ async def deliver_alert(
         obs_str = str(alert.observed_value)
         time_str = alert.knowledge_time.strftime("%Y-%m-%d %H:%M:%S") + " UTC"
 
-        html = f"""<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Talvrin Market Alert</title>
-</head>
-<body style="margin: 0; padding: 24px; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e2e8f0;">
-  <div style="max-width: 560px; margin: 0 auto; background-color: #111827; border: 1px solid #1f2937; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
-    <div style="padding: 24px 28px; border-bottom: 1px solid #1f2937; background: linear-gradient(180deg, #182234 0%, #111827 100%);">
-      <div style="display: flex; align-items: center; justify-content: space-between;">
-        <span style="font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: #ffffff;">TALVRIN</span>
-        <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; background: rgba(99, 102, 241, 0.2); color: #818cf8; padding: 4px 10px; border-radius: 9999px; border: 1px solid rgba(99, 102, 241, 0.3);">
-          Objective Alert
-        </span>
-      </div>
-      <p style="margin: 8px 0 0; font-size: 12px; color: #94a3b8;">
-        The Evidence Layer for Public Markets
-      </p>
-    </div>
+        from app.core.email_templates.engine import render_talvrin_email_html
 
-    <div style="padding: 28px;">
-      <h1 style="margin: 0 0 16px; font-size: 19px; font-weight: 600; color: #f8fafc; line-height: 1.3;">
-        Market Trigger Activated
-      </h1>
-      <p style="margin: 0 0 20px; font-size: 13.5px; line-height: 1.5; color: #94a3b8;">
-        An automated rule surveillance trigger on your Talvrin account has executed.
-      </p>
+        body_text = (
+            f"An automated surveillance trigger on your Talvrin account has executed.\n\n"
+            f"Asset / Metric: {metric_str}\n"
+            f"Target Threshold: {thresh_str}\n"
+            f"Observed Value: {obs_str}\n"
+            f"Trigger Reference Time: {time_str}\n\n"
+            f"This delivery is an objective record generated against approved accepted facts and canonical pricing methodology."
+        )
 
-      <div style="background-color: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 18px 20px; margin-bottom: 24px;">
-        <div style="margin-bottom: 14px;">
-          <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-bottom: 4px;">Asset / Metric</div>
-          <div style="font-size: 15px; font-weight: 600; color: #f1f5f9;">{metric_str}</div>
-        </div>
-
-        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
-          <tr>
-            <td style="padding: 10px 0; border-top: 1px solid #1e293b; width: 50%;">
-              <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b;">Target Threshold</div>
-              <div style="font-size: 15px; font-weight: 600; color: #cbd5e1; margin-top: 2px;">{thresh_str}</div>
-            </td>
-            <td style="padding: 10px 0; border-top: 1px solid #1e293b; width: 50%;">
-              <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b;">Observed Value</div>
-              <div style="font-size: 15px; font-weight: 700; color: #38bdf8; margin-top: 2px;">{obs_str}</div>
-            </td>
-          </tr>
-        </table>
-      </div>
-
-      <div style="display: inline-block; padding: 6px 12px; background-color: #1e293b; border-radius: 6px; font-size: 12px; color: #94a3b8;">
-        Trigger Timestamp: <strong style="color: #cbd5e1;">{time_str}</strong>
-      </div>
-    </div>
-
-    <div style="padding: 18px 28px; background-color: #0c1220; border-top: 1px solid #1f2937; text-align: left;">
-      <p style="margin: 0 0 6px; font-size: 11px; color: #64748b; line-height: 1.5;">
-        You received this notification because your account configured an alert for {metric_str}.
-      </p>
-      <p style="margin: 0; font-size: 10.5px; color: #475569; line-height: 1.4;">
-        Talvrin delivers factual market observations and deterministic triggers. This transmission does not constitute financial, investment, or trading advice.
-      </p>
-    </div>
-  </div>
-</body>
-</html>"""
+        html = render_talvrin_email_html(
+            subject=subject,
+            preheader=f"Automated surveillance trigger: {metric_str} observed {obs_str} against target {thresh_str}.",
+            body_text=body_text,
+            cta_label="Inspect Market Alert",
+            action_url="https://app.talvrin.com",
+            badge_label="Objective Alert",
+            notice_reference="TAL-EML-MO-MONITOR_MATCH",
+        )
 
         success = _send_resend_email(
             to_email=recipient_email,
@@ -170,6 +180,7 @@ async def deliver_alert(
             api_key=settings.resend_api_key,
             from_email=settings.alerts_from_email,
         )
+
         session.add(
             AlertDeliveryAttempt(
                 account_id=alert.account_id,

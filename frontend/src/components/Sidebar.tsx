@@ -67,8 +67,9 @@ interface SidebarProps {
   onOpenHome?: () => void
   onOpenWatchlists?: () => void
   onOpenMarkets?: () => void
+  onOpenCompare?: () => void
   onOpenSearch?: () => void
-  activeNav?: 'home' | 'research' | 'monitoring' | 'settings' | 'watchlists' | 'markets'
+  activeNav?: 'home' | 'research' | 'monitoring' | 'settings' | 'watchlists' | 'markets' | 'compare'
   /** Below `lg` the sidebar is an off-canvas drawer rather than a permanent
    * column — there is no room for the icon rail, so it is simply open or
    * closed. `collapsed` is a desktop-only concept and is ignored here. */
@@ -123,6 +124,7 @@ export default function Sidebar({
   onOpenHome,
   onOpenWatchlists,
   onOpenMarkets,
+  onOpenCompare,
   activeNav = 'home',
   mobileOpen,
   onMobileClose,
@@ -538,12 +540,17 @@ export default function Sidebar({
           {/* Compare */}
           <button
             onClick={() => {
-              if (onOpenHome) onOpenHome()
+              if (onOpenCompare) onOpenCompare()
             }}
             tabIndex={rail}
             aria-label="Compare"
-            title="Compare"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            title="Asset & Evidence Comparison"
+            className={cn(
+              'grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
+              activeNav === 'compare'
+                ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+            )}
           >
             <GitCompare className="h-[18px] w-[18px]" />
           </button>
@@ -772,10 +779,15 @@ export default function Sidebar({
             {/* Compare */}
             <button
               onClick={() => {
-                if (onOpenHome) onOpenHome()
+                if (onOpenCompare) onOpenCompare()
                 onMobileClose()
               }}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+              className={cn(
+                'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
+                activeNav === 'compare'
+                  ? 'bg-sidebar-active text-sidebar-foreground ring-1 ring-sidebar-border'
+                  : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
+              )}
             >
               <div className="flex items-center gap-2.5">
                 <GitCompare className="h-4 w-4 shrink-0" />
