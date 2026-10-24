@@ -552,6 +552,34 @@ export const listAlerts = (cursor?: string): Promise<Page<Alert>> =>
     hasMore: p.has_more,
   }))
 
+export interface TriggerAlertPayload {
+  assetSymbol: string
+  assetName?: string | null
+  thresholdValue: string
+  observedValue: string
+  predicate?: 'CROSSES_ABOVE' | 'CROSSES_BELOW'
+  recipientEmail?: string | null
+}
+
+export const dispatchTriggeredAlert = (payload: TriggerAlertPayload): Promise<{
+  status: string
+  email_dispatched: boolean
+  recipient: string
+  asset_symbol: string
+}> =>
+  apiFetch('/api/v1/alerts/trigger', {
+    method: 'POST',
+    body: JSON.stringify({
+      asset_symbol: payload.assetSymbol,
+      asset_name: payload.assetName ?? null,
+      threshold_value: payload.thresholdValue,
+      observed_value: payload.observedValue,
+      predicate: payload.predicate ?? 'CROSSES_ABOVE',
+      recipient_email: payload.recipientEmail ?? null,
+    }),
+  })
+
+
 // ------------------------------------------------------------------- watchlists
 
 export interface WatchlistItem {

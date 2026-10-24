@@ -10,7 +10,9 @@ import MonitoringPage from '@/components/MonitoringPage'
 import WatchlistsPage from '@/components/WatchlistsPage'
 import MarketsPage, { GLOBAL_MARKET_ASSETS } from '@/components/MarketsPage'
 import HomeDashboard from '@/components/HomeDashboard'
+import { ComparisonPage } from '@/components/ComparisonPage'
 import SearchModal from '@/components/SearchModal'
+import PricingModal from '@/components/PricingModal'
 import TalvrinMoonChat from '@/components/ui/talvrin-moon-chat'
 import { buildReply, type ChatMessage, type TaggedAsset } from '@/data/mockReply'
 import { DEFAULT_MODEL, type ModelId } from '@/data/models'
@@ -111,13 +113,13 @@ export default function App() {
   // unlike `collapsed`, this is session state, not a device preference.
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const { theme, setTheme } = useTheme()
-  type NavView = 'home' | 'markets' | 'watchlists' | 'monitoring' | 'settings' | 'research'
+  type NavView = 'home' | 'markets' | 'watchlists' | 'monitoring' | 'settings' | 'research' | 'compare'
 
   // Retrieve initial view on reload/refresh from history state, URL hash, or session storage
   const getInitialView = (): NavView => {
     if (typeof window === 'undefined') return 'home'
     const hashView = window.location.hash.replace('#', '') as NavView
-    const validViews: NavView[] = ['home', 'markets', 'watchlists', 'monitoring', 'settings', 'research']
+    const validViews: NavView[] = ['home', 'markets', 'watchlists', 'monitoring', 'settings', 'research', 'compare']
     if (validViews.includes(hashView)) return hashView
     const stateView = window.history.state?.talvrinView as NavView
     if (validViews.includes(stateView)) return stateView
@@ -136,8 +138,10 @@ export default function App() {
   const [showMonitoring, setShowMonitoring] = useState(initialView === 'monitoring')
   const [showWatchlists, setShowWatchlists] = useState(initialView === 'watchlists')
   const [showMarkets, setShowMarkets] = useState(initialView === 'markets')
+  const [showCompare, setShowCompare] = useState(initialView === 'compare')
   const [showHome, setShowHome] = useState(initialView === 'home')
   const [showSearch, setShowSearch] = useState(false)
+  const [showPricing, setShowPricing] = useState(false)
   const [monitoringInitialSymbol, setMonitoringInitialSymbol] = useState<string | null>(null)
   const [marketsInitialSymbol, setMarketsInitialSymbol] = useState<string | null>(null)
   const [taggedAsset, setTaggedAsset] = useState<TaggedAsset | null>(null)
@@ -150,6 +154,7 @@ export default function App() {
     setShowWatchlists(nextView === 'watchlists')
     setShowMonitoring(nextView === 'monitoring')
     setShowSettings(nextView === 'settings')
+    setShowCompare(nextView === 'compare')
 
     try {
       sessionStorage.setItem('talvrin_active_view', nextView)
@@ -189,6 +194,7 @@ export default function App() {
       setShowWatchlists(stateView === 'watchlists')
       setShowMonitoring(stateView === 'monitoring')
       setShowSettings(stateView === 'settings')
+      setShowCompare(stateView === 'compare')
 
       try {
         sessionStorage.setItem('talvrin_active_view', stateView)
@@ -717,9 +723,11 @@ export default function App() {
         activeNav={currentView}
         onOpenMarkets={() => navigateToView('markets')}
         onOpenWatchlists={() => navigateToView('watchlists')}
+        onOpenCompare={() => navigateToView('compare')}
         onOpenSettings={() => navigateToView('settings')}
         onOpenMonitoring={() => navigateToView('monitoring')}
         onOpenSearch={() => setShowSearch(true)}
+        onOpenPricing={() => setShowPricing(true)}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
       />
@@ -758,6 +766,7 @@ export default function App() {
             }}
             onClearWorkspace={clearWorkspace}
             onExportWorkspace={exportWorkspace}
+            onOpenPricing={() => setShowPricing(true)}
           />
         ) : showMonitoring ? (
           <MonitoringPage
@@ -786,6 +795,14 @@ export default function App() {
           <WatchlistsPage
             onBack={handleGoBack}
             onStartResearch={handleStartResearch}
+            onOpenMonitoringForRule={(symbol) => {
+              setMonitoringInitialSymbol(symbol)
+              navigateToView('monitoring')
+            }}
+          />
+        ) : showCompare ? (
+          <ComparisonPage
+            onBackToHome={handleGoBack}
             onOpenMonitoringForRule={(symbol) => {
               setMonitoringInitialSymbol(symbol)
               navigateToView('monitoring')
@@ -941,6 +958,18 @@ export default function App() {
           } else if (surface === 'settings') {
             navigateToView('settings')
           }
+        }}
+      />
+
+      <PricingModal
+        isOpen={showPricing}
+        onClose={() => setShowPricing(false)}
+        currentPlanId="professional"
+        onSelectPlan={(planId, cycle) => {
+          setShowPricing(false)
+          toast.success(
+            `Selected ${planId.toUpperCase()} (${cycle === 'annual' ? 'Annual Billing - 17% Saved' : 'Monthly'}). Redirecting to secure checkout...`
+          )
         }}
       />
     </div>

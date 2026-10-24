@@ -5,6 +5,7 @@ from app.modules.api.v1 import (
     auth,
     calculations,
     chats,
+    commercial,
     dashboard,
     instruments,
     issuers,
@@ -26,4 +27,5 @@ router.include_router(rules.router)
 router.include_router(watchlists.router)
 router.include_router(sync.router)
 router.include_router(dashboard.router)
+router.include_router(commercial.router)
 

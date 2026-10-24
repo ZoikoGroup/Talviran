@@ -16,13 +16,15 @@ import { cn } from '@/lib/utils'
 import {
   ApiError,
   type Alert as ApiAlert,
-  type Rule,
   listAlerts,
-  listRules,
+  dispatchTriggeredAlert,
 } from '@/lib/api'
+
 import SetAlertModal from '@/components/SetAlertModal'
 import { toast } from 'sonner'
 import { useLiveMarket } from '@/hooks/useLiveMarket'
+import { useAuth } from '@/auth/AuthContext'
+
 
 interface MonitoringPageProps {
   onBack: () => void
@@ -112,10 +114,11 @@ function DirectionBadge({ predicate }: { predicate: string }) {
 
 export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRuleSymbol }: MonitoringPageProps) {
   const navigate = useNavigate()
+  const { session } = useAuth()
   const [tab, setTab] = useState<Tab>('active_alerts')
-  const [backendRules, setBackendRules] = useState<Rule[] | null>(null)
   const [backendAlerts, setBackendAlerts] = useState<ApiAlert[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+
 
   // Browser Notification Permission State
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() => {
@@ -125,7 +128,7 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
     return 'default'
   })
 
-  // Full universe custom alerts (synced in localStorage)
+  // Full universe custom alerts (active only)
   const [customAlerts, setCustomAlerts] = useState<CustomAlertTrigger[]>(() => {
     try {
       const saved = localStorage.getItem('talvrin_custom_alerts')
@@ -135,29 +138,42 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
     }
     return [
       {
-        id: 'init-1',
-        assetSymbol: 'UK 10Y Gilt',
-        assetName: 'United Kingdom 10-Year Benchmark Gilt',
-        direction: 'CROSSES_ABOVE',
-        threshold: '4.50%',
-        channels: { inApp: true, browserNotification: true, email: true },
-        createdAt: new Date().toISOString(),
-        status: 'ACTIVE',
-        currentPrice: '4.216%',
-      },
-      {
-        id: 'init-2',
+        id: 'live-test-1',
         assetSymbol: 'NVIDIA (NVDA)',
         assetName: 'NVIDIA Corporation',
         direction: 'CROSSES_ABOVE',
-        threshold: '$140.00',
+        threshold: '$135.60',
         channels: { inApp: true, browserNotification: true, email: true },
         createdAt: new Date().toISOString(),
         status: 'ACTIVE',
         currentPrice: '$135.58',
       },
+      {
+        id: 'live-test-2',
+        assetSymbol: 'UK 10Y Gilt',
+        assetName: 'United Kingdom 10-Year Benchmark Gilt',
+        direction: 'CROSSES_ABOVE',
+        threshold: '4.220%',
+        channels: { inApp: true, browserNotification: true, email: true },
+        createdAt: new Date().toISOString(),
+        status: 'ACTIVE',
+        currentPrice: '4.216%',
+      },
     ]
   })
+
+
+  // History list for touched/fulfilled alerts
+  const [historyAlerts, setHistoryAlerts] = useState<CustomAlertTrigger[]>(() => {
+    try {
+      const saved = localStorage.getItem('talvrin_custom_alerts_history')
+      if (saved) return JSON.parse(saved)
+    } catch {
+      // fallback
+    }
+    return []
+  })
+
 
   const [modifyingAlert, setModifyingAlert] = useState<CustomAlertTrigger | null>(null)
 
@@ -165,6 +181,15 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
     setCustomAlerts(updated)
     try {
       localStorage.setItem('talvrin_custom_alerts', JSON.stringify(updated))
+    } catch {
+      // ignore
+    }
+  }
+
+  const saveHistoryToStorage = (updatedHistory: CustomAlertTrigger[]) => {
+    setHistoryAlerts(updatedHistory)
+    try {
+      localStorage.setItem('talvrin_custom_alerts_history', JSON.stringify(updatedHistory))
     } catch {
       // ignore
     }
@@ -184,12 +209,32 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
   }
 
   const { livePrices, isConnected: wsConnected } = useLiveMarket()
-  const [firedAlertIds, setFiredAlertIds] = useState<Set<string>>(new Set())
+  
+  // Persistently track fired alert IDs so re-crossing or price bounce back never triggers a 2nd time
+  const [firedAlertIds, setFiredAlertIds] = useState<Set<string>>(() => {
+    try {
+      const historyRaw = localStorage.getItem('talvrin_custom_alerts_history')
+      if (historyRaw) {
+        const parsed: CustomAlertTrigger[] = JSON.parse(historyRaw)
+        return new Set(parsed.map((a) => a.id))
+      }
+    } catch {
+      // ignore
+    }
+    return new Set<string>()
+  })
 
   // Dynamic real-time threshold crossing comparison
   useEffect(() => {
     customAlerts.forEach((alert) => {
+      // Only watch ACTIVE alerts
       if (alert.status !== 'ACTIVE') return
+
+      // Strict one-time rule: If this alert was ever touched/fired, skip permanently
+      if (firedAlertIds.has(alert.id)) return
+      const alreadyInHistory = historyAlerts.some((h) => h.id === alert.id)
+      if (alreadyInHistory) return
+
       const live = livePrices[alert.assetSymbol]
       if (!live || !live.rawPrice) return
 
@@ -200,17 +245,54 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
       const isAbove = alert.direction === 'CROSSES_ABOVE'
       const crossed = isAbove ? live.rawPrice >= targetNum : live.rawPrice <= targetNum
 
-      if (crossed && !firedAlertIds.has(alert.id)) {
-        // Trigger alert!
+      if (crossed) {
+        // 1. Immediately record in firedAlertIds so no bounce or second touch ever triggers again
         setFiredAlertIds((prev) => new Set([...prev, alert.id]))
         
-        // Update alert status to TRIGGERED
-        const updated = customAlerts.map((a) =>
-          a.id === alert.id ? { ...a, status: 'TRIGGERED' as const, lastTriggered: new Date().toLocaleTimeString() } : a
-        )
-        saveAlertsToStorage(updated)
+        const timestamp = new Date().toLocaleTimeString()
+        const triggeredAlert: CustomAlertTrigger = {
+          ...alert,
+          status: 'TRIGGERED',
+          lastTriggered: timestamp,
+          currentPrice: live.price,
+        }
 
-        // Native Browser Desktop Notification
+        // 2. Permanently remove from active alerts list
+        const remainingActive = customAlerts.filter((a) => a.id !== alert.id)
+        saveAlertsToStorage(remainingActive)
+
+        // 3. Move to trigger history (one-time archive)
+        const nextHistory = [
+          triggeredAlert,
+          ...historyAlerts.filter((h) => h.id !== alert.id),
+        ]
+        saveHistoryToStorage(nextHistory)
+
+
+        // 3. Dispatch Email via Resend if email channel enabled
+        const targetEmail = alert.emailAddress || session?.email
+        if (alert.channels.email && targetEmail) {
+          dispatchTriggeredAlert({
+            assetSymbol: alert.assetSymbol,
+            assetName: alert.assetName,
+            thresholdValue: alert.threshold,
+            observedValue: live.price,
+            predicate: alert.direction,
+            recipientEmail: targetEmail,
+          })
+            .then((res) => {
+              if (res.email_dispatched) {
+                toast.success(`Alert email sent to ${res.recipient}`, {
+                  description: `${alert.assetSymbol} reached ${alert.threshold} (Live: ${live.price})`,
+                })
+              }
+            })
+            .catch(() => {
+              // fallback gracefully
+            })
+        }
+
+        // 4. Native Browser Desktop Notification
         if (
           alert.channels.browserNotification &&
           typeof window !== 'undefined' &&
@@ -218,21 +300,22 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
           Notification.permission === 'granted'
         ) {
           new Notification(`🚨 Market Alert Triggered: ${alert.assetSymbol}`, {
-            body: `${alert.assetSymbol} has crossed your threshold ${alert.threshold} (Current: ${live.price})`,
+            body: `${alert.assetSymbol} has reached your threshold ${alert.threshold} (Current: ${live.price}). Moved to history.`,
             icon: '/favicon.ico',
           })
         }
 
-        // In-App Toast
+        // 5. In-App Toast
         if (alert.channels.inApp) {
-          toast.error(`Alert Triggered: ${alert.assetSymbol} crossed ${alert.threshold}!`, {
-            description: `Live quote: ${live.price} (${live.change})`,
-            duration: 8000,
+          toast.error(`Target Reached: ${alert.assetSymbol} touched ${alert.threshold}!`, {
+            description: `Live quote: ${live.price} (${live.change}). Alert archived to History.`,
+            duration: 9000,
           })
         }
       }
     })
-  }, [livePrices, customAlerts, firedAlertIds])
+  }, [livePrices, customAlerts, historyAlerts, firedAlertIds, session?.email])
+
 
   const handleError = (err: unknown) => {
     if (err instanceof ApiError && err.code === 'UNAUTHENTICATED') {
@@ -243,14 +326,11 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
   }
 
   useEffect(() => {
-    listRules()
-      .then((p) => setBackendRules(p.items))
-      .catch(handleError)
-
     listAlerts()
       .then((p) => setBackendAlerts(p.items))
       .catch(handleError)
   }, [])
+
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onBack()
@@ -340,10 +420,11 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
             <CheckCircle2 className="h-3.5 w-3.5" />
             <span>Trigger History</span>
             <span className="rounded-full bg-muted px-1.5 py-0.2 text-[10px] font-semibold text-muted-foreground">
-              {backendAlerts ? backendAlerts.length : 0}
+              {historyAlerts.length + (backendAlerts ? backendAlerts.length : 0)}
             </span>
           </button>
         </nav>
+
 
         {error && (
           <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
@@ -478,39 +559,96 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
 
         {/* Tab 2: Trigger History */}
         {tab === 'history' && (
-          <Panel title="Historical Trigger Events & Backend Rules">
-            {backendRules && backendRules.length > 0 && (
-              <div className="mb-3 rounded-lg border border-border/80 bg-background/50 p-3 text-xs text-muted-foreground flex items-center justify-between">
-                <span>Deterministic PDP-guarded backend rules active: <strong className="text-foreground">{backendRules.length}</strong></span>
-                <span className="text-[11px] font-mono text-primary">Engine Armed</span>
-              </div>
-            )}
-            {backendAlerts === null || backendAlerts.length === 0 ? (
+          <Panel title="Historical Trigger Events & Fulfilled Alerts">
+            {historyAlerts.length === 0 && (!backendAlerts || backendAlerts.length === 0) ? (
               <EmptyState
+
                 icon={CheckCircle2}
-                text="No historical triggers recorded yet. Once market values cross your target thresholds, full audit entries and delivery logs will appear here."
+                text="No historical triggers recorded yet. Once market values touch your target thresholds, alerts are automatically fulfilled, emailed to your account, and archived here."
               />
             ) : (
-              <Card>
-                <div className="divide-y divide-border/60">
-                  {backendAlerts.map((alert) => (
-                    <div key={alert.id} className="flex items-center justify-between p-4">
-                      <div>
-                        <div className="text-xs font-semibold text-foreground">{alert.metricId}</div>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          Observed {alert.observedValue} against target threshold {alert.thresholdValue}
-                        </p>
-                      </div>
-                      <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-400">
-                        {alert.status}
-                      </span>
+              <div className="space-y-4">
+                {/* Touched & Dispatched Target Alerts */}
+                {historyAlerts.length > 0 && (
+                  <Card>
+                    <div className="p-3 bg-accent/20 border-b border-border/60 flex items-center justify-between text-xs">
+                      <span className="font-semibold text-foreground">Touched & Dispatched Alerts</span>
+                      <button
+                        type="button"
+                        onClick={() => saveHistoryToStorage([])}
+                        className="text-[11px] text-muted-foreground hover:text-destructive transition cursor-pointer"
+                      >
+                        Clear History
+                      </button>
                     </div>
-                  ))}
-                </div>
-              </Card>
+                    <div className="divide-y divide-border/60">
+                      {historyAlerts.map((alert) => (
+                        <div key={alert.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-foreground text-sm">{alert.assetSymbol}</span>
+                              {alert.assetName && (
+                                <span className="text-xs text-muted-foreground truncate max-w-xs">{alert.assetName}</span>
+                              )}
+                            </div>
+
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <span>Target:</span>
+                              <DirectionBadge predicate={alert.direction} />
+                              <span className="font-mono font-semibold text-foreground">{alert.threshold}</span>
+                              <span>• Touched Quote:</span>
+                              <span className="font-mono font-bold text-sky-400">
+                                {alert.currentPrice ?? 'Market Price'}
+                              </span>
+                              {alert.lastTriggered && (
+                                <span className="text-[11px] text-muted-foreground">
+                                  at {alert.lastTriggered}
+                                </span>
+                              )}
+                              {alert.emailAddress && (
+                                <span className="text-[11px] text-muted-foreground">
+                                  → {alert.emailAddress}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <span className="text-xs font-mono text-muted-foreground">
+                            Archived
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                )}
+
+                {/* Backend Engine Rules History */}
+                {backendAlerts && backendAlerts.length > 0 && (
+                  <Card>
+                    <div className="p-3 bg-accent/20 border-b border-border/60 text-xs font-semibold text-foreground">
+                      Backend Audit Triggers
+                    </div>
+                    <div className="divide-y divide-border/60">
+                      {backendAlerts.map((alert) => (
+                        <div key={alert.id} className="flex items-center justify-between p-4">
+                          <div>
+                            <div className="text-xs font-semibold text-foreground">{alert.metricId}</div>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              Observed {alert.observedValue} against target threshold {alert.thresholdValue}
+                            </p>
+                          </div>
+                          <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-400">
+                            {alert.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                )}
+              </div>
             )}
           </Panel>
         )}
+
       </div>
 
       {/* Modify Alert Modal */}

@@ -23,6 +23,16 @@ class AlertOut(BaseModel):
     created_at: dt.datetime
 
 
+class TriggerAlertIn(BaseModel):
+    asset_symbol: str
+    asset_name: str | None = None
+    threshold_value: str
+    observed_value: str
+    predicate: str = "CROSSES_ABOVE"
+    recipient_email: str | None = None
+
+
+
 class RuleIn(BaseModel):
     metric_id: str
     predicate: str
