@@ -2280,13 +2280,6 @@
       },
       "ValidationError": {
         "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
           "loc": {
             "items": {
               "anyOf": [
@@ -2735,7 +2728,10 @@
           "202": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "title": "Response Forgot Password Api V1 Auth Forgot Password Post",
+                  "type": "null"
+                }
               }
             },
             "description": "Successful Response"
