@@ -60,7 +60,7 @@ def upgrade() -> None:
     # Recreate lookup_session_by_token to return totp_enabled
     op.execute("DROP FUNCTION IF EXISTS identity.lookup_session_by_token(text)")
     op.execute(
-        f"""
+        """
         CREATE FUNCTION identity.lookup_session_by_token(p_token_hash text)
         RETURNS TABLE (
             session_id       uuid,
@@ -84,10 +84,10 @@ def upgrade() -> None:
             JOIN identity.principal AS p ON p.id = s.principal_id
             WHERE s.token_hash = p_token_hash
         $$;
-        REVOKE ALL ON FUNCTION identity.lookup_session_by_token(text) FROM PUBLIC;
-        GRANT EXECUTE ON FUNCTION identity.lookup_session_by_token(text) TO {APP_ROLE};
         """
     )
+    op.execute("REVOKE ALL ON FUNCTION identity.lookup_session_by_token(text) FROM PUBLIC")
+    op.execute(f"GRANT EXECUTE ON FUNCTION identity.lookup_session_by_token(text) TO {APP_ROLE}")
 
 
 def downgrade() -> None:
