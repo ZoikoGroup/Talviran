@@ -11,6 +11,7 @@ from app.modules.api.v1 import (
     issuers,
     research,
     rules,
+    support,
     sync,
     watchlists,
 )
@@ -28,4 +29,5 @@ router.include_router(watchlists.router)
 router.include_router(sync.router)
 router.include_router(dashboard.router)
 router.include_router(commercial.router)
+router.include_router(support.router)
 

@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Globe2,
   ArrowLeft,
@@ -14,6 +15,7 @@ import {
   BarChart2,
   RefreshCw,
   Bell,
+  BookOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -265,6 +267,15 @@ export default function MarketsPage({
         </div>
 
         <div className="flex items-center gap-2.5 self-start lg:self-center">
+          <Link
+            to="/guides?topic=market-data-freshness"
+            className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-border/80 bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            title="Learn how market feeds, connector protocols, and freshness states work"
+          >
+            <BookOpen className="h-3.5 w-3.5 text-primary" />
+            <span>Feeds & Sources Guide</span>
+          </Link>
+
           {/* View Switch: Curated Table vs Full World Screener */}
           <div className="inline-flex items-center rounded-xl border border-border/80 bg-muted/40 p-1 text-xs">
             <button

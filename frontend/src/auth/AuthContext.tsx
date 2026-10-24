@@ -10,6 +10,7 @@ import {
 export interface Session {
   email: string
   name: string
+  totpEnabled: boolean
 }
 
 interface AuthValue {
@@ -18,7 +19,7 @@ interface AuthValue {
    * resolves — the router must not decide to redirect before this settles,
    * or a signed-in visitor briefly bounces through /login on every reload. */
   loading: boolean
-  signIn: (email: string, password: string) => Promise<void>
+  signIn: (email: string, password: string, totpCode?: string) => Promise<void>
   signUp: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   deleteAccount: () => Promise<void>
@@ -32,9 +33,10 @@ interface AuthValue {
 
 const AuthContext = createContext<AuthValue | null>(null)
 
-const toSession = (principal: { email: string }): Session => ({
+const toSession = (principal: api.Principal): Session => ({
   email: principal.email,
   name: getDisplayNameOverride() ?? nameFromEmail(principal.email),
+  totpEnabled: principal.totpEnabled,
 })
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -59,8 +61,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const principal = await api.login(email, password)
+  const signIn = useCallback(async (email: string, password: string, totpCode?: string) => {
+    const principal = await api.login(email, password, totpCode)
     setSession(toSession(principal))
   }, [])
 

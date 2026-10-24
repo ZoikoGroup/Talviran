@@ -7,6 +7,7 @@
  */
 
 import { useAuth } from '@/auth/AuthContext'
+import { useEntitlement, formatPlanTier } from '@/context/EntitlementContext'
 
 export interface DisplayUser {
   name: string
@@ -26,11 +27,13 @@ const initialsFrom = (name: string) =>
 
 export function useCurrentUser(): DisplayUser {
   const { session } = useAuth()
-  const name = session?.name ?? 'Guest'
+  const { entitlement } = useEntitlement()
+  const name = session?.name ?? 'Institutional User'
+  const plan = formatPlanTier(entitlement?.plan_tier)
   return {
     name,
     firstName: name.split(/\s+/)[0] || name,
     initials: initialsFrom(name),
-    plan: 'FREE',
+    plan,
   }
 }

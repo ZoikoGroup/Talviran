@@ -631,6 +631,117 @@
         "title": "ConversationPatch",
         "type": "object"
       },
+      "CreateSupportTicketRequest": {
+        "properties": {
+          "category": {
+            "enum": [
+              "data_discrepancy",
+              "calculation_error",
+              "missing_instrument",
+              "platform_glitch",
+              "general_inquiry"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "chat_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id"
+          },
+          "contact_email": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Email"
+          },
+          "description": {
+            "maxLength": 5000,
+            "minLength": 10,
+            "title": "Description",
+            "type": "string"
+          },
+          "evidence_bundle_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Bundle Id"
+          },
+          "expected_figure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Figure"
+          },
+          "instrument_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument Symbol"
+          },
+          "reported_figure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported Figure"
+          },
+          "severity": {
+            "default": "standard",
+            "enum": [
+              "critical_data_error",
+              "standard",
+              "low"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "subject": {
+            "maxLength": 200,
+            "minLength": 3,
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "subject",
+          "description"
+        ],
+        "title": "CreateSupportTicketRequest",
+        "type": "object"
+      },
       "Credentials": {
         "properties": {
           "email": {
@@ -643,6 +754,18 @@
             "minLength": 1,
             "title": "Password",
             "type": "string"
+          },
+          "totp_code": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totp Code"
           }
         },
         "required": [
@@ -1439,6 +1562,19 @@
         "title": "PlanTier",
         "type": "string"
       },
+      "PortalSessionResponse": {
+        "properties": {
+          "portal_url": {
+            "title": "Portal Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "portal_url"
+        ],
+        "title": "PortalSessionResponse",
+        "type": "object"
+      },
       "PrincipalOut": {
         "properties": {
           "account_id": {
@@ -1452,6 +1588,11 @@
           "principal_id": {
             "title": "Principal Id",
             "type": "string"
+          },
+          "totp_enabled": {
+            "default": false,
+            "title": "Totp Enabled",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2010,6 +2151,61 @@
         "title": "SharedViewOut",
         "type": "object"
       },
+      "SupportTicketResponse": {
+        "properties": {
+          "category": {
+            "enum": [
+              "data_discrepancy",
+              "calculation_error",
+              "missing_instrument",
+              "platform_glitch",
+              "general_inquiry"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "reference_code": {
+            "title": "Reference Code",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "critical_data_error",
+              "standard",
+              "low"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "ticket_id": {
+            "title": "Ticket Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket_id",
+          "status",
+          "category",
+          "severity",
+          "created_at",
+          "reference_code",
+          "message"
+        ],
+        "title": "SupportTicketResponse",
+        "type": "object"
+      },
       "SyncResponse": {
         "properties": {
           "assets": {
@@ -2087,6 +2283,62 @@
           "bitemporal_status"
         ],
         "title": "SyncedAssetRecord",
+        "type": "object"
+      },
+      "TotpCodeIn": {
+        "properties": {
+          "code": {
+            "maxLength": 16,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "TotpCodeIn",
+        "type": "object"
+      },
+      "TotpSetupOut": {
+        "properties": {
+          "provisioning_uri": {
+            "title": "Provisioning Uri",
+            "type": "string"
+          },
+          "qr_code_data_url": {
+            "title": "Qr Code Data Url",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret",
+          "provisioning_uri",
+          "qr_code_data_url"
+        ],
+        "title": "TotpSetupOut",
+        "type": "object"
+      },
+      "TotpStatusOut": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "TotpStatusOut",
         "type": "object"
       },
       "TradingViewAlertPayload": {
@@ -2678,6 +2930,109 @@
         "summary": "Get Alert",
         "tags": [
           "monitoring"
+        ]
+      }
+    },
+    "/api/v1/auth/2fa/disable": {
+      "post": {
+        "operationId": "disable_two_factor_api_v1_auth_2fa_disable_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpCodeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable Two Factor",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/2fa/enable": {
+      "post": {
+        "operationId": "enable_two_factor_api_v1_auth_2fa_enable_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpCodeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable Two Factor",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/2fa/setup": {
+      "post": {
+        "operationId": "setup_two_factor_api_v1_auth_2fa_setup_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpSetupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Setup Two Factor",
+        "tags": [
+          "auth"
         ]
       }
     },
@@ -3368,7 +3723,7 @@
     },
     "/api/v1/commercial/checkout": {
       "post": {
-        "description": "Initialize a verified checkout session for upgrades or seat additions.",
+        "description": "Initialize a verified Stripe checkout session for upgrades or seat additions.",
         "operationId": "start_checkout_api_v1_commercial_checkout_post",
         "requestBody": {
           "content": {
@@ -3451,6 +3806,80 @@
           }
         },
         "summary": "List Plans",
+        "tags": [
+          "commercial"
+        ]
+      }
+    },
+    "/api/v1/commercial/portal": {
+      "post": {
+        "description": "Retrieve Stripe customer portal URL for invoice history and payment methods.",
+        "operationId": "get_billing_portal_api_v1_commercial_portal_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortalSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Billing Portal",
+        "tags": [
+          "commercial"
+        ]
+      }
+    },
+    "/api/v1/commercial/webhook": {
+      "post": {
+        "description": "Receives and verifies Stripe webhook events (checkout, subscription updates).",
+        "operationId": "stripe_webhook_api_v1_commercial_webhook_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "stripe-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stripe-Signature"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Stripe Webhook Api V1 Commercial Webhook Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stripe Webhook",
         "tags": [
           "commercial"
         ]
@@ -4059,6 +4488,48 @@
         "summary": "Revoke Share",
         "tags": [
           "research"
+        ]
+      }
+    },
+    "/api/v1/support/tickets": {
+      "post": {
+        "description": "Submit an in-app support request or report a market data discrepancy.",
+        "operationId": "submit_support_ticket_api_v1_support_tickets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSupportTicketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportTicketResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Support Ticket",
+        "tags": [
+          "support"
         ]
       }
     },

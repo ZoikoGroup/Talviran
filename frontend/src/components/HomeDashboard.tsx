@@ -14,6 +14,7 @@ import {
   Trash2,
   X,
   Check,
+  BookOpen,
 } from 'lucide-react'
 import earthImg from '@/assets/earth_space_view.jpg'
 import {
@@ -29,6 +30,7 @@ interface HomeDashboardProps {
   onOpenMonitoring?: () => void
   onOpenWatchlists?: () => void
   onOpenMarkets?: (symbol?: string) => void
+  onOpenGuides?: (topicId?: string) => void
   chats?: Chat[]
   onSelectChat?: (chatId: string) => void
 }
@@ -39,6 +41,7 @@ export default function HomeDashboard({
   onOpenMonitoring,
   onOpenWatchlists,
   onOpenMarkets,
+  onOpenGuides,
   chats = [],
   onSelectChat,
 }: HomeDashboardProps) {
@@ -452,9 +455,23 @@ const AVAILABLE_TIMEZONES = [
             <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
               Turn questions into evidence.
             </h1>
-            <p className="mt-1 text-[14px] text-muted-foreground">
-              Search authoritative sources. Get clear answers. Make better decisions.
-            </p>
+            <div className="mt-2.5 flex items-center gap-3">
+              <p className="text-[14px] text-muted-foreground">
+                Search authoritative sources. Get clear answers. Make better decisions.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenGuides) onOpenGuides('how-to-use')
+                  else window.open('/guides?topic=how-to-use', '_blank')
+                }}
+                className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-[12px] font-medium text-primary transition-all hover:bg-primary/20 active:scale-95 cursor-pointer"
+              >
+                <BookOpen className="h-3 w-3" />
+                <span>User Guide</span>
+                <ChevronRight className="h-3 w-3 opacity-70" />
+              </button>
+            </div>
           </div>
 
           <div className="relative flex shrink-0 items-center gap-4 sm:gap-5 rounded-xl border border-border/60 bg-card/60 px-4 py-2.5 backdrop-blur-md">

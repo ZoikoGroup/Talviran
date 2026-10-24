@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import {
   Bookmark,
@@ -14,6 +15,7 @@ import {
   ShieldCheck,
   Download,
   BarChart2,
+  BookOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Field, SubmitButton } from '@/components/ui/field'
@@ -27,12 +29,15 @@ import {
   removeWatchlistItem,
   ApiError,
 } from '@/lib/api'
+import { useEntitlement } from '@/context/EntitlementContext'
+import { toast } from 'sonner'
 import type { TaggedAsset } from '@/data/mockReply'
 
 interface WatchlistsPageProps {
   onBack?: () => void
   onStartResearch: (assetOrQuery: string | TaggedAsset, prompt?: string) => void
   onOpenMonitoringForRule?: (symbol: string) => void
+  onOpenPricing?: () => void
 }
 
 // Live simulated pricing & market state mapped to instruments
@@ -180,6 +185,7 @@ export default function WatchlistsPage({
   onBack,
   onStartResearch,
   onOpenMonitoringForRule,
+  onOpenPricing,
 }: WatchlistsPageProps) {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -331,9 +337,22 @@ export default function WatchlistsPage({
 
   const currentList = watchlists.find((w) => w.id === selectedId) || watchlists[0]
 
+  const { checkLimit } = useEntitlement()
+
   const handleCreateWatchlist = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newWatchlistName.trim()) return
+
+    // Quota gating check
+    const quota = checkLimit('watchlists')
+    if (quota.isExceeded || (quota.max !== 'unlimited' && watchlists.length >= quota.max)) {
+      toast.error(
+        `Watchlist limit reached (${quota.current} / ${quota.max}). Upgrade your plan to create more watchlists.`
+      )
+      if (onOpenPricing) onOpenPricing()
+      return
+    }
+
     try {
       setCreatingWl(true)
       const created = await createWatchlist({
@@ -345,8 +364,10 @@ export default function WatchlistsPage({
       setNewWatchlistName('')
       setNewWatchlistDesc('')
       setShowNewWatchlist(false)
+      toast.success(`Watchlist "${created.name}" created successfully.`)
     } catch (err) {
       console.error(err)
+      toast.error('Failed to create watchlist. Please try again.')
     } finally {
       setCreatingWl(false)
     }
@@ -467,6 +488,15 @@ export default function WatchlistsPage({
         </div>
 
         <div className="flex items-center gap-2.5">
+          <Link
+            to="/guides?topic=platform-surfaces"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border/80 bg-background px-3 py-2 text-[12.5px] font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            title="Read documentation on portfolio watchlists & canonical reconciliation"
+          >
+            <BookOpen className="h-4 w-4 text-primary" />
+            <span>Watchlists Guide</span>
+          </Link>
+
           <button
             onClick={() => setShowNewWatchlist(true)}
             className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-[13px] font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 active:scale-95"

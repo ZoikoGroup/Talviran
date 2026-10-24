@@ -70,12 +70,14 @@ class Credentials(BaseModel):
     # Bounded so an oversized body cannot turn Argon2's per-hash cost into a
     # CPU exhaustion vector before the policy check runs.
     password: str = Field(min_length=1, max_length=4096)
+    totp_code: str | None = Field(default=None, max_length=16)
 
 
 class PrincipalOut(BaseModel):
     principal_id: str
     account_id: str
     email: str
+    totp_enabled: bool = False
 
 
 def _principal_out(identity: service.Identity) -> PrincipalOut:
@@ -83,6 +85,7 @@ def _principal_out(identity: service.Identity) -> PrincipalOut:
         principal_id=str(identity.principal_id),
         account_id=str(identity.account_id),
         email=identity.email,
+        totp_enabled=identity.totp_enabled,
     )
 
 
@@ -141,8 +144,24 @@ async def login(
 
     try:
         issued = await service.authenticate(
-            db, email=body.email, password=body.password, http=http
+            db,
+            email=body.email,
+            password=body.password,
+            totp_code=body.totp_code,
+            http=http,
         )
+    except service.TwoFactorRequired as exc:
+        await db.rollback()
+        raise TalvrinAPIError(
+            code=ErrorCode.PRECONDITION_FAILED,
+            message="2FA_REQUIRED",
+        ) from exc
+    except service.InvalidTotp as exc:
+        await db.rollback()
+        raise TalvrinAPIError(
+            code=ErrorCode.UNAUTHENTICATED,
+            message="Invalid two-factor authentication code.",
+        ) from exc
     except service.InvalidCredentials as exc:
         await db.rollback()
         raise TalvrinAPIError(
@@ -283,4 +302,102 @@ async def delete_me(request: Request, response: Response, db: SessionDep, http: 
     await service.delete_account(db, identity=identity, http=http)
     await db.commit()
     clear_session_cookie(response, policy=_cookie_policy())
+
+
+class TotpSetupOut(BaseModel):
+    secret: str
+    provisioning_uri: str
+    qr_code_data_url: str
+
+
+class TotpCodeIn(BaseModel):
+    code: str = Field(min_length=6, max_length=16)
+
+
+class TotpStatusOut(BaseModel):
+    success: bool
+    message: str
+
+
+@router.post("/2fa/setup")
+async def setup_two_factor(
+    request: Request,
+    db: SessionDep,
+) -> TotpSetupOut:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    identity = await service.resolve_session(db, token=token) if token else None
+    if identity is None:
+        raise TalvrinAPIError(
+            code=ErrorCode.UNAUTHENTICATED, message="Not signed in."
+        )
+
+    res = await service.setup_totp(
+        db, principal_id=identity.principal_id, email=identity.email
+    )
+    await db.commit()
+    return TotpSetupOut(
+        secret=res["secret"],
+        provisioning_uri=res["provisioning_uri"],
+        qr_code_data_url=res["qr_code_data_url"],
+    )
+
+
+@router.post("/2fa/enable")
+async def enable_two_factor(
+    body: TotpCodeIn,
+    request: Request,
+    db: SessionDep,
+) -> TotpStatusOut:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    identity = await service.resolve_session(db, token=token) if token else None
+    if identity is None:
+        raise TalvrinAPIError(
+            code=ErrorCode.UNAUTHENTICATED, message="Not signed in."
+        )
+
+    success = await service.verify_and_enable_totp(
+        db, principal_id=identity.principal_id, code=body.code
+    )
+    if not success:
+        await db.rollback()
+        raise TalvrinAPIError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message="Invalid two-factor authentication code. Please check your app.",
+        )
+
+    await db.commit()
+    return TotpStatusOut(
+        success=True,
+        message="Two-factor authentication has been enabled successfully.",
+    )
+
+
+@router.post("/2fa/disable")
+async def disable_two_factor(
+    body: TotpCodeIn,
+    request: Request,
+    db: SessionDep,
+) -> TotpStatusOut:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    identity = await service.resolve_session(db, token=token) if token else None
+    if identity is None:
+        raise TalvrinAPIError(
+            code=ErrorCode.UNAUTHENTICATED, message="Not signed in."
+        )
+
+    success = await service.disable_totp(
+        db, principal_id=identity.principal_id, code=body.code
+    )
+    if not success:
+        await db.rollback()
+        raise TalvrinAPIError(
+            code=ErrorCode.VALIDATION_ERROR,
+            message="Invalid two-factor authentication code. Could not disable 2FA.",
+        )
+
+    await db.commit()
+    return TotpStatusOut(
+        success=True,
+        message="Two-factor authentication has been disabled.",
+    )
 

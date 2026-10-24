@@ -61,6 +61,24 @@ export default function Help() {
       title="Help centre"
       meta="How Talvrin works, and what it deliberately won't do"
     >
+      <div className="mb-6 flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg bg-primary/10 p-2 text-primary">
+            <Search className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-[14px] font-semibold text-foreground">Interactive Guides & Prompting Cookbook</h3>
+            <p className="text-[12.5px] text-muted-foreground">Looking for sample queries, bond calculation specs, and prompt patterns?</p>
+          </div>
+        </div>
+        <Link
+          to="/guides"
+          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-[12.5px] font-medium text-primary-foreground transition-all hover:bg-primary/90"
+        >
+          <span>Explore Guides</span>
+        </Link>
+      </div>
+
       <div className="relative mb-8">
         <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input

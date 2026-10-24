@@ -23,6 +23,7 @@ const FOOTER_LINKS = [
   { to: '/privacy', label: 'Privacy' },
   { to: '/terms', label: 'Terms' },
   { to: '/help', label: 'Help' },
+  { to: '/guides', label: 'Guides' },
   { to: '/contact', label: 'Contact' },
 ]
 

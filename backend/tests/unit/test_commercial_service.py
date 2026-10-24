@@ -38,24 +38,34 @@ async def test_get_catalog() -> None:
 
 @pytest.mark.asyncio
 async def test_create_checkout_session() -> None:
+    session = cast(AsyncSession, _MockSession())
     account_id = uuid.uuid4()
     req_annual = CheckoutSessionRequest(
         plan_tier=PlanTier.PROFESSIONAL,
         billing_cadence=BillingCadence.ANNUAL,
     )
-    resp_annual = create_checkout_session(account_id, req_annual)
+    resp_annual = await create_checkout_session(session, account_id, req_annual)
     assert resp_annual.total_amount_usd == 790
-    assert resp_annual.session_id.startswith("cs_live_")
-    assert "https://checkout.talvrin.com/pay/" in resp_annual.checkout_url
+    assert resp_annual.session_id.startswith("cs_")
+    assert "checkout" in resp_annual.checkout_url
 
     req_teams_extra = CheckoutSessionRequest(
         plan_tier=PlanTier.TEAMS,
         billing_cadence=BillingCadence.MONTHLY,
         additional_seats=2,
     )
-    resp_teams = create_checkout_session(account_id, req_teams_extra)
+    resp_teams = await create_checkout_session(session, account_id, req_teams_extra)
     # $249 base + 2 * $49 = $347
     assert resp_teams.total_amount_usd == 347
+
+
+class _MockRow:
+    plan_tier = "professional"
+    billing_cadence = "annual"
+    seat_count = 1
+    current_period_end = None
+    name = "Test Account"
+    stripe_customer_id = None
 
 
 class _MockScalarResult:
@@ -64,6 +74,9 @@ class _MockScalarResult:
 
     def scalar(self) -> int:
         return self._val
+
+    def first(self) -> _MockRow:
+        return _MockRow()
 
 
 class _MockSession:
@@ -97,3 +110,40 @@ async def test_commercial_api_plans_endpoint() -> None:
         assert data[0]["id"] == "explorer"
         assert data[2]["id"] == "professional"
         assert data[2]["monthly_price_usd"] == 79
+
+
+@pytest.mark.asyncio
+async def test_enforce_quota_limit() -> None:
+    from app.modules.commercial.models import PlanTier, QuotaLimits
+    from app.modules.commercial.service import (
+        PRICE_BOOK,
+        QuotaExceededError,
+        enforce_quota_limit,
+    )
+
+    session = cast(AsyncSession, _MockSession())
+    account_id = uuid.uuid4()
+
+    # active_rules_count is 3, while PROFESSIONAL quota is 125 -> should not raise
+    await enforce_quota_limit(session, account_id, "active_monitoring_rules")
+
+    # Unlimited watchlists on professional tier -> should not raise
+    await enforce_quota_limit(session, account_id, "watchlists")
+
+    # Temporarily set lower quota to verify QuotaExceededError is raised
+    original_limits = PRICE_BOOK[PlanTier.PROFESSIONAL].limits
+    try:
+        PRICE_BOOK[PlanTier.PROFESSIONAL].limits = QuotaLimits(
+            watchlists=1,
+            active_monitoring_rules=2,  # Current is 3, so 2 should trigger exceed
+            verified_research_runs_per_month=10,
+            evidence_dossier_exports_per_month=2,
+            filing_history_years=1,
+            tick_level_realtime=True,
+            team_workspaces=False,
+            seat_count=1,
+        )
+        with pytest.raises(QuotaExceededError):
+            await enforce_quota_limit(session, account_id, "active_monitoring_rules")
+    finally:
+        PRICE_BOOK[PlanTier.PROFESSIONAL].limits = original_limits

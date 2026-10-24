@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   ArrowLeft,
   BarChart3,
@@ -10,16 +11,22 @@ import {
   Moon,
   Palette,
   Pencil,
+  QrCode,
   Shield,
+  ShieldAlert,
+  ShieldCheck,
   Sun,
   Trash2,
   User,
+  BookOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/auth/AuthContext'
+import * as api from '@/lib/api'
 import { Field, SubmitButton } from '@/components/ui/field'
 import { passwordProblem } from '@/auth/session'
 import { COMMERCIAL_PLANS } from '@/data/pricing'
+import { useEntitlement, formatPlanTier } from '@/context/EntitlementContext'
 
 interface SettingsPageProps {
   onBack: () => void
@@ -238,10 +245,92 @@ function AppearanceSection({
 }
 
 function SecuritySection() {
+  const { session, refresh } = useAuth()
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // 2FA State
+  const [showSetupModal, setShowSetupModal] = useState(false)
+  const [showDisableModal, setShowDisableModal] = useState(false)
+  const [setupData, setSetupData] = useState<api.TotpSetupResponse | null>(null)
+  const [verificationCode, setVerificationCode] = useState('')
+  const [disableCode, setDisableCode] = useState('')
+  const [totpLoading, setTotpLoading] = useState(false)
+  const [totpError, setTotpError] = useState<string | null>(null)
+  const [totpSuccess, setTotpSuccess] = useState<string | null>(null)
+  const [copiedSecret, setCopiedSecret] = useState(false)
+
+  const handleStartSetup = async () => {
+    setTotpError(null)
+    setTotpLoading(true)
+    setVerificationCode('')
+    try {
+      const data = await api.setupTwoFactor()
+      setSetupData(data)
+      setShowSetupModal(true)
+    } catch (err) {
+      if (err instanceof api.ApiError) {
+        setTotpError(err.message)
+      } else {
+        setTotpError('Failed to generate 2FA setup data. Please try again.')
+      }
+    } finally {
+      setTotpLoading(false)
+    }
+  }
+
+  const handleConfirmEnable = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!verificationCode.trim() || verificationCode.trim().length < 6) {
+      setTotpError('Please enter the 6-digit code from your authenticator app.')
+      return
+    }
+    setTotpError(null)
+    setTotpLoading(true)
+    try {
+      const res = await api.enableTwoFactor(verificationCode.trim())
+      setTotpSuccess(res.message)
+      await refresh()
+      setShowSetupModal(false)
+      setSetupData(null)
+      setVerificationCode('')
+    } catch (err) {
+      if (err instanceof api.ApiError) {
+        setTotpError(err.message)
+      } else {
+        setTotpError('Invalid verification code. Please check your app.')
+      }
+    } finally {
+      setTotpLoading(false)
+    }
+  }
+
+  const handleConfirmDisable = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!disableCode.trim() || disableCode.trim().length < 6) {
+      setTotpError('Please enter the 6-digit code from your authenticator app.')
+      return
+    }
+    setTotpError(null)
+    setTotpLoading(true)
+    try {
+      const res = await api.disableTwoFactor(disableCode.trim())
+      setTotpSuccess(res.message)
+      await refresh()
+      setShowDisableModal(false)
+      setDisableCode('')
+    } catch (err) {
+      if (err instanceof api.ApiError) {
+        setTotpError(err.message)
+      } else {
+        setTotpError('Invalid verification code. Could not disable 2FA.')
+      }
+    } finally {
+      setTotpLoading(false)
+    }
+  }
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -254,7 +343,7 @@ function SecuritySection() {
     setErrors(errs)
     if (Object.keys(errs).length === 0) {
       setErrors({
-        form: 'No authentication backend is connected, so the password cannot be changed yet.',
+        form: 'Password change requires standard email recovery flow or an active session re-auth.',
       })
     }
   }
@@ -262,8 +351,226 @@ function SecuritySection() {
   return (
     <Panel
       title="Security"
-      description="How your account is protected. Most of this arrives with the authentication backend."
+      description="Protect your account and financial data access with multi-factor authentication."
     >
+      <Card>
+        <div className="flex flex-col gap-4 px-4 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[14.5px] font-medium text-foreground">
+                  Two-factor authentication (TOTP)
+                </span>
+                {session?.totpEnabled ? (
+                  <span className="flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-400">
+                    <ShieldCheck className="h-3 w-3" />
+                    Enabled
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-400">
+                    <ShieldAlert className="h-3 w-3" />
+                    Disabled
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+                Adds a critical layer of defense by requiring a 6-digit one-time code from Google Authenticator, 1Password, or Authy at login.
+              </p>
+            </div>
+
+            <div className="shrink-0">
+              {session?.totpEnabled ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTotpError(null)
+                    setDisableCode('')
+                    setShowDisableModal(true)
+                  }}
+                  className="rounded-xl border border-destructive/40 bg-destructive/10 px-3.5 py-2 text-xs font-semibold text-destructive hover:bg-destructive/20 transition-all"
+                >
+                  Disable 2FA
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={totpLoading}
+                  onClick={handleStartSetup}
+                  className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-all shadow-sm"
+                >
+                  <QrCode className="h-3.5 w-3.5" />
+                  {totpLoading ? 'Preparing...' : 'Set up 2FA'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {totpSuccess && (
+            <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-400">
+              {totpSuccess}
+            </p>
+          )}
+        </div>
+      </Card>
+
+      {/* Setup 2FA Modal */}
+      {showSetupModal && setupData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <ShieldCheck className="h-4 w-4" />
+                </div>
+                <h3 className="text-base font-semibold text-foreground">
+                  Enable Two-Factor Authentication
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSetupModal(false)}
+                className="text-muted-foreground hover:text-foreground text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                1. Scan this QR code with your authenticator app (Google Authenticator, Authy, Microsoft Authenticator):
+              </p>
+
+              <div className="flex flex-col items-center justify-center p-4 rounded-xl border border-border bg-white dark:bg-white/95">
+                <img
+                  src={setupData.qr_code_data_url}
+                  alt="2FA QR Code"
+                  className="h-44 w-44 object-contain rounded"
+                />
+              </div>
+
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5">
+                  Or enter the secret key manually:
+                </p>
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3 py-2 font-mono text-xs">
+                  <span className="flex-1 select-all break-all text-foreground tracking-widest font-semibold">
+                    {setupData.secret}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(setupData.secret)
+                      setCopiedSecret(true)
+                      setTimeout(() => setCopiedSecret(false), 2000)
+                    }}
+                    className="shrink-0 rounded px-2 py-1 text-[11px] font-medium bg-background border border-border text-foreground hover:bg-accent"
+                  >
+                    {copiedSecret ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+
+              <form onSubmit={handleConfirmEnable} className="space-y-4 pt-2">
+                <div>
+                  <label className="block text-xs font-medium text-foreground mb-1.5">
+                    2. Enter the 6-digit code generated by the app:
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoFocus
+                    placeholder="123456"
+                    maxLength={6}
+                    value={verificationCode}
+                    onChange={(e) =>
+                      setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))
+                    }
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-center font-mono text-lg tracking-widest text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+
+                {totpError && (
+                  <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    {totpError}
+                  </p>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowSetupModal(false)}
+                    className="rounded-xl border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={totpLoading || verificationCode.length < 6}
+                    className="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {totpLoading ? 'Verifying...' : 'Verify & Enable'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disable 2FA Modal */}
+      {showDisableModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <h3 className="text-base font-semibold text-foreground">
+              Disable Two-Factor Authentication
+            </h3>
+            <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+              Confirm your identity by entering a 6-digit code from your authenticator app to disable 2FA.
+            </p>
+
+            <form onSubmit={handleConfirmDisable} className="mt-4 space-y-4">
+              <div>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoFocus
+                  placeholder="123456"
+                  maxLength={6}
+                  value={disableCode}
+                  onChange={(e) =>
+                    setDisableCode(e.target.value.replace(/\D/g, '').slice(0, 6))
+                  }
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-center font-mono text-lg tracking-widest text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              {totpError && (
+                <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  {totpError}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDisableModal(false)}
+                  className="rounded-xl border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={totpLoading || disableCode.length < 6}
+                  className="rounded-xl bg-destructive px-4 py-2 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+                >
+                  {totpLoading ? 'Disabling...' : 'Confirm Disable'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <Card>
         <form onSubmit={submit} className="flex flex-col gap-4 px-4 py-4">
           <div>
@@ -311,20 +618,16 @@ function SecuritySection() {
           </div>
         </form>
       </Card>
-
-      <Card>
-        <Row
-          label="Two-factor authentication"
-          hint="Passkeys are the preferred method, with an authenticator app as a fallback."
-        >
-          <NotYet>Not yet available</NotYet>
-        </Row>
-      </Card>
     </Panel>
   )
 }
 
 function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
+  const { entitlement } = useEntitlement()
+  const activePlanTier = entitlement?.plan_tier || 'professional'
+  const activePlanName = formatPlanTier(activePlanTier)
+  const isAnnual = entitlement?.billing_cadence === 'annual'
+
   return (
     <Panel
       title="Billing & Subscription Plans"
@@ -334,13 +637,13 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-primary/50 bg-gradient-to-r from-primary/10 via-card to-card p-4 sm:p-5">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-[16px] font-bold text-white">Professional Plan</span>
+            <span className="text-[16px] font-bold text-white">{activePlanName} Plan</span>
             <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10.5px] font-bold text-emerald-400">
               ACTIVE
             </span>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Billed annually ($790/yr) • High-frequency research, unlimited watchlists, and priority queues.
+            Billed {isAnnual ? 'annually' : 'monthly'} • Renewal: {entitlement?.current_period_end ? new Date(entitlement.current_period_end).toLocaleDateString() : 'Annual cycle'} • {entitlement?.seat_count || 1} Seat{(entitlement?.seat_count || 1) > 1 ? 's' : ''} included.
           </p>
         </div>
 
@@ -358,7 +661,7 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
       {/* 4 Commercial Tiers Overview Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {COMMERCIAL_PLANS.map((p) => {
-          const current = p.id === 'professional'
+          const current = p.id === activePlanTier
           return (
             <div
               key={p.id}
@@ -423,7 +726,16 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
           <button
             type="button"
             className="text-xs text-primary hover:underline font-semibold"
-            onClick={() => {
+            onClick={async () => {
+              try {
+                const res = await api.getBillingPortalSession()
+                if (res?.portal_url) {
+                  window.open(res.portal_url, '_blank')
+                  return
+                }
+              } catch {
+                // Fallback to pricing modal if portal isn't active
+              }
               if (onOpenPricing) onOpenPricing()
             }}
           >
@@ -436,15 +748,27 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
 }
 
 function UsageSection({ stats }: Pick<SettingsPageProps, 'stats'>) {
+  const { entitlement } = useEntitlement()
+
+  const watchlistsQuota = entitlement?.quotas.watchlists ?? 'unlimited'
+  const watchlistsUsed = entitlement?.usage.watchlists_count ?? 0
+  const rulesQuota = entitlement?.quotas.active_monitoring_rules ?? 'unlimited'
+  const rulesUsed = entitlement?.usage.active_rules_count ?? 0
+  const researchQuota = entitlement?.quotas.verified_research_runs_per_month ?? 'unlimited'
+  const researchUsed = entitlement?.usage.research_runs_this_month ?? 0
+  const exportsQuota = entitlement?.quotas.evidence_dossier_exports_per_month ?? 'unlimited'
+  const exportsUsed = entitlement?.usage.evidence_exports_this_month ?? 0
+
   const tiles: [string, number][] = [
     ['Chats', stats.chats],
     ['Projects', stats.projects],
     ['Messages', stats.messages],
   ]
+
   return (
     <Panel
-      title="Usage"
-      description="What is in your account. Server-side metering arrives with the backend."
+      title="Plan Quotas & Server Usage"
+      description="Real-time capacity tracking against your institutional tier entitlements."
     >
       <div className="grid gap-2.5 sm:grid-cols-3">
         {tiles.map(([label, value]) => (
@@ -457,17 +781,90 @@ function UsageSection({ stats }: Pick<SettingsPageProps, 'stats'>) {
         ))}
       </div>
 
-      <Card>
-        <Row
-          label="Research requests this month"
-          hint="Metered per plan once the API is connected."
-        >
-          <NotYet>Not yet available</NotYet>
-        </Row>
-        <Row label="Monitoring rules" hint="Alert capacity is a plan entitlement.">
-          <NotYet>Not yet available</NotYet>
-        </Row>
-      </Card>
+      <div className="mt-2 space-y-3">
+        <h3 className="text-sm font-semibold text-foreground tracking-tight">Active Plan Entitlements</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Watchlists meter */}
+          <div className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-foreground">Saved Watchlists</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {watchlistsUsed} / {watchlistsQuota}
+              </span>
+            </div>
+            <div className="w-full bg-muted/40 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-primary h-2 rounded-full transition-all"
+                style={{
+                  width: watchlistsQuota === 'unlimited'
+                    ? '15%'
+                    : `${Math.min(100, Math.round((watchlistsUsed / (watchlistsQuota as number)) * 100))}%`,
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Monitoring Rules meter */}
+          <div className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-foreground">Active Monitoring Rules</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {rulesUsed} / {rulesQuota}
+              </span>
+            </div>
+            <div className="w-full bg-muted/40 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-primary h-2 rounded-full transition-all"
+                style={{
+                  width: rulesQuota === 'unlimited'
+                    ? '20%'
+                    : `${Math.min(100, Math.round((rulesUsed / (rulesQuota as number)) * 100))}%`,
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Research runs meter */}
+          <div className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-foreground">Verified Research Runs / Mo</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {researchUsed} / {researchQuota}
+              </span>
+            </div>
+            <div className="w-full bg-muted/40 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-primary h-2 rounded-full transition-all"
+                style={{
+                  width: researchQuota === 'unlimited'
+                    ? '10%'
+                    : `${Math.min(100, Math.round((researchUsed / (researchQuota as number)) * 100))}%`,
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Evidence Exports meter */}
+          <div className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-foreground">Evidence Dossier Exports / Mo</span>
+              <span className="text-xs font-mono text-muted-foreground">
+                {exportsUsed} / {exportsQuota}
+              </span>
+            </div>
+            <div className="w-full bg-muted/40 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-primary h-2 rounded-full transition-all"
+                style={{
+                  width: exportsQuota === 'unlimited'
+                    ? '8%'
+                    : `${Math.min(100, Math.round((exportsUsed / (exportsQuota as number)) * 100))}%`,
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
     </Panel>
   )
 }
@@ -657,15 +1054,25 @@ export default function SettingsPage({
   return (
     <div className="scrollbar-slim flex-1 overflow-y-auto">
       <div className="mx-auto max-w-4xl px-6 pb-20 pt-8">
-        <div className="mb-7 flex items-center gap-3">
-          <button
-            onClick={onBack}
-            aria-label="Back"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        <div className="mb-7 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              aria-label="Back"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <ArrowLeft className="h-[18px] w-[18px]" />
+            </button>
+            <h1 className="text-[22px] font-semibold tracking-tight">Settings</h1>
+          </div>
+          <Link
+            to="/guides"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border/80 bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            title="Open platform documentation and user manuals"
           >
-            <ArrowLeft className="h-[18px] w-[18px]" />
-          </button>
-          <h1 className="text-[22px] font-semibold tracking-tight">Settings</h1>
+            <BookOpen className="h-3.5 w-3.5 text-primary" />
+            <span>Platform Guides & Docs</span>
+          </Link>
         </div>
 
         <div className="flex flex-col gap-8 md:flex-row md:gap-10">

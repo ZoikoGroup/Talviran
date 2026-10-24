@@ -63,18 +63,32 @@ export interface Principal {
   principalId: string
   accountId: string
   email: string
+  totpEnabled: boolean
 }
 
 interface PrincipalWire {
   principal_id: string
   account_id: string
   email: string
+  totp_enabled?: boolean
+}
+
+export interface TotpSetupResponse {
+  secret: string
+  provisioning_uri: string
+  qr_code_data_url: string
+}
+
+export interface TotpStatusResponse {
+  success: boolean
+  message: string
 }
 
 const toPrincipal = (p: PrincipalWire): Principal => ({
   principalId: p.principal_id,
   accountId: p.account_id,
   email: p.email,
+  totpEnabled: Boolean(p.totp_enabled),
 })
 
 export const signup = (email: string, password: string): Promise<Principal> =>
@@ -83,10 +97,10 @@ export const signup = (email: string, password: string): Promise<Principal> =>
     body: JSON.stringify({ email, password }),
   }).then(toPrincipal)
 
-export const login = (email: string, password: string): Promise<Principal> =>
+export const login = (email: string, password: string, totpCode?: string): Promise<Principal> =>
   apiFetch<PrincipalWire>('/api/v1/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, totp_code: totpCode }),
   }).then(toPrincipal)
 
 export const logout = (): Promise<void> =>
@@ -97,6 +111,21 @@ export const me = (): Promise<Principal> =>
 
 export const deleteAccount = (): Promise<void> =>
   apiFetch<void>('/api/v1/auth/me', { method: 'DELETE' })
+
+export const setupTwoFactor = (): Promise<TotpSetupResponse> =>
+  apiFetch<TotpSetupResponse>('/api/v1/auth/2fa/setup', { method: 'POST' })
+
+export const enableTwoFactor = (code: string): Promise<TotpStatusResponse> =>
+  apiFetch<TotpStatusResponse>('/api/v1/auth/2fa/enable', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
+
+export const disableTwoFactor = (code: string): Promise<TotpStatusResponse> =>
+  apiFetch<TotpStatusResponse>('/api/v1/auth/2fa/disable', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
 
 /** Always resolves — the backend itself never reveals whether the address
  * has an account (SEC-001 §7.1). A thrown ApiError means the request itself
@@ -783,6 +812,119 @@ export interface DashboardOverviewResponse {
 export const getDashboardOverview = (): Promise<DashboardOverviewResponse> =>
   apiFetch<DashboardOverviewResponse>('/api/v1/dashboard/overview')
 
+// ------------------------------------------------------------------- support & data tickets
 
+export interface CreateSupportTicketPayload {
+  category: 'data_discrepancy' | 'calculation_error' | 'missing_instrument' | 'platform_glitch' | 'general_inquiry'
+  severity?: 'critical_data_error' | 'standard' | 'low'
+  subject: string
+  description: string
+  contact_email?: string
+  instrument_symbol?: string
+  evidence_bundle_id?: string
+  chat_id?: string
+  reported_figure?: string
+  expected_figure?: string
+}
 
+export interface SupportTicketResult {
+  ticket_id: string
+  status: string
+  category: string
+  severity: string
+  created_at: string
+  reference_code: string
+  message: string
+}
 
+export const submitSupportTicket = (
+  payload: CreateSupportTicketPayload
+): Promise<SupportTicketResult> =>
+  apiFetch<SupportTicketResult>('/api/v1/support/tickets', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+
+// ------------------------------------------------------------------- commercial & entitlements
+
+export type PlanTier = 'explorer' | 'research' | 'professional' | 'teams' | 'enterprise'
+export type BillingCadence = 'monthly' | 'annual'
+
+export interface QuotaLimits {
+  watchlists: number | 'unlimited'
+  active_monitoring_rules: number | 'unlimited'
+  verified_research_runs_per_month: number | 'unlimited'
+  evidence_dossier_exports_per_month: number | 'unlimited'
+  filing_history_years: number | 'unlimited'
+  tick_level_realtime: boolean
+  team_workspaces: boolean
+  seat_count: number
+}
+
+export interface AccountUsage {
+  watchlists_count: number
+  active_rules_count: number
+  research_runs_this_month: number
+  evidence_exports_this_month: number
+}
+
+export interface AccountEntitlement {
+  account_id: string
+  plan_tier: PlanTier
+  billing_cadence: BillingCadence
+  is_active: boolean
+  current_period_end: string
+  seat_count: number
+  quotas: QuotaLimits
+  usage: AccountUsage
+}
+
+export interface PlanDefinition {
+  id: PlanTier
+  name: string
+  badge: string
+  tagline: string
+  seats_included: number
+  monthly_price_usd: number
+  annual_price_per_month_usd: number
+  annual_total_usd: number
+  annual_savings_percent: number
+  is_popular?: boolean
+  limits: QuotaLimits
+  included_features: string[]
+}
+
+export interface CheckoutSessionPayload {
+  plan_tier: PlanTier
+  billing_cadence?: BillingCadence
+  additional_seats?: number
+  success_url?: string
+  cancel_url?: string
+}
+
+export interface CheckoutSessionResult {
+  session_id: string
+  checkout_url: string
+  plan_tier: PlanTier
+  billing_cadence: BillingCadence
+  total_amount_usd: number
+}
+
+export const getAccountEntitlement = (): Promise<AccountEntitlement> =>
+  apiFetch<AccountEntitlement>('/api/v1/commercial/entitlement')
+
+export const getCommercialPlans = (): Promise<PlanDefinition[]> =>
+  apiFetch<PlanDefinition[]>('/api/v1/commercial/plans')
+
+export const startCheckoutSession = (
+  payload: CheckoutSessionPayload
+): Promise<CheckoutSessionResult> =>
+  apiFetch<CheckoutSessionResult>('/api/v1/commercial/checkout', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+
+export const getBillingPortalSession = (): Promise<{ portal_url: string }> =>
+  apiFetch<{ portal_url: string }>('/api/v1/commercial/portal', {
+    method: 'POST',
+  })
