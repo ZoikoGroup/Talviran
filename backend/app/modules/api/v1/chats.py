@@ -203,7 +203,7 @@ async def create_project(
     return _project_out(project)
 
 
-@router.patch("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.patch("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def rename_project(
     project_id: uuid.UUID,
     body: ProjectIn,
@@ -222,7 +222,7 @@ async def rename_project(
     await db.commit()
 
 
-@router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_project(
     project_id: uuid.UUID, db: SessionDep, identity: IdentityDep
 ) -> None:
@@ -297,7 +297,7 @@ async def get_chat(
     )
 
 
-@router.patch("/chats/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.patch("/chats/{chat_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def patch_chat(
     chat_id: uuid.UUID,
     body: ConversationPatch,
@@ -331,7 +331,7 @@ async def patch_chat(
     await db.commit()
 
 
-@router.delete("/chats/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/chats/{chat_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_chat(
     chat_id: uuid.UUID, db: SessionDep, identity: IdentityDep
 ) -> None:
@@ -412,7 +412,7 @@ async def list_shares(
     ]
 
 
-@router.delete("/shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/shares/{share_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def revoke_share(
     share_id: uuid.UUID, db: SessionDep, identity: IdentityDep
 ) -> None:

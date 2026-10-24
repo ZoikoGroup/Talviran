@@ -161,16 +161,27 @@ function RawEvidence({ messageId }: { messageId: string }) {
       <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/70">
         Resolved values
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         {state.items.map((item, i) => (
-          <div key={i} className="flex flex-wrap items-baseline gap-x-2 text-[12px]">
-            <span className="font-mono text-muted-foreground">{item.metricId ?? item.kind}</span>
-            {item.basis === 'MODEL_IMPLIED' && (
-              <span className="rounded bg-secondary px-1 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">
-                estimate
-              </span>
+          <div key={i} className="flex flex-col gap-0.5 text-[12px]">
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <span className="font-mono text-muted-foreground">{item.metricId ?? item.kind}</span>
+              {item.basis === 'MODEL_IMPLIED' && (
+                <span className="rounded bg-secondary px-1 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">
+                  estimate
+                </span>
+              )}
+              {item.source && <span className="text-muted-foreground/60">{item.source}</span>}
+            </div>
+            {(item.effectiveTime || item.asOf) && (
+              <div className="flex flex-wrap items-baseline gap-x-2 text-muted-foreground/60">
+                {item.effectiveTime && <span>market-effective {item.effectiveTime}</span>}
+                {item.asOf && <span>known to Talvrin {item.asOf}</span>}
+              </div>
             )}
-            {item.asOf && <span className="text-muted-foreground/60">as of {item.asOf}</span>}
+            {item.permittedUse && (
+              <div className="text-muted-foreground/50">{item.permittedUse}</div>
+            )}
           </div>
         ))}
       </div>

@@ -110,6 +110,20 @@ GILT_MARKET_CLOSE_PRICE_POLICY = ReconciliationPolicy(
     conflict_action=CONFLICT_ACTION_FLAG,
 )
 
+US_TREASURY_PAR_YIELD_CURVE_POLICY = ReconciliationPolicy(
+    metric_id="US_TREASURY_PAR_YIELD_CURVE",
+    ordered_source_codes=("treasury",),
+    tolerance=None,
+    conflict_action=CONFLICT_ACTION_FLAG,
+)
+
+TREASURY_SECURITY_REFERENCE_TERMS_POLICY = ReconciliationPolicy(
+    metric_id="TREASURY_SECURITY_REFERENCE_TERMS",
+    ordered_source_codes=("treasurydirect",),
+    tolerance=None,
+    conflict_action=CONFLICT_ACTION_FLAG,
+)
+
 DEFAULT_POLICIES: dict[str, ReconciliationPolicy] = {
     GILT_REFERENCE_TERMS_POLICY.metric_id: GILT_REFERENCE_TERMS_POLICY,
     UK_GILT_NOMINAL_SPOT_CURVE_POLICY.metric_id: UK_GILT_NOMINAL_SPOT_CURVE_POLICY,
@@ -118,4 +132,6 @@ DEFAULT_POLICIES: dict[str, ReconciliationPolicy] = {
     MACRO_CPI_POLICY.metric_id: MACRO_CPI_POLICY,
     EQUITY_EOD_PRICE_POLICY.metric_id: EQUITY_EOD_PRICE_POLICY,
     GILT_MARKET_CLOSE_PRICE_POLICY.metric_id: GILT_MARKET_CLOSE_PRICE_POLICY,
+    US_TREASURY_PAR_YIELD_CURVE_POLICY.metric_id: US_TREASURY_PAR_YIELD_CURVE_POLICY,
+    TREASURY_SECURITY_REFERENCE_TERMS_POLICY.metric_id: TREASURY_SECURITY_REFERENCE_TERMS_POLICY,
 }

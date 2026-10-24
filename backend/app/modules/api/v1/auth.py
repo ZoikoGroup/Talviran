@@ -167,7 +167,7 @@ async def login(
     return _principal_out(issued.identity)
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def logout(request: Request, response: Response, db: SessionDep) -> None:
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if token:
@@ -270,7 +270,7 @@ async def me(request: Request, db: SessionDep) -> PrincipalOut:
     return _principal_out(identity)
 
 
-@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_me(request: Request, response: Response, db: SessionDep, http: HttpDep) -> None:
     token = request.cookies.get(SESSION_COOKIE_NAME)
     identity = (

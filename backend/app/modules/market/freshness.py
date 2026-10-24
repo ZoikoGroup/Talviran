@@ -81,6 +81,16 @@ GILT_REFERENCE_TERMS_FRESHNESS = FreshnessProfile(
     unavailable_after=None,
 )
 
+TREASURY_SECURITY_REFERENCE_TERMS_FRESHNESS = FreshnessProfile(
+    metric_id="TREASURY_SECURITY_REFERENCE_TERMS",
+    # Same reasoning as GILT_REFERENCE_TERMS - a security's own coupon/
+    # maturity never change once auctioned.
+    freshness_slo=dt.timedelta(days=30),
+    delayed_after=dt.timedelta(days=90),
+    stale_after=dt.timedelta(days=365),
+    unavailable_after=None,
+)
+
 UK_GILT_NOMINAL_SPOT_CURVE_FRESHNESS = FreshnessProfile(
     metric_id="UK_GILT_NOMINAL_SPOT_CURVE",
     # BoE publishes this once per UK business day.
@@ -149,6 +159,16 @@ GILT_MARKET_CLOSE_PRICE_FRESHNESS = FreshnessProfile(
     unavailable_after=dt.timedelta(days=30),
 )
 
+US_TREASURY_PAR_YIELD_CURVE_FRESHNESS = FreshnessProfile(
+    metric_id="US_TREASURY_PAR_YIELD_CURVE",
+    # home.treasury.gov publishes this once per US business day - same
+    # cadence/thresholds as the BoE curve profile it mirrors.
+    freshness_slo=dt.timedelta(days=1),
+    delayed_after=dt.timedelta(days=3),
+    stale_after=dt.timedelta(days=7),
+    unavailable_after=dt.timedelta(days=30),
+)
+
 DEFAULT_PROFILES: dict[str, FreshnessProfile] = {
     profile.metric_id: profile
     for profile in (
@@ -160,6 +180,8 @@ DEFAULT_PROFILES: dict[str, FreshnessProfile] = {
         MACRO_CPI_FRESHNESS,
         EQUITY_EOD_PRICE_FRESHNESS,
         GILT_MARKET_CLOSE_PRICE_FRESHNESS,
+        US_TREASURY_PAR_YIELD_CURVE_FRESHNESS,
+        TREASURY_SECURITY_REFERENCE_TERMS_FRESHNESS,
     )
 }
 
