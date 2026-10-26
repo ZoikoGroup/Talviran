@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft,
   Bell,
@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   Trash2,
   Edit2,
+  BookOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -375,6 +376,15 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              to="/guides?topic=how-to-use#setting-alerts-step-by-step"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition"
+              title="Learn how monitoring rules & dead-man watchers work"
+            >
+              <BookOpen className="h-3.5 w-3.5 text-primary" />
+              <span>Monitoring Guide</span>
+            </Link>
+
             {/* Browser Push Permission Enable */}
             {notificationPermission !== 'granted' && (
               <button

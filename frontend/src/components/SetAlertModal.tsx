@@ -13,6 +13,8 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/auth/AuthContext'
 import { SubmitButton } from '@/components/ui/field'
 import { createRule, type CreateRuleInput } from '@/lib/api'
+import { useEntitlement } from '@/context/EntitlementContext'
+import { toast } from 'sonner'
 
 export interface CustomAlertTrigger {
   id: string
@@ -40,6 +42,7 @@ interface SetAlertModalProps {
   onAlertCreated?: (alert: CustomAlertTrigger) => void
   existingAlert?: CustomAlertTrigger | null
   onAlertUpdated?: (alert: CustomAlertTrigger) => void
+  onOpenPricing?: () => void
 }
 
 export default function SetAlertModal({
@@ -50,6 +53,7 @@ export default function SetAlertModal({
   onAlertCreated,
   existingAlert,
   onAlertUpdated,
+  onOpenPricing,
 }: SetAlertModalProps) {
   const { session } = useAuth()
   const isEditing = Boolean(existingAlert)
@@ -71,10 +75,23 @@ export default function SetAlertModal({
   )
   const [busy, setBusy] = useState(false)
   const [savedSuccess, setSavedSuccess] = useState(false)
+  const { checkLimit } = useEntitlement()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!threshold.trim()) return
+
+    if (!isEditing) {
+      const quota = checkLimit('active_monitoring_rules')
+      if (quota.isExceeded) {
+        toast.error(
+          `Active alert quota reached (${quota.current} / ${quota.max}). Upgrade to increase continuous monitoring capacity.`
+        )
+        if (onOpenPricing) onOpenPricing()
+        onClose()
+        return
+      }
+    }
 
     setBusy(true)
     try {

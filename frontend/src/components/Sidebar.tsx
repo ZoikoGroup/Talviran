@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Bell,
   Bookmark,
@@ -70,6 +71,7 @@ interface SidebarProps {
   onOpenCompare?: () => void
   onOpenSearch?: () => void
   onOpenPricing?: () => void
+  onOpenGuides?: (topicId?: string) => void
   activeNav?: 'home' | 'research' | 'monitoring' | 'settings' | 'watchlists' | 'markets' | 'compare'
   /** Below `lg` the sidebar is an off-canvas drawer rather than a permanent
    * column — there is no room for the icon rail, so it is simply open or
@@ -127,10 +129,12 @@ export default function Sidebar({
   onOpenMarkets,
   onOpenCompare,
   onOpenPricing,
+  onOpenGuides,
   activeNav = 'home',
   mobileOpen,
   onMobileClose,
 }: SidebarProps) {
+  const navigate = useNavigate()
   const currentUser = useCurrentUser()
   const isDesktop = useIsDesktop()
 
@@ -571,12 +575,13 @@ export default function Sidebar({
           {/* Help & Support */}
           <button
             onClick={() => {
-              window.open('https://github.com/ZoikoGroup/Talviran', '_blank')
+              if (onOpenGuides) onOpenGuides()
+              else navigate('/guides')
             }}
             tabIndex={rail}
-            aria-label="Help & Support"
-            title="Help & Support"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            aria-label="Guides & Support"
+            title="Guides & Support"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer"
           >
             <HelpCircle className="h-[18px] w-[18px]" />
           </button>
@@ -804,15 +809,16 @@ export default function Sidebar({
             {/* Help & Support */}
             <button
               onClick={() => {
-                window.open('https://github.com/ZoikoGroup/Talviran', '_blank')
+                if (onOpenGuides) onOpenGuides()
+                else navigate('/guides')
               }}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left"
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-left cursor-pointer"
             >
               <div className="flex items-center gap-2.5">
                 <HelpCircle className="h-4 w-4 shrink-0" />
                 <div className="flex flex-col">
-                  <span className="font-medium text-foreground text-[13px] leading-tight">Help & Support</span>
-                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Guides, FAQs, contact</span>
+                  <span className="font-medium text-foreground text-[13px] leading-tight">Guides, FAQ's & Support</span>
+                  <span className="text-[11px] text-muted-foreground/80 leading-tight">Cookbook, FAQs, doctrine</span>
                 </div>
               </div>
               <ChevronRight className="h-3.5 w-3.5 text-sidebar-muted/60" />
@@ -1043,8 +1049,8 @@ export default function Sidebar({
               </span>
               <div className="flex flex-col min-w-0 flex-1">
                 <span className="truncate text-[13px] font-semibold text-foreground">{currentUser.name}</span>
-                <span className="text-[11px] text-muted-foreground capitalize">
-                  {currentUser.plan.toLowerCase() === 'enterprise' ? 'Enterprise' : 'Professional'}
+                <span className="text-[11px] text-muted-foreground">
+                  {currentUser.plan} Plan
                 </span>
               </div>
             </div>

@@ -323,6 +323,17 @@ async def create_research_answer(
     raw_body = await request.body()
 
     async def _handler() -> tuple[int, dict[str, Any]]:
+        from app.modules.commercial.service import QuotaExceededError, enforce_quota_limit
+
+        try:
+            await enforce_quota_limit(
+                db,
+                account_id=identity.account_id,
+                quota_key="verified_research_runs_per_month",
+            )
+        except QuotaExceededError as exc:
+            raise TalvrinAPIError(code=ErrorCode.RIGHTS_RESTRICTED, message=str(exc)) from exc
+
         try:
             await research_service.append_message(
                 db,

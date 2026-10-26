@@ -112,6 +112,13 @@ class Settings(BaseSettings):
     #: Resend email provider configuration for objective price & market alerts
     resend_api_key: str | None = None
     alerts_from_email: str = "alerts@talvrin.com"
+    support_inbox_email: str = "talvrin@zoikogroup.com"
+    support_from_email: str = "support@app.talvrin.com"
+
+    #: Stripe billing configuration
+    stripe_secret_key: str | None = None
+    stripe_publishable_key: str | None = None
+    stripe_webhook_secret: str | None = None
 
 
 @lru_cache

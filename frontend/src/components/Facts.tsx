@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   Table2,
@@ -8,6 +9,7 @@ import {
   LineChart as LineChartIcon,
   Activity,
   Target,
+  HelpCircle,
 } from 'lucide-react'
 import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import { cn } from '@/lib/utils'
@@ -83,6 +85,14 @@ export default function Facts({ title, rows }: FactTable) {
               {view === 'table' ? 'View Chart' : 'View Table'}
             </button>
           )}
+          <Link
+            to="/guides?topic=getting-started#doctrine-three-classes"
+            className="flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold text-muted-foreground transition-all duration-200 hover:bg-secondary hover:text-foreground active:scale-95"
+            title="Learn how Accepted Facts and Evidence Bundles are derived"
+          >
+            <HelpCircle className="h-3 w-3 text-primary" />
+            <span>Fact Rules</span>
+          </Link>
           <button
             onClick={handleDownloadCSV}
             className="flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-semibold transition-all duration-200 hover:bg-secondary hover:text-foreground active:scale-95"

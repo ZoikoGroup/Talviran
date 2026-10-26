@@ -56,6 +56,14 @@ class WeakPassword(AuthError):
         self.reason = reason
 
 
+class TwoFactorRequired(AuthError):
+    """Raised when 2FA is enabled for the principal but no TOTP code was provided."""
+
+
+class InvalidTotp(AuthError):
+    """Raised when the provided TOTP code is incorrect or expired."""
+
+
 class InvalidResetToken(AuthError):
     """The recovery link's token was missing, malformed, expired, or already
     used to reset a password once already."""
@@ -76,6 +84,7 @@ class Identity:
     principal_id: uuid.UUID
     account_id: uuid.UUID
     email: str
+    totp_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -117,7 +126,7 @@ async def _find_local_principal(
     row = (
         await session.execute(
             text(
-                "SELECT principal_id, account_id, email, status "
+                "SELECT principal_id, account_id, email, status, totp_enabled "
                 "FROM identity.lookup_principal_by_supabase_id(:s)"
             ),
             {"s": supabase_user_id},
@@ -125,7 +134,12 @@ async def _find_local_principal(
     ).first()
     if row is None or row.status != "ACTIVE":
         return None
-    return Identity(principal_id=row.principal_id, account_id=row.account_id, email=row.email)
+    return Identity(
+        principal_id=row.principal_id,
+        account_id=row.account_id,
+        email=row.email,
+        totp_enabled=bool(getattr(row, "totp_enabled", False)),
+    )
 
 
 async def _create_local_principal(
@@ -203,6 +217,7 @@ async def authenticate(
     *,
     email: str,
     password: str,
+    totp_code: str | None = None,
     http: httpx.AsyncClient,
     settings: Settings | None = None,
 ) -> IssuedLogin:
@@ -211,6 +226,8 @@ async def authenticate(
     Raises InvalidCredentials for a wrong password or an unknown address —
     Supabase's own error code already collapses the two — and
     EmailNotConfirmed only if confirmation is switched back on.
+    Raises TwoFactorRequired if TOTP is enabled but no code was given.
+    Raises InvalidTotp if TOTP code fails verification.
     """
     address = normalise_email(email)
     cfg = settings or get_settings()
@@ -233,6 +250,16 @@ async def authenticate(
         await apply_rls_context(
             session, account_id=identity.account_id, principal_id=identity.principal_id
         )
+
+    # 2FA enforcement
+    if identity.totp_enabled:
+        if not totp_code or not totp_code.strip():
+            raise TwoFactorRequired("Two-factor authentication code is required.")
+        valid_totp = await verify_principal_totp(
+            session, principal_id=identity.principal_id, code=totp_code
+        )
+        if not valid_totp:
+            raise InvalidTotp("Invalid two-factor authentication code.")
 
     return await _issue_session(session, identity)
 
@@ -333,7 +360,7 @@ async def resolve_session(
         await session.execute(
             text(
                 "SELECT session_id, principal_id, account_id, email, "
-                "principal_status, expires_at, idle_expires_at, revoked_at "
+                "principal_status, expires_at, idle_expires_at, revoked_at, totp_enabled "
                 "FROM identity.lookup_session_by_token(:h)"
             ),
             {"h": tokens.hash_token(token)},
@@ -353,7 +380,10 @@ async def resolve_session(
         return None
 
     identity = Identity(
-        principal_id=row.principal_id, account_id=row.account_id, email=row.email
+        principal_id=row.principal_id,
+        account_id=row.account_id,
+        email=row.email,
+        totp_enabled=bool(getattr(row, "totp_enabled", False)),
     )
     await apply_rls_context(
         session, account_id=identity.account_id, principal_id=identity.principal_id
@@ -396,6 +426,112 @@ async def revoke_session(session: AsyncSession, *, token: str) -> None:
     )
 
 
+async def setup_totp(
+    session: AsyncSession, *, principal_id: uuid.UUID, email: str
+) -> dict[str, str]:
+    """Generates a new TOTP secret and provisioning URI for authenticator setup."""
+    import base64
+    import io
+
+    import pyotp
+    import qrcode
+
+    secret = pyotp.random_base32()
+    totp = pyotp.TOTP(secret)
+    provisioning_uri = totp.provisioning_uri(name=email, issuer_name="Talvrin")
+
+    # Generate QR Code PNG as Data URL
+    qr_img = qrcode.make(provisioning_uri)
+    buf = io.BytesIO()
+    qr_img.save(buf, format="PNG")  # type: ignore[call-arg]
+    qr_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    qr_data_url = f"data:image/png;base64,{qr_b64}"
+
+    # Temporarily store secret on principal row pending verification
+    await session.execute(
+        text("UPDATE identity.principal SET totp_secret = :sec WHERE id = :pid"),
+        {"sec": secret, "pid": principal_id},
+    )
+    return {
+        "secret": secret,
+        "provisioning_uri": provisioning_uri,
+        "qr_code_data_url": qr_data_url,
+    }
+
+
+async def verify_and_enable_totp(
+    session: AsyncSession, *, principal_id: uuid.UUID, code: str
+) -> bool:
+    """Verifies a user-supplied 6-digit code against the pending TOTP secret and activates 2FA."""
+    import pyotp
+
+    row = (
+        await session.execute(
+            text("SELECT totp_secret FROM identity.principal WHERE id = :pid"),
+            {"pid": principal_id},
+        )
+    ).first()
+    if not row or not row.totp_secret:
+        return False
+
+    totp = pyotp.TOTP(row.totp_secret)
+    if totp.verify(code.strip()):
+        await session.execute(
+            text("UPDATE identity.principal SET totp_enabled = true WHERE id = :pid"),
+            {"pid": principal_id},
+        )
+        return True
+    return False
+
+
+async def disable_totp(
+    session: AsyncSession, *, principal_id: uuid.UUID, code: str
+) -> bool:
+    """Disables TOTP 2FA after verifying the current 6-digit code."""
+    import pyotp
+
+    row = (
+        await session.execute(
+            text("SELECT totp_secret, totp_enabled FROM identity.principal WHERE id = :pid"),
+            {"pid": principal_id},
+        )
+    ).first()
+    if not row or not row.totp_secret or not row.totp_enabled:
+        return False
+
+    totp = pyotp.TOTP(row.totp_secret)
+    if totp.verify(code.strip()):
+        await session.execute(
+            text(
+                "UPDATE identity.principal "
+                "SET totp_enabled = false, totp_secret = NULL "
+                "WHERE id = :pid"
+            ),
+            {"pid": principal_id},
+        )
+        return True
+    return False
+
+
+async def verify_principal_totp(
+    session: AsyncSession, *, principal_id: uuid.UUID, code: str
+) -> bool:
+    """Verifies TOTP during login challenge."""
+    import pyotp
+
+    row = (
+        await session.execute(
+            text("SELECT totp_secret, totp_enabled FROM identity.principal WHERE id = :pid"),
+            {"pid": principal_id},
+        )
+    ).first()
+    if not row or not row.totp_secret or not row.totp_enabled:
+        return False
+
+    totp = pyotp.TOTP(row.totp_secret)
+    return bool(totp.verify(code.strip()))
+
+
 async def delete_account(
     session: AsyncSession,
     *,
@@ -404,15 +540,15 @@ async def delete_account(
     settings: Settings | None = None,
 ) -> None:
     cfg = settings or get_settings()
-    
+
     row = (await session.execute(
         text("SELECT supabase_user_id FROM identity.principal WHERE id = :pid"),
         {"pid": identity.principal_id}
     )).first()
-    
+
     if row and row.supabase_user_id and cfg.supabase_service_role_key:
         await supabase_auth.delete_user(http, user_id=row.supabase_user_id, settings=cfg)
-        
+
     await apply_rls_context(
         session, account_id=identity.account_id, principal_id=identity.principal_id
     )

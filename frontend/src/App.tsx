@@ -13,6 +13,7 @@ import HomeDashboard from '@/components/HomeDashboard'
 import { ComparisonPage } from '@/components/ComparisonPage'
 import SearchModal from '@/components/SearchModal'
 import PricingModal from '@/components/PricingModal'
+import GuidesPanel from '@/components/GuidesPanel'
 import TalvrinMoonChat from '@/components/ui/talvrin-moon-chat'
 import { buildReply, type ChatMessage, type TaggedAsset } from '@/data/mockReply'
 import { DEFAULT_MODEL, type ModelId } from '@/data/models'
@@ -29,8 +30,11 @@ import {
   patchChat,
   patchProject,
   postResearch,
+  startCheckoutSession,
   type ChatMessageWire,
+  type PlanTier,
 } from '@/lib/api'
+import { useEntitlement } from '@/context/EntitlementContext'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
 import wordmarkOnDark from '@/assets/brand/talvrin-wordmark-on-dark.svg'
 import wordmarkOnLight from '@/assets/brand/talvrin-wordmark-on-light.svg'
@@ -142,9 +146,13 @@ export default function App() {
   const [showHome, setShowHome] = useState(initialView === 'home')
   const [showSearch, setShowSearch] = useState(false)
   const [showPricing, setShowPricing] = useState(false)
+  const [showGuides, setShowGuides] = useState(false)
+  const [guidesTopicId, setGuidesTopicId] = useState<string | null>(null)
+  const [guidesTab, setGuidesTab] = useState<'guides' | 'faq' | 'ticket'>('guides')
   const [monitoringInitialSymbol, setMonitoringInitialSymbol] = useState<string | null>(null)
   const [marketsInitialSymbol, setMarketsInitialSymbol] = useState<string | null>(null)
   const [taggedAsset, setTaggedAsset] = useState<TaggedAsset | null>(null)
+  const { entitlement, checkLimit } = useEntitlement()
 
   // Internal view navigation helper that syncs with browser history, hash and storage
   const navigateToView = useCallback((nextView: NavView, replace = false) => {
@@ -283,6 +291,13 @@ export default function App() {
         }))
         setChats((prev) => [...prev, ...loaded])
         setProjects(projectRows.map((p) => ({ id: p.id, name: p.name })))
+
+        // Check if user came from a guide example query
+        const pendingPrompt = sessionStorage.getItem('talvrin_pending_prompt')
+        if (pendingPrompt) {
+          setDraft(pendingPrompt)
+          sessionStorage.removeItem('talvrin_pending_prompt')
+        }
       } catch (err) {
         if (!cancelled && err instanceof ApiError && err.code === 'UNAUTHENTICATED') {
           navigate('/login', { replace: true })
@@ -378,6 +393,16 @@ export default function App() {
       content = `Provide institutional analysis, market drivers, and authoritative evidence for ${currentAsset.name} (${currentAsset.symbol}).`
     }
     if (!content || thinking) return
+
+    // Quota gating check for monthly verified research runs
+    const quota = checkLimit('verified_research_runs_per_month')
+    if (quota.isExceeded) {
+      toast.error(
+        `Monthly research allowance reached (${quota.current} / ${quota.max} runs). Upgrade your plan to run unlimited institutional queries.`
+      )
+      setShowPricing(true)
+      return
+    }
 
     const chatId = targetChatId ?? activeId
     const before = chats.find((c) => c.id === chatId)
@@ -728,6 +753,10 @@ export default function App() {
         onOpenMonitoring={() => navigateToView('monitoring')}
         onOpenSearch={() => setShowSearch(true)}
         onOpenPricing={() => setShowPricing(true)}
+        onOpenGuides={(topicId) => {
+          setGuidesTopicId(topicId || null)
+          setShowGuides(true)
+        }}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
       />
@@ -799,6 +828,7 @@ export default function App() {
               setMonitoringInitialSymbol(symbol)
               navigateToView('monitoring')
             }}
+            onOpenPricing={() => setShowPricing(true)}
           />
         ) : showCompare ? (
           <ComparisonPage
@@ -807,6 +837,11 @@ export default function App() {
               setMonitoringInitialSymbol(symbol)
               navigateToView('monitoring')
             }}
+            onOpenGuides={(topicId) => {
+              setGuidesTopicId(topicId || null)
+              setShowGuides(true)
+            }}
+            onOpenPricing={() => setShowPricing(true)}
           />
         ) : showHome ? (
           <HomeDashboard
@@ -831,6 +866,10 @@ export default function App() {
             onOpenMarkets={(symbol) => {
               setMarketsInitialSymbol(symbol ?? null)
               navigateToView('markets')
+            }}
+            onOpenGuides={(topicId) => {
+              setGuidesTopicId(topicId || null)
+              setShowGuides(true)
             }}
           />
         ) : isLoadingActive ? (
@@ -964,12 +1003,39 @@ export default function App() {
       <PricingModal
         isOpen={showPricing}
         onClose={() => setShowPricing(false)}
-        currentPlanId="professional"
-        onSelectPlan={(planId, cycle) => {
-          setShowPricing(false)
-          toast.success(
-            `Selected ${planId.toUpperCase()} (${cycle === 'annual' ? 'Annual Billing - 17% Saved' : 'Monthly'}). Redirecting to secure checkout...`
-          )
+        currentPlanId={entitlement?.plan_tier ?? 'professional'}
+        onSelectPlan={async (planId, cycle) => {
+          try {
+            toast.loading(`Initializing secure checkout for ${planId.toUpperCase()}...`, { id: 'checkout' })
+            const resp = await startCheckoutSession({
+              plan_tier: planId as PlanTier,
+              billing_cadence: cycle,
+            })
+            toast.success(`Redirecting to secure billing session (${resp.session_id})...`, { id: 'checkout' })
+            setShowPricing(false)
+            // In institutional setup, redirect to checkout session URL
+            if (resp.checkout_url) {
+              window.open(resp.checkout_url, '_blank')
+            }
+          } catch (err: unknown) {
+            toast.error(err instanceof Error ? err.message : 'Failed to create checkout session', { id: 'checkout' })
+          }
+        }}
+      />
+
+      {/* Right Drawer Guides & Support Panel */}
+      <GuidesPanel
+        isOpen={showGuides}
+        onClose={() => {
+          setShowGuides(false)
+          setGuidesTopicId(null)
+          setGuidesTab('guides')
+        }}
+        initialTopicId={guidesTopicId}
+        initialTab={guidesTab}
+        onRunPrompt={(prompt) => {
+          setDraft(prompt)
+          navigateToView('home')
         }}
       />
     </div>

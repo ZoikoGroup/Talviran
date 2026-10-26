@@ -22,15 +22,20 @@ import {
   Sparkles,
   FileDown,
   Printer,
+  BookOpen,
 } from 'lucide-react'
 import { GLOBAL_MARKET_ASSETS, MarketAsset } from '../data/globalAssets'
 import { useLiveMarket } from '../hooks/useLiveMarket'
 import { mapToTradingViewSymbol } from './TradingViewWidget'
+import { useEntitlement } from '../context/EntitlementContext'
+import { toast } from 'sonner'
 import SetAlertModal from './SetAlertModal'
 
 export interface ComparisonPageProps {
   onBackToHome?: () => void
   onOpenMonitoringForRule?: (symbol: string) => void
+  onOpenGuides?: (topicId?: string) => void
+  onOpenPricing?: () => void
   initialSymbols?: string[]
 }
 
@@ -440,6 +445,8 @@ const STATUTORY_COMPARISON_REGISTER: Record<string, DetailedAssetMetrics> = {
 export function ComparisonPage({
   onBackToHome,
   onOpenMonitoringForRule,
+  onOpenGuides,
+  onOpenPricing,
   initialSymbols = ['AAPL', 'MSFT', 'NVDA'],
 }: ComparisonPageProps) {
   // Persist comparison universe and base across reloads
@@ -630,8 +637,20 @@ export function ComparisonPage({
     ).slice(0, 6)
   }, [searchQuery, selectedSymbols])
 
+  const { checkLimit } = useEntitlement()
+
   // Generate clean Markdown dossier
   const exportBriefMarkdown = () => {
+    const quota = checkLimit('evidence_dossier_exports_per_month')
+    if (quota.isExceeded) {
+      toast.error(
+        `Evidence Dossier export limit reached (${quota.current} / ${quota.max}). Upgrade to export unlimited statutory memoranda.`
+      )
+      if (onOpenPricing) onOpenPricing()
+      setIsExportMenuOpen(false)
+      return
+    }
+
     const timestamp = new Date().toISOString()
     const ranked = [...loadedAssets].sort((a, b) => {
       const scoreA = ASSET_PROS_CONS[a.symbol]?.score || 70
@@ -704,6 +723,16 @@ export function ComparisonPage({
 
   // Open institutional print-optimized report for 1-click PDF saving
   const exportBriefPDF = () => {
+    const quota = checkLimit('evidence_dossier_exports_per_month')
+    if (quota.isExceeded) {
+      toast.error(
+        `Evidence Dossier export limit reached (${quota.current} / ${quota.max}). Upgrade to export unlimited statutory memoranda.`
+      )
+      if (onOpenPricing) onOpenPricing()
+      setIsExportMenuOpen(false)
+      return
+    }
+
     setIsExportMenuOpen(false)
     const printWindow = window.open('', '_blank')
     if (!printWindow) return
@@ -874,6 +903,18 @@ export function ComparisonPage({
 
         {/* Action Controls */}
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              if (onOpenGuides) onOpenGuides('how-to-use')
+              else window.open('/guides?topic=how-to-use#running-comparisons', '_blank')
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors cursor-pointer"
+            title="Open side-by-side comparison guide in right drawer"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Comparison Guide</span>
+          </button>
+
           <div className="relative">
             <button
               onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
@@ -1724,6 +1765,7 @@ export function ComparisonPage({
                 onOpenMonitoringForRule(selectedAssetForAlert.symbol)
               }
             }}
+            onOpenPricing={onOpenPricing}
           />
         )}
       </main>

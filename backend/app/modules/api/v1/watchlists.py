@@ -34,6 +34,13 @@ async def create_watchlist(
     session: SessionDep,
     identity: IdentityDep,
 ) -> WatchlistOut:
+    from app.modules.commercial.service import QuotaExceededError, enforce_quota_limit
+
+    try:
+        await enforce_quota_limit(session, account_id=identity.account_id, quota_key="watchlists")
+    except QuotaExceededError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
     created = await watchlist_service.create_watchlist(
         session,
         account_id=identity.account_id,

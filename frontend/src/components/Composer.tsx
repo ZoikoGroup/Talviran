@@ -1,4 +1,5 @@
 import { ArrowUpIcon, Tag, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { useAutoResizeTextarea } from '@/hooks/use-auto-resize-textarea'
@@ -166,7 +167,14 @@ export default function Composer({
         Source-linked facts and reproducible calculations.{' '}
         <span className="font-medium text-muted-foreground">
           Talvrin does not give investment advice.
-        </span>
+        </span>{' '}
+        <Link
+          to="/guides?topic=getting-started#fail-closed-pdp"
+          className="text-primary hover:underline underline-offset-2 ml-1"
+          title="Read the Policy Decision Point compliance rules"
+        >
+          Learn more
+        </Link>
       </p>
     </div>
   )

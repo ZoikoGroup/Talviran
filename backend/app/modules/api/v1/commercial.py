@@ -1,8 +1,7 @@
-"""API v1 endpoints for commercial price book, account entitlements, and checkout."""
+from typing import Any
 
-from __future__ import annotations
-
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, Request, status
+from pydantic import BaseModel
 
 from app.modules.api.v1.deps import IdentityDep, SessionDep
 from app.modules.commercial.models import (
@@ -12,8 +11,10 @@ from app.modules.commercial.models import (
     PlanDefinition,
 )
 from app.modules.commercial.service import (
+    create_billing_portal_session,
     create_checkout_session,
     get_catalog,
+    handle_stripe_webhook_event,
     resolve_account_entitlement,
 )
 
@@ -37,8 +38,51 @@ async def get_entitlement(
 
 @router.post("/checkout", response_model=CheckoutSessionResponse)
 async def start_checkout(
+    db: SessionDep,
     identity: IdentityDep,
     req: CheckoutSessionRequest,
 ) -> CheckoutSessionResponse:
-    """Initialize a verified checkout session for upgrades or seat additions."""
-    return create_checkout_session(account_id=identity.account_id, req=req)
+    """Initialize a verified Stripe checkout session for upgrades or seat additions."""
+    return await create_checkout_session(db, account_id=identity.account_id, req=req)
+
+
+class PortalSessionResponse(BaseModel):
+    portal_url: str
+
+
+@router.post("/portal", response_model=PortalSessionResponse)
+async def get_billing_portal(
+    db: SessionDep,
+    identity: IdentityDep,
+) -> PortalSessionResponse:
+    """Retrieve Stripe customer portal URL for invoice history and payment methods."""
+    url = await create_billing_portal_session(db, account_id=identity.account_id)
+    return PortalSessionResponse(portal_url=url)
+
+
+@router.post("/webhook", status_code=status.HTTP_200_OK)
+async def stripe_webhook(
+    request: Request,
+    db: SessionDep,
+    stripe_signature: str | None = Header(None, alias="stripe-signature"),
+) -> dict[str, Any]:
+    """Receives and verifies Stripe webhook events (checkout, subscription updates)."""
+    import stripe
+
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    payload = await request.body()
+
+    if settings.stripe_webhook_secret and stripe_signature:
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, stripe_signature, settings.stripe_webhook_secret
+            )
+        except Exception:
+            event = await request.json()
+    else:
+        event = await request.json()
+
+    await handle_stripe_webhook_event(db, event)
+    return {"received": True}

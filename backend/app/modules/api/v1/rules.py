@@ -44,6 +44,15 @@ def _rule_out(version: MonitoringRuleVersion) -> RuleOut:
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=RuleOut)
 async def create_rule(body: RuleIn, session: SessionDep, identity: IdentityDep) -> RuleOut:
+    from app.modules.commercial.service import QuotaExceededError, enforce_quota_limit
+
+    try:
+        await enforce_quota_limit(
+            session, account_id=identity.account_id, quota_key="active_monitoring_rules"
+        )
+    except QuotaExceededError as exc:
+        raise TalvrinAPIError(code=ErrorCode.RIGHTS_RESTRICTED, message=str(exc)) from exc
+
     result = await service.create_rule(
         session,
         principal_id=identity.principal_id,

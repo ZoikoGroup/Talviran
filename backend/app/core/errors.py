@@ -152,6 +152,7 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
+        _logger.exception("Unhandled exception processing request: %s", exc)
         wrapped = TalvrinAPIError(ErrorCode.INTERNAL_ERROR, "An internal error occurred.")
         return JSONResponse(status_code=ERROR_STATUS[wrapped.code], content=wrapped.to_body())
 
