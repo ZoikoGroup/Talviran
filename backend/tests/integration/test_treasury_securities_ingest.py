@@ -14,10 +14,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.market.connectors.base import AcquiredPayload
-from app.modules.market.connectors.treasury_securities.mapping import (
-    RecordIssue,
-    TreasurySecurityCandidate,
-)
+from app.modules.market.connectors.treasury_securities.mapping import TreasurySecurityCandidate
 from app.modules.market.connectors.treasury_securities.reference_connector import (
     TreasuryDirectSecuritiesConnector,
 )
@@ -99,7 +96,7 @@ def _parse_fixture_candidate() -> TreasurySecurityCandidate:
     return next(
         c
         for c in candidates
-        if not isinstance(c, RecordIssue)
+        if isinstance(c, TreasurySecurityCandidate)
         and c.cusip == SEED_CUSIP
         and c.security_term == "9-Year 10-Month"
     )
