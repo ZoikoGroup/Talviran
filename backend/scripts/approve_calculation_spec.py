@@ -35,6 +35,9 @@ _GOLDEN_TEST_PATHS: dict[str, str] = {
     "gilt_price_yield_v1": "tests/golden/test_gilt_price_yield_v1_golden.py",
     "gilt_price_from_curve_v1": "tests/golden/test_gilt_price_from_curve_v1_golden.py",
     "gilt_risk_metrics_v1": "tests/golden/test_gilt_risk_metrics_v1_golden.py",
+    "gilt_treasury_spread_v1": "tests/golden/test_gilt_treasury_spread_v1_golden.py",
+    "gilt_holding_period_return_v1": "tests/golden/test_gilt_holding_period_return_v1_golden.py",
+    "treasury_price_from_curve_v1": "tests/golden/test_treasury_price_from_curve_v1_golden.py",
 }
 
 

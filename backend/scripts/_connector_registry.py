@@ -35,6 +35,12 @@ from app.modules.market.connectors.frankfurter_fx.mapping import FxRateCandidate
 from app.modules.market.connectors.frankfurter_fx.reference_connector import (
     FrankfurterFxConnector,
 )
+from app.modules.market.connectors.treasury_yield_curve.mapping import (
+    CurvePointCandidate as TreasuryCurvePointCandidate,
+)
+from app.modules.market.connectors.treasury_yield_curve.reference_connector import (
+    TreasuryYieldCurveConnector,
+)
 from app.modules.market.connectors.twelve_data_equity.mapping import EquityEodPriceCandidate
 from app.modules.market.connectors.twelve_data_equity.reference_connector import (
     TwelveDataEquityConnector,
@@ -54,6 +60,10 @@ from app.modules.market.pipeline.reconciliation_policy import (
     MACRO_GDP_POLICY,
     ReconciliationPolicy,
 )
+from app.modules.market.pipeline.treasury_curve_ingest import (
+    TreasuryCurveIngestSkipped,
+    ingest_treasury_curve_point_candidate,
+)
 from app.modules.rights.models import RightsProfile
 from scripts.seed_dev import (
     BOE_FX_RIGHTS_PROFILE_CODE,
@@ -61,6 +71,7 @@ from scripts.seed_dev import (
     FRANKFURTER_FX_RIGHTS_PROFILE_CODE,
     PILOT_EQUITIES,
     TWELVE_DATA_EQUITY_RIGHTS_PROFILE_CODE,
+    US_TREASURY_YIELD_CURVE_RIGHTS_PROFILE_CODE,
 )
 
 #: (base currency, quote currencies) — covers the 5 pilot pairs (GBP/INR,
@@ -377,8 +388,66 @@ async def ingest_equity_pilot(session: AsyncSession) -> None:
                 await asyncio.sleep(_TWELVE_DATA_THROTTLE_SECONDS)
 
 
+async def ingest_treasury_curve_pilot(session: AsyncSession) -> None:
+    """Ingests only the latest published date's points, same "one
+    acquisition, pick the latest day" pattern as ingest_dev_data.py's own
+    BoE curve block — not every day in the feed, which would mean
+    re-walking the whole year's history on every dev run.
+    """
+    rights_id = await _rights_profile_id(session, US_TREASURY_YIELD_CURVE_RIGHTS_PROFILE_CODE)
+    async with httpx.AsyncClient() as client:
+        connector = TreasuryYieldCurveConnector(client)
+        try:
+            payload = await connector.acquire()
+        except httpx.HTTPError as exc:
+            print(f"US Treasury curve: live fetch failed ({exc}).")
+            return
+
+        candidates_or_quarantine = validate_and_parse(connector, payload)
+        if isinstance(candidates_or_quarantine, Quarantined):
+            print(f"US Treasury curve: quarantined ({candidates_or_quarantine.reasons}).")
+            return
+
+        points = [
+            c for c in candidates_or_quarantine if isinstance(c, TreasuryCurvePointCandidate)
+        ]
+        if not points:
+            print("US Treasury curve: no points parsed.")
+            return
+        latest_date = max(p.curve_date for p in points)
+        latest_points = [p for p in points if p.curve_date == latest_date]
+
+        artifact = await _seed_source_artifact(
+            session,
+            source_code="treasury",
+            source_name="US Department of the Treasury (dev)",
+            dataset_code="par-yield-curve",
+            dataset_name="US Treasury Par Yield Curve",
+            media_type="text/xml",
+            raw_bytes=payload.raw_bytes,
+        )
+        ingested = 0
+        for point in latest_points:
+            result = await ingest_treasury_curve_point_candidate(
+                session,
+                candidate=point,
+                source_artifact_id=artifact.id,
+                source_code="treasury",
+                dataset_code="par-yield-curve",
+                rights_profile_id=rights_id,
+                fetched_at=payload.fetched_at,
+            )
+            if isinstance(result, TreasuryCurveIngestSkipped):
+                print(f"  {point.tenor_label}: skipped ({result.reason}).")
+            else:
+                ingested += 1
+        await session.commit()
+        print(f"US Treasury curve: ingested {ingested} point(s) for {latest_date}.")
+
+
 async def ingest_all(session: AsyncSession) -> None:
     await ingest_fx_pilot(session)
     await ingest_boe_fx_pilot(session)
     await ingest_macro_pilot(session)
     await ingest_equity_pilot(session)
+    await ingest_treasury_curve_pilot(session)

@@ -65,7 +65,15 @@ def _render_item(index: int, item: EvidenceItem) -> str:
         return f"[{index}] {item.kind} — {item.document_title}: {item.text}"
     value_text = ", ".join(f"{k}: {v}" for k, v in (item.value or {}).items())
     basis = f" (basis: {item.basis})" if item.basis else ""
-    return f"[{index}] {item.kind} — {item.metric_id}{basis}, as of {item.as_of}: {value_text}"
+    # Both time axes, when they differ (P2 traceability roadmap, #5) - a
+    # model composing prose about "the yield as of X" needs the real-world
+    # effective date, not the moment Talvrin happened to record it, which
+    # as_of now always means uniformly (see EvidenceItem's own docstring).
+    if item.effective_time and item.effective_time != item.as_of:
+        timing = f"effective {item.effective_time} (known to Talvrin {item.as_of})"
+    else:
+        timing = f"as of {item.as_of}"
+    return f"[{index}] {item.kind} — {item.metric_id}{basis}, {timing}: {value_text}"
 
 
 @dataclass(frozen=True)

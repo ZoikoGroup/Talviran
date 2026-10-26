@@ -995,6 +995,17 @@
             ],
             "title": "Document Title"
           },
+          "effective_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Time"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -1009,6 +1020,28 @@
               }
             ],
             "title": "Metric Id"
+          },
+          "permitted_use": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permitted Use"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
           },
           "subject_type": {
             "anyOf": [
@@ -1052,6 +1085,9 @@
           "value",
           "basis",
           "as_of",
+          "effective_time",
+          "source",
+          "permitted_use",
           "document_title",
           "text"
         ],

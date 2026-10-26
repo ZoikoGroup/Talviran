@@ -49,6 +49,8 @@ UK_DMO_METHODOLOGY_RIGHTS_PROFILE_CODE = "uk-dmo.methodology"
 FRANKFURTER_FX_RIGHTS_PROFILE_CODE = "frankfurter.fx"
 DBNOMICS_MACRO_RIGHTS_PROFILE_CODE = "dbnomics.macro"
 TWELVE_DATA_EQUITY_RIGHTS_PROFILE_CODE = "twelve-data.equity"
+US_TREASURY_YIELD_CURVE_RIGHTS_PROFILE_CODE = "treasury.yield-curve"
+TREASURY_DIRECT_SECURITIES_RIGHTS_PROFILE_CODE = "treasurydirect.securities"
 #: A genuinely different license than UK_DMO_GILTS_RIGHTS_PROFILE_CODE
 #: (its own source, its own terms) - "non-professional and
 #: non-commercial use" only, confirmed live from the export flow's own
@@ -292,6 +294,18 @@ async def seed() -> None:
         await _seed_rights_profile(
             session, BOE_YIELD_CURVE_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
         )
+        # A real, public, free US government feed (home.treasury.gov) - no
+        # license terms restricting reuse, same openness as the BoE curve.
+        await _seed_rights_profile(
+            session, US_TREASURY_YIELD_CURVE_RIGHTS_PROFILE_CODE, ["retrieve", "store", "display"]
+        )
+        # treasurydirect.gov's own auctioned-securities feed - same open,
+        # free, public US government data as the yield curve above.
+        await _seed_rights_profile(
+            session,
+            TREASURY_DIRECT_SECURITIES_RIGHTS_PROFILE_CODE,
+            ["retrieve", "store", "display"],
+        )
         # Document rights are evaluated independently of whatever profile
         # governs price data from the same publisher (EVID-001 doctrine) -
         # a freely-published UK government methodology PDF, so index/embed/
@@ -344,6 +358,40 @@ async def seed() -> None:
                 "these metrics exists; FIN-001 §26 FIN-O3 (Product+Methodology "
                 "sign-off on the customer-facing definition) is not yet resolved "
                 "- stays DRAFT until it is."
+            ),
+        )
+        await _seed_calculation_specification(
+            session,
+            code="gilt_treasury_spread_v1",
+            version="1",
+            description=(
+                "UK gilt vs US Treasury cross-market yield spread at matching "
+                "benchmark tenors. Talvrin's own comparison methodology - "
+                "neither market publishes a combined cross-market series."
+            ),
+        )
+        await _seed_calculation_specification(
+            session,
+            code="gilt_holding_period_return_v1",
+            version="1",
+            description=(
+                "Conventional-gilt holding-period return between two dates "
+                "(price return + coupon income received, over starting dirty "
+                "price). Standard textbook definition; no DMO-published source "
+                "exists for returns."
+            ),
+        )
+        await _seed_calculation_specification(
+            session,
+            code="treasury_price_from_curve_v1",
+            version="1",
+            description=(
+                "Model-implied US Treasury Note/Bond pricing from the Treasury "
+                "par-yield curve, discounting the security's own cash flows. "
+                "No per-security Treasury price source exists at all - this is "
+                "the only priced view of a Treasury Note/Bond this platform can "
+                "currently produce. TIPS/Bill/FRN are out of scope - see the "
+                "spec's own docstring."
             ),
         )
         await session.commit()

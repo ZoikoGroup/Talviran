@@ -365,7 +365,20 @@ export interface EvidenceItem {
   metricId: string | null
   value: Record<string, unknown> | null
   basis: string | null
+  /** When Talvrin came to hold this exact value (knowledge/ingestion time) -
+   * never the real-world date/period it describes (see effectiveTime). */
   asOf: string | null
+  /** The real-world market date/period this value describes - can differ
+   * from asOf (an ingestion lag, or a historical reconstruction). */
+  effectiveTime: string | null
+  /** Plain publisher/computation attribution, e.g. "Bank of England" or
+   * "Talvrin calculation (gilt_price_yield_v1 v1)" - never a raw
+   * rights-profile code or policy-engine identifier. */
+  source: string | null
+  /** Plain-language summary of what may be done with this fact beyond
+   * viewing it (export/redistribution/AI-composed use) - null when no
+   * governing rights profile could be resolved at all. */
+  permittedUse: string | null
 }
 
 export interface EvidenceDetail {
@@ -386,6 +399,9 @@ interface EvidenceWire {
     value: Record<string, unknown> | null
     basis: string | null
     as_of: string | null
+    effective_time: string | null
+    source: string | null
+    permitted_use: string | null
   }[]
 }
 
@@ -401,6 +417,9 @@ export const getResearchEvidence = (messageId: string): Promise<EvidenceDetail> 
       value: i.value,
       basis: i.basis,
       asOf: i.as_of,
+      effectiveTime: i.effective_time,
+      source: i.source,
+      permittedUse: i.permitted_use,
     })),
   }))
 

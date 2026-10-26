@@ -1,7 +1,8 @@
 """P2's job-table handoff: enqueue_model_implied_price_job()/
-enqueue_gilt_risk_metrics_job() are what a request/ingest path should call
-instead of invoking a compute_and_persist_* function directly in its own
-transaction (ENG-ARCH-003 risk #9 - "calling calculation.implementation
+enqueue_gilt_risk_metrics_job()/enqueue_treasury_model_implied_price_job()
+are what a request/ingest path should call instead of invoking a
+compute_and_persist_* function directly in its own transaction
+(ENG-ARCH-003 risk #9 - "calling calculation.implementation
 directly/synchronously ... hardens into a dependency nobody wants to
 refactor later"). claim_next_job()/run_next_job() are what a real
 out-of-process worker (scripts/run_calculation_worker.py) uses to drain
@@ -17,15 +18,16 @@ claim_next_job() claims ANY pending job regardless of which spec it's for
 job() below MUST dispatch on the claimed job's own calculation_specification
 code rather than assume a single compute function, or a second job type
 sharing this same queue would risk the wrong compute function running
-against the wrong job's data. Dispatch is a plain if/else, not a
+against the wrong job's data. Dispatch is a plain if/elif/else, not a
 pre-built dict keyed by function reference - a dict captured at import
 time would silently stop working with
 test_calculation_job_queue.py's own `patch("...job_queue.compute_and_
 persist_model_implied_price", ...)`, since patching a module attribute
-doesn't retroactively change a reference already stored in a dict. Two
-compute functions doesn't yet justify a real pluggable registry
+doesn't retroactively change a reference already stored in a dict. Three
+compute functions still doesn't yet justify a real pluggable registry
 (ENG-ARCH-003 risk #7's "prove it in Postgres first" applies here too,
-not just to the broker-vs-no-broker choice).
+not just to the broker-vs-no-broker choice) - this is the point at which
+a fourth would force that conversation, not before.
 """
 
 import datetime as dt
@@ -53,12 +55,18 @@ from app.modules.calculation.pipeline.gilt_risk_metrics_pricing import (
     GiltRiskMetricsSkipped,
     compute_and_persist_gilt_risk_metrics,
 )
+from app.modules.calculation.pipeline.treasury_curve_pricing import (
+    TreasuryModelImpliedPriceComputed,
+    TreasuryModelImpliedPriceSkipped,
+    compute_and_persist_treasury_model_implied_price,
+)
 
 #: Spec codes in dev/test fixtures carry a `.test.<hash>` suffix
 #: (e.g. "gilt_risk_metrics_v1.test.ab12cd34") - matching on this prefix,
 #: not an exact string, is what makes dispatch work identically in both
 #: a seeded-dev spec row and a test's own throwaway spec row.
 _GILT_RISK_METRICS_SPEC_PREFIX = "gilt_risk_metrics_v1"
+_TREASURY_PRICE_SPEC_PREFIX = "treasury_price_from_curve_v1"
 
 
 async def _enqueue_job(
@@ -131,6 +139,21 @@ async def enqueue_gilt_risk_metrics_job(
     )
 
 
+async def enqueue_treasury_model_implied_price_job(
+    session: AsyncSession,
+    *,
+    instrument_id: uuid.UUID,
+    as_of_date: dt.date,
+    calculation_specification_id: uuid.UUID,
+) -> uuid.UUID:
+    return await _enqueue_job(
+        session,
+        instrument_id=instrument_id,
+        as_of_date=as_of_date,
+        calculation_specification_id=calculation_specification_id,
+    )
+
+
 async def claim_next_job(session: AsyncSession) -> CalculationJob | None:
     """Atomically claims one PENDING job for this worker - `SKIP LOCKED`
     means a second, concurrently-running worker moves on to the next row
@@ -160,6 +183,8 @@ JobOutcome = (
     | ModelImpliedPriceSkipped
     | GiltRiskMetricsComputed
     | GiltRiskMetricsSkipped
+    | TreasuryModelImpliedPriceComputed
+    | TreasuryModelImpliedPriceSkipped
 )
 
 
@@ -199,10 +224,18 @@ async def run_next_job(session: AsyncSession) -> JobRun | None:
     job_id = job.id
     spec = await session.get(CalculationSpecification, job.calculation_specification_id)
     is_risk_metrics = spec is not None and spec.code.startswith(_GILT_RISK_METRICS_SPEC_PREFIX)
+    is_treasury_price = spec is not None and spec.code.startswith(_TREASURY_PRICE_SPEC_PREFIX)
 
     try:
         if is_risk_metrics:
             outcome: JobOutcome = await compute_and_persist_gilt_risk_metrics(
+                session,
+                instrument_id=job.subject_id,
+                as_of_date=job.as_of_date,
+                calculation_specification_id=job.calculation_specification_id,
+            )
+        elif is_treasury_price:
+            outcome = await compute_and_persist_treasury_model_implied_price(
                 session,
                 instrument_id=job.subject_id,
                 as_of_date=job.as_of_date,
@@ -227,16 +260,21 @@ async def run_next_job(session: AsyncSession) -> JobRun | None:
             )
         )
         await session.commit()
-        skipped: JobOutcome = (
-            GiltRiskMetricsSkipped(reason=f"unexpected error: {exc}")
-            if is_risk_metrics
-            else ModelImpliedPriceSkipped(reason=f"unexpected error: {exc}")
-        )
+        skipped: JobOutcome
+        if is_risk_metrics:
+            skipped = GiltRiskMetricsSkipped(reason=f"unexpected error: {exc}")
+        elif is_treasury_price:
+            skipped = TreasuryModelImpliedPriceSkipped(reason=f"unexpected error: {exc}")
+        else:
+            skipped = ModelImpliedPriceSkipped(reason=f"unexpected error: {exc}")
         return JobRun(job_id=job_id, outcome=skipped)
 
     last_error = (
         outcome.reason[:1000]
-        if isinstance(outcome, ModelImpliedPriceSkipped | GiltRiskMetricsSkipped)
+        if isinstance(
+            outcome,
+            ModelImpliedPriceSkipped | GiltRiskMetricsSkipped | TreasuryModelImpliedPriceSkipped,
+        )
         else None
     )
     await session.execute(

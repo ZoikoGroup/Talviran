@@ -115,3 +115,60 @@ class FiSovereignTerms(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     first_issue_date: Mapped[dt.date] = mapped_column(Date())
     maturity_date: Mapped[dt.date] = mapped_column(Date())
     ex_dividend_days: Mapped[int]
+
+
+class FiSovereignDiscountTerms(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """The US Treasury Bill asset-adapter table
+    (instrument_type=FI_SOVEREIGN_DISCOUNT) — a genuinely different shape
+    from FiSovereignTerms, not a reused one with blank coupon fields: Bills
+    (and Cash Management Bills, discriminated by `is_cash_management_bill`,
+    not a separate instrument_type - TreasuryDirect itself reports CMBs as
+    securityType="Bill" with a boolean flag, confirmed live 2026-10-26) are
+    discount instruments with no periodic coupon at all. `high_rate` is the
+    auction's own discount rate; `investment_rate` is the coupon-equivalent
+    (bond-equivalent) yield TreasuryDirect publishes alongside it - both are
+    auction-day snapshots, the same "rate fixed at the instrument's own
+    auction" limitation FiSovereignTerms.coupon_rate already carries for
+    Notes/Bonds, not a new one introduced here.
+    """
+
+    __tablename__ = "fi_sovereign_discount_terms"
+    __table_args__ = {"schema": "reference"}
+
+    instrument_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("reference.instrument.id"), unique=True
+    )
+    high_rate: Mapped[Decimal] = mapped_column(Numeric(9, 6))  # percent, discount rate
+    investment_rate: Mapped[Decimal] = mapped_column(Numeric(9, 6))  # percent, coupon-equivalent
+    is_cash_management_bill: Mapped[bool] = mapped_column(Boolean, default=False)
+    # ACT/360 is the standard, market-wide T-bill discount convention - not
+    # TreasuryDirect-feed-derived, the same "named, not guessed" treatment
+    # onboard_all_treasury_securities.py already gives ACT_ACT_TREASURY.
+    day_count_convention: Mapped[str] = mapped_column(String(32))
+    first_issue_date: Mapped[dt.date] = mapped_column(Date())
+    maturity_date: Mapped[dt.date] = mapped_column(Date())
+
+
+class FiSovereignFrnTerms(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """The US Treasury Floating Rate Note asset-adapter table
+    (instrument_type=FI_SOVEREIGN_FRN). TreasuryDirect reports an FRN with
+    securityType="Note" and floatingRate="Yes" (confirmed live 2026-10-26,
+    same flag-not-type-field pattern as TIPS' inflationProtected) - a
+    genuinely different shape from FiSovereignTerms since an FRN has no
+    fixed coupon_rate at all, only a spread over its reference index (the
+    13-week Treasury Bill discount rate - Treasury's only FRN program) plus
+    the index rate determined at its own auction.
+    """
+
+    __tablename__ = "fi_sovereign_frn_terms"
+    __table_args__ = {"schema": "reference"}
+
+    instrument_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("reference.instrument.id"), unique=True
+    )
+    spread: Mapped[Decimal] = mapped_column(Numeric(9, 6))  # percent, over the index rate
+    index_determination_rate: Mapped[Decimal] = mapped_column(Numeric(9, 6))  # percent, at auction
+    frequency_of_interest_payments: Mapped[str] = mapped_column(String(16))  # e.g. QUARTERLY
+    day_count_convention: Mapped[str] = mapped_column(String(32))
+    first_issue_date: Mapped[dt.date] = mapped_column(Date())
+    maturity_date: Mapped[dt.date] = mapped_column(Date())
