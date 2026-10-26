@@ -2045,3 +2045,185 @@ async def test_change_query_with_nothing_to_compare_falls_back_honestly(
     assert answer.facts is None
     assert answer.evidence_bundle_id is None
     assert "No recorded change" in answer.text
+
+
+async def _seed_approved_spec(session: AsyncSession, code: str) -> None:
+    """Unlike _seed_model_implied_price's test-namespaced spec (that
+    reply reads an already-computed CalculationResult directly, never
+    checking spec status), the spread/holding-period-return replies
+    compute on demand and check APPROVAL status first - so the test spec
+    must use the exact real production code they look up by.
+    """
+    session.add(
+        CalculationSpecification(code=code, version="1", status="APPROVED", description="test")
+    )
+    await session.flush()
+
+
+async def _seed_treasury_curve_point_for_spread(
+    session: AsyncSession, *, tenor_field: str, rate: str, valid_day: dt.date
+) -> None:
+    valid_range: Range[dt.datetime] = Range(
+        lower=dt.datetime.combine(valid_day, dt.time.min, tzinfo=dt.UTC),
+        upper=dt.datetime.combine(valid_day, dt.time.min, tzinfo=dt.UTC) + dt.timedelta(days=1),
+        bounds="[)",
+    )
+    session.add(
+        AcceptedFact(
+            subject_type=SUBJECT_TYPE_TREASURY_CURVE_POINT,
+            subject_id=treasury_curve_point_subject_id(tenor_field),
+            metric_id=METRIC_US_TREASURY_PAR_YIELD_CURVE, valid_range=valid_range,
+            knowledge_range=Range(lower=dt.datetime.now(dt.UTC), upper=None, bounds="[)"),
+            value={"tenor_field": tenor_field, "tenor_label": "10 Year", "par_yield_pct": rate},
+            status="ACTIVE",
+        )
+    )
+    await session.flush()
+
+
+async def _seed_uk_curve_point_for_spread(
+    session: AsyncSession, *, tenor: Decimal, rate: str, valid_day: dt.date
+) -> None:
+    valid_range: Range[dt.datetime] = Range(
+        lower=dt.datetime.combine(valid_day, dt.time.min, tzinfo=dt.UTC),
+        upper=dt.datetime.combine(valid_day, dt.time.min, tzinfo=dt.UTC) + dt.timedelta(days=1),
+        bounds="[)",
+    )
+    session.add(
+        AcceptedFact(
+            subject_type=SUBJECT_TYPE_YIELD_CURVE_POINT, subject_id=curve_point_subject_id(tenor),
+            metric_id=METRIC_UK_GILT_NOMINAL_SPOT_CURVE, valid_range=valid_range,
+            knowledge_range=Range(lower=dt.datetime.now(dt.UTC), upper=None, bounds="[)"),
+            value={"tenor_years": str(tenor), "spot_rate_pct": rate}, status="ACTIVE",
+        )
+    )
+    await session.flush()
+
+
+async def test_spread_query_returns_computed_cross_market_spread(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_approved_spec(db_session, "gilt_treasury_spread_v1")
+    await _seed_uk_curve_point_for_spread(
+        db_session, tenor=Decimal("10"), rate="5.3682", valid_day=dt.date(2026, 10, 21)
+    )
+    await _seed_treasury_curve_point_for_spread(
+        db_session, tenor_field="BC_10YEAR", rate="5.1300", valid_day=dt.date(2026, 10, 21)
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what's the 10 year gilt vs treasury spread?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert answer.facts.title == "10-year UK gilt vs US Treasury spread"
+    rows = dict(answer.facts.rows)
+    assert rows["Spread (basis points)"] == "+23.82"
+    assert answer.evidence_bundle_id is not None
+    assert "no AI model is involved" in (answer.note or "")
+
+
+async def test_spread_query_with_no_data_falls_back_honestly(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_approved_spec(db_session, "gilt_treasury_spread_v1")
+    # No curve data seeded at all.
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what's the us treasury spread?", principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert "can't compute" in answer.text
+
+
+async def _seed_market_close_price_on(
+    session: AsyncSession, *, instrument_id: uuid.UUID, trade_date: dt.date, dirty_price: str
+) -> None:
+    valid_range: Range[dt.datetime] = Range(
+        lower=dt.datetime.combine(trade_date, dt.time.min, tzinfo=dt.UTC),
+        upper=dt.datetime.combine(trade_date, dt.time.min, tzinfo=dt.UTC) + dt.timedelta(days=1),
+        bounds="[)",
+    )
+    session.add(
+        AcceptedFact(
+            subject_type="INSTRUMENT", subject_id=instrument_id,
+            metric_id=METRIC_GILT_MARKET_CLOSE_PRICE, valid_range=valid_range,
+            knowledge_range=Range(lower=dt.datetime.now(dt.UTC), upper=None, bounds="[)"),
+            value={
+                "instrument_name": "4 1/4% Treasury Stock 2036", "instrument_type": "Conventional",
+                "clean_price": str(Decimal(dirty_price) - Decimal("0.10")),
+                "dirty_price": dirty_price, "yield_pct": "4.612", "mod_duration": "7.912",
+                "accrued_interest": "0.10",
+            },
+            status="ACTIVE",
+        )
+    )
+    await session.flush()
+
+
+async def test_holding_period_return_query_returns_computed_return(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_approved_spec(db_session, "gilt_holding_period_return_v1")
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+    await _seed_market_close_price_on(
+        db_session, instrument_id=instrument.id, trade_date=dt.date(2026, 1, 1),
+        dirty_price="100.00",
+    )
+    await _seed_market_close_price_on(
+        db_session, instrument_id=instrument.id, trade_date=dt.date(2026, 12, 31),
+        dirty_price="101.50",
+    )
+
+    answer = await assemble_research_answer(
+        db_session,
+        query_text=(
+            f"what was my return on {SEED_GILT_ISIN} from 1 January 2026 to 31 December 2026?"
+        ),
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    rows = dict(answer.facts.rows)
+    assert rows["Holding-period return"] == "+5.75%"
+    assert rows["Coupon payments received"] == "2"
+    assert answer.evidence_bundle_id is not None
+
+
+async def test_holding_period_return_query_with_no_market_price_falls_back_honestly(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_approved_spec(db_session, "gilt_holding_period_return_v1")
+    instrument = await _seed_gilt(db_session)
+    await _seed_reference_fact(db_session, instrument.id)
+    await _seed_rights_profile(db_session, code="uk-dmo.gilts", actions=["display"])
+    # No market close price seeded at all.
+
+    answer = await assemble_research_answer(
+        db_session,
+        query_text=(
+            f"what was my return on {SEED_GILT_ISIN} from 1 January 2026 to 31 December 2026?"
+        ),
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert "no real market close price" in answer.text
+
+
+async def test_holding_period_return_query_without_isin_asks_for_one(
+    db_session: AsyncSession,
+) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="what was my return from 1 January 2026 to 31 December 2026?",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is None
+    assert "ISIN" in answer.text

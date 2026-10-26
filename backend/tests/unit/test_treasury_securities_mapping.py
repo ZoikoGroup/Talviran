@@ -12,6 +12,8 @@ from typing import Any
 
 from app.modules.market.connectors.treasury_securities.mapping import (
     RecordIssue,
+    TreasuryDiscountCandidate,
+    TreasuryFrnCandidate,
     TreasurySecurityCandidate,
     parse_auctioned_securities,
 )
@@ -89,7 +91,44 @@ def test_missing_cusip_is_a_record_issue() -> None:
     assert "missing cusip" in result[0].reason
 
 
-def test_bill_like_record_with_no_interest_rate_is_a_record_issue() -> None:
+def test_parse_real_bill_fixture() -> None:
+    records = _load("treasurydirect_auctioned_bill.json")
+    candidates = parse_auctioned_securities(records, queried_type="Bill")
+    discounts = [c for c in candidates if isinstance(c, TreasuryDiscountCandidate)]
+    issues = [c for c in candidates if isinstance(c, RecordIssue)]
+
+    assert issues == [], f"unexpected parse issues: {issues}"
+    assert len(discounts) == len(records)
+
+    first = next(c for c in discounts if c.cusip == "912797XA0")
+    assert first.security_term == "17-Week"
+    assert first.high_rate == Decimal("4.155")
+    assert first.investment_rate == Decimal("4.271")
+    assert first.is_cash_management_bill is False
+    assert first.maturity_date == dt.date(2027, 2, 23)
+
+
+def test_cash_management_bill_flag_is_parsed() -> None:
+    result = parse_auctioned_securities(
+        [
+            {
+                "cusip": "912797XX0",
+                "issueDate": "2026-10-27T00:00:00",
+                "maturityDate": "2026-11-10T00:00:00",
+                "highRate": "4.00",
+                "investmentRate": "4.08",
+                "cashManagementBill": "Yes",
+            }
+        ],
+        queried_type="Bill",
+    )
+    assert len(result) == 1
+    candidate = result[0]
+    assert isinstance(candidate, TreasuryDiscountCandidate)
+    assert candidate.is_cash_management_bill is True
+
+
+def test_bill_record_with_no_rate_fields_is_a_record_issue() -> None:
     result = parse_auctioned_securities(
         [
             {
@@ -103,7 +142,22 @@ def test_bill_like_record_with_no_interest_rate_is_a_record_issue() -> None:
     )
     assert len(result) == 1
     assert isinstance(result[0], RecordIssue)
-    assert "no interestRate" in result[0].reason
+    assert "highRate" in result[0].reason
+
+
+def test_parse_real_frn_fixture_via_frn_query() -> None:
+    records = _load("treasurydirect_auctioned_frn.json")
+    candidates = parse_auctioned_securities(records, queried_type="FRN")
+    frns = [c for c in candidates if isinstance(c, TreasuryFrnCandidate)]
+    issues = [c for c in candidates if isinstance(c, RecordIssue)]
+
+    assert issues == [], f"unexpected parse issues: {issues}"
+    assert len(frns) == len(records)
+
+    first = next(c for c in frns if c.cusip == "91282CRD5")
+    assert first.spread == Decimal("0.050")
+    assert first.index_determination_rate == Decimal("4.015")
+    assert first.frequency_of_interest_payments == "Quarterly"
 
 
 def test_unparseable_date_is_a_record_issue() -> None:

@@ -41,7 +41,9 @@ class ErrorCode(StrEnum):
 
 
 ERROR_STATUS: dict[ErrorCode, int] = {
-    ErrorCode.VALIDATION_ERROR: getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", status.HTTP_422_UNPROCESSABLE_ENTITY),
+    ErrorCode.VALIDATION_ERROR: getattr(
+        status, "HTTP_422_UNPROCESSABLE_CONTENT", status.HTTP_422_UNPROCESSABLE_ENTITY
+    ),
     ErrorCode.UNAUTHENTICATED: status.HTTP_401_UNAUTHORIZED,
     ErrorCode.FORBIDDEN: status.HTTP_403_FORBIDDEN,
     ErrorCode.NOT_FOUND: status.HTTP_404_NOT_FOUND,

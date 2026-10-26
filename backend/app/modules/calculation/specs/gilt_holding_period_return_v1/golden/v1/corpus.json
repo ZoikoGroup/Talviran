@@ -1,0 +1,74 @@
+{
+  "holding_period_return_cases": [
+    {
+      "id": "zero_coupons_short_window",
+      "coupon_per_100": "4.25",
+      "maturity_date": "2036-03-07",
+      "start_date": "2026-01-01",
+      "start_dirty_price": "100.00",
+      "end_date": "2026-02-01",
+      "end_dirty_price": "100.80",
+      "expected_coupon_payments_received": 0,
+      "expected_income_received": "0.00",
+      "expected_price_return": "0.80",
+      "expected_total_return_amount": "0.80",
+      "expected_holding_period_return_pct": "0.80"
+    },
+    {
+      "id": "one_coupon_price_down",
+      "coupon_per_100": "4.25",
+      "maturity_date": "2036-03-07",
+      "start_date": "2026-01-01",
+      "start_dirty_price": "100.00",
+      "end_date": "2026-06-01",
+      "end_dirty_price": "99.50",
+      "expected_coupon_payments_received": 1,
+      "expected_income_received": "2.125",
+      "expected_price_return": "-0.50",
+      "expected_total_return_amount": "1.625",
+      "expected_holding_period_return_pct": "1.625"
+    },
+    {
+      "id": "two_coupons_full_year",
+      "coupon_per_100": "4.25",
+      "maturity_date": "2036-03-07",
+      "start_date": "2026-01-01",
+      "start_dirty_price": "100.00",
+      "end_date": "2026-12-31",
+      "end_dirty_price": "101.50",
+      "expected_coupon_payments_received": 2,
+      "expected_income_received": "4.25",
+      "expected_price_return": "1.50",
+      "expected_total_return_amount": "5.75",
+      "expected_holding_period_return_pct": "5.75"
+    },
+    {
+      "id": "payment_exactly_on_end_date_is_included",
+      "coupon_per_100": "4.25",
+      "maturity_date": "2036-03-07",
+      "start_date": "2026-01-01",
+      "start_dirty_price": "100.00",
+      "end_date": "2026-03-07",
+      "end_dirty_price": "98.00",
+      "expected_coupon_payments_received": 1,
+      "expected_income_received": "2.125",
+      "expected_price_return": "-2.00",
+      "expected_total_return_amount": "0.125",
+      "expected_holding_period_return_pct": "0.125"
+    },
+    {
+      "id": "payment_exactly_on_start_date_is_excluded",
+      "coupon_per_100": "4.25",
+      "maturity_date": "2036-03-07",
+      "start_date": "2026-03-07",
+      "start_dirty_price": "100.00",
+      "end_date": "2026-09-07",
+      "end_dirty_price": "99.00",
+      "expected_coupon_payments_received": 1,
+      "expected_income_received": "2.125",
+      "expected_price_return": "-1.00",
+      "expected_total_return_amount": "1.125",
+      "expected_holding_period_return_pct": "1.125"
+    }
+  ]
+}

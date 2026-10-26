@@ -55,7 +55,15 @@ from app.modules.calculation.models import (
     CalculationSpecification,
 )
 from app.modules.calculation.pipeline.curve_pricing import METRIC_MODEL_IMPLIED_CLEAN_PRICE
+from app.modules.calculation.pipeline.gilt_holding_period_return_pricing import (
+    HoldingPeriodReturnComputed,
+    compute_and_persist_holding_period_return,
+)
 from app.modules.calculation.pipeline.gilt_risk_metrics_pricing import METRIC_GILT_RISK_METRICS
+from app.modules.calculation.pipeline.gilt_treasury_spread_pricing import (
+    SpreadComputed,
+    compute_and_persist_gilt_treasury_spread,
+)
 from app.modules.calculation.queries import latest_calculation_result
 from app.modules.evidence.embeddings.gemini_client import GeminiEmbeddingError
 from app.modules.evidence.models import (
@@ -594,6 +602,48 @@ def _mentioned_historical_cutoff(text: str) -> dt.date | None:
     if not _HISTORICAL_TRIGGER_PATTERN.search(text):
         return None
     return _parse_mentioned_date(text)
+
+
+_FROM_TO_DATE_PATTERN = re.compile(r"from\s+(.+?)\s+to\s+(.+?)(?:[,.?]|$)", re.I)
+
+
+def _mentioned_date_range(text: str) -> tuple[dt.date, dt.date] | None:
+    """Only the explicit "from <date> to <date>" phrasing - deliberately
+    narrower than scanning for any two dates anywhere in the text, which
+    would risk pairing two unrelated dates mentioned for other reasons.
+    end_date must be strictly after start_date, or this isn't a valid
+    range at all (never silently swapped).
+    """
+    match = _FROM_TO_DATE_PATTERN.search(text)
+    if match is None:
+        return None
+    start = _parse_mentioned_date(match.group(1))
+    end = _parse_mentioned_date(match.group(2))
+    if start is None or end is None or end <= start:
+        return None
+    return start, end
+
+
+_SPREAD_TRIGGER_PATTERN = re.compile(r"\bspread\b", re.I)
+_SPREAD_TENOR_PATTERN = re.compile(r"\b(1|2|5|10|20|30)[\s-]?(?:year|yr|y)\b", re.I)
+
+
+def _mentioned_spread_tenor(text: str) -> int:
+    """Defaults to the 10-year point - the single most commonly quoted
+    benchmark tenor in cross-market comparisons - when the question names
+    no specific one (e.g. "what's the gilt-treasury spread?").
+    """
+    match = _SPREAD_TENOR_PATTERN.search(text)
+    return int(match.group(1)) if match else 10
+
+
+_HOLDING_PERIOD_RETURN_TRIGGER_PATTERN = re.compile(r"\breturn\b", re.I)
+
+
+def _mentions_holding_period_return(text: str) -> bool:
+    return bool(
+        _HOLDING_PERIOD_RETURN_TRIGGER_PATTERN.search(text)
+    ) and _mentioned_date_range(text) is not None
 
 
 def _mentioned_macro_series(text: str) -> tuple[str, str] | None:
@@ -1542,6 +1592,191 @@ async def _change_detection_reply(session: AsyncSession, query_text: str) -> Res
             citation_url="https://db.nomics.world/",
         )
     return _default_reply(query_text)
+
+
+async def _approved_spec_id(session: AsyncSession, code: str) -> uuid.UUID | None:
+    spec = (
+        await session.execute(
+            select(CalculationSpecification).where(
+                CalculationSpecification.code == code,
+                CalculationSpecification.status == "APPROVED",
+            )
+        )
+    ).scalar_one_or_none()
+    return spec.id if spec is not None else None
+
+
+async def _gilt_treasury_spread_reply(session: AsyncSession, query_text: str) -> ResearchAnswer:
+    """Computed synchronously, inline — unlike the job-queued calc specs
+    (model-implied price, risk metrics), a spread is a single subtraction
+    of two already-published, already-reconciled numbers, cheap enough
+    that there's no real latency reason to defer it to a background job.
+    """
+    tenor_years = _mentioned_spread_tenor(query_text)
+    spec_id = await _approved_spec_id(session, "gilt_treasury_spread_v1")
+    if spec_id is None:
+        return _default_reply(f"UK gilt vs US Treasury {tenor_years}Y spread")
+
+    result = await compute_and_persist_gilt_treasury_spread(
+        session, tenor_years=tenor_years, calculation_specification_id=spec_id
+    )
+    if not isinstance(result, SpreadComputed):
+        return ResearchAnswer(
+            text=(
+                f"I can't compute the {tenor_years}-year UK gilt vs US Treasury spread "
+                f"yet: {result.reason}."
+            ),
+            facts=None, citations=[], note=None,
+            allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE, evidence_bundle_id=None,
+        )
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION", knowledge_time=dt.datetime.now(dt.UTC),
+        status="ASSEMBLING",
+    )
+    session.add(bundle)
+    await session.flush()
+    session.add(
+        EvidenceMember(
+            evidence_bundle_id=bundle.id, kind="CALCULATION",
+            calculation_result_id=result.calculation_result_id,
+        )
+    )
+
+    same_date = result.uk_as_of == result.us_as_of
+    dates_text = (
+        f"both as of {result.uk_as_of.isoformat()}"
+        if same_date
+        else f"UK as of {result.uk_as_of.isoformat()}, US as of {result.us_as_of.isoformat()}"
+    )
+    direction = "wider" if result.spread_bp >= 0 else "tighter"
+    return ResearchAnswer(
+        text=(
+            f"The {tenor_years}-year UK gilt yield is currently {abs(result.spread_bp):.2f}bp "
+            f"{direction} than the matching US Treasury yield ({dates_text})."
+        ),
+        facts=FactTable(
+            title=f"{tenor_years}-year UK gilt vs US Treasury spread",
+            rows=[
+                ("Spread (percentage points)", f"{result.spread_pct:+.4f}"),
+                ("Spread (basis points)", f"{result.spread_bp:+.2f}"),
+                ("UK gilt curve as of", result.uk_as_of.isoformat()),
+                ("US Treasury curve as of", result.us_as_of.isoformat()),
+            ],
+        ),
+        citations=[
+            Citation(
+                label="Calculated by Talvrin — UK gilt curve minus US Treasury curve",
+                meta="Talvrin's own cross-market comparison, not a published series",
+                pill="SOURCE",
+                kind="book",
+            )
+        ],
+        note=(
+            "A straightforward subtraction of two already-published, reconciled "
+            "benchmark yields — no AI model is involved in this calculation."
+        ),
+        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        evidence_bundle_id=bundle.id,
+    )
+
+
+async def _holding_period_return_reply(session: AsyncSession, query_text: str) -> ResearchAnswer:
+    isin = _mentioned_isin(query_text)
+    if isin is None:
+        return ResearchAnswer(
+            text=(
+                "I can work out a holding-period return, but I need to know which gilt — "
+                "include its ISIN (e.g. GB0032452392) along with the two dates."
+            ),
+            facts=None, citations=[], note=None,
+            allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION, evidence_bundle_id=None,
+        )
+
+    date_range = _mentioned_date_range(query_text)
+    assert date_range is not None  # _mentions_holding_period_return already checked this
+    start_date, end_date = date_range
+
+    if not await _display_allowed(session, "uk-dmo.gilts"):
+        return _default_reply(f"holding-period return for {isin}")
+
+    resolved = await resolve_instrument_by_isin(session, isin)
+    if isinstance(resolved, UnresolvedIdentity):
+        return ResearchAnswer(
+            text=(
+                f"I don't have {isin} in the platform's reference data, so I can't "
+                "compute a holding-period return for it."
+            ),
+            facts=None, citations=[], note=None,
+            allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION, evidence_bundle_id=None,
+        )
+
+    spec_id = await _approved_spec_id(session, "gilt_holding_period_return_v1")
+    if spec_id is None:
+        return _default_reply(f"holding-period return for {isin}")
+
+    result = await compute_and_persist_holding_period_return(
+        session, instrument_id=resolved.instrument_id, start_date=start_date, end_date=end_date,
+        calculation_specification_id=spec_id,
+    )
+    if not isinstance(result, HoldingPeriodReturnComputed):
+        return ResearchAnswer(
+            text=(
+                f"I can't compute a holding-period return for {isin} between "
+                f"{start_date.isoformat()} and {end_date.isoformat()} yet: {result.reason}. "
+                "This calculation only uses real market close prices, never a model estimate."
+            ),
+            facts=None, citations=[], note=None,
+            allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE, evidence_bundle_id=None,
+        )
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION", knowledge_time=dt.datetime.now(dt.UTC),
+        status="ASSEMBLING",
+    )
+    session.add(bundle)
+    await session.flush()
+    session.add(
+        EvidenceMember(
+            evidence_bundle_id=bundle.id, kind="CALCULATION",
+            calculation_result_id=result.calculation_result_id,
+        )
+    )
+
+    return ResearchAnswer(
+        text=(
+            f"Holding {isin} from {start_date.isoformat()} to {end_date.isoformat()} "
+            f"returned {result.holding_period_return_pct:+.2f}% — "
+            f"{result.price_return:+.2f} price return plus {result.income_received:.2f} "
+            f"in coupon income ({result.coupon_payments_received} payment"
+            f"{'s' if result.coupon_payments_received != 1 else ''} received), "
+            "on real Tradeweb market close prices at both dates."
+        ),
+        facts=FactTable(
+            title=f"{isin} holding-period return, {start_date.isoformat()} to {end_date.isoformat()}",
+            rows=[
+                ("Coupon payments received", str(result.coupon_payments_received)),
+                ("Income received", f"{result.income_received:.4f}"),
+                ("Price return", f"{result.price_return:+.4f}"),
+                ("Total return amount", f"{result.total_return_amount:+.4f}"),
+                ("Holding-period return", f"{result.holding_period_return_pct:+.2f}%"),
+            ],
+        ),
+        citations=[
+            Citation(
+                label="Calculated by Talvrin — standard holding-period-return formula",
+                meta="Price return + coupon income, over starting dirty price",
+                pill="SOURCE",
+                kind="book",
+            )
+        ],
+        note=(
+            "Both boundary prices are real Tradeweb market close quotes, never a model "
+            "estimate — no AI model is involved in this calculation."
+        ),
+        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        evidence_bundle_id=bundle.id,
+    )
 
 
 def _default_reply(query: str) -> ResearchAnswer:
@@ -2672,6 +2907,16 @@ async def assemble_research_answer(
         # only ever show today's single current state, never a before/
         # after comparison.
         answer = await _change_detection_reply(session, query_text)
+    elif _mentions_holding_period_return(query_text):
+        # Checked before _mentions_isin/_mentions_gilt: a return question
+        # ("what was my return on GB0032452392 from ... to ...?") still
+        # names an ISIN and the word "gilt", and those branches only ever
+        # show current reference facts, never a two-date return.
+        answer = await _holding_period_return_reply(session, query_text)
+    elif _SPREAD_TRIGGER_PATTERN.search(query_text) and (
+        _mentions_treasury(query_text) or _mentions_gilt(query_text)
+    ):
+        answer = await _gilt_treasury_spread_reply(session, query_text)
     elif _mentions_accrued(query_text):
         answer = await _document_backed_accrued_reply(session) or _accrued_reply()
     elif _mentions_treasury(query_text):

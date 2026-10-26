@@ -1,6 +1,6 @@
-"""The TreasuryDirect auctioned-securities connector — covers Note, Bond
-and TIPS queries (see mapping.py's own docstring for why Bills/FRNs are
-out of scope here).
+"""The TreasuryDirect auctioned-securities connector — covers Note, Bond,
+TIPS, Bill and FRN queries (see mapping.py's own docstring for how each
+maps to its own terms-adapter shape).
 
 Deliberately does NOT resolve identity or write reference.instrument/
 source_observation rows — that split is the same one DMO gilts uses:
@@ -27,6 +27,8 @@ from app.modules.market.connectors.treasury_securities.client import (
 )
 from app.modules.market.connectors.treasury_securities.mapping import (
     RecordIssue,
+    TreasuryDiscountCandidate,
+    TreasuryFrnCandidate,
     TreasurySecurityCandidate,
     parse_auctioned_securities,
 )
@@ -93,7 +95,11 @@ class TreasuryDirectSecuritiesConnector:
             return CheckResult(valid=False, reasons=("records missing expected 'cusip' field",))
         return CheckResult(valid=True)
 
-    def parse(self, payload: AcquiredPayload) -> list[TreasurySecurityCandidate | RecordIssue]:
+    def parse(
+        self, payload: AcquiredPayload
+    ) -> list[
+        TreasurySecurityCandidate | TreasuryDiscountCandidate | TreasuryFrnCandidate | RecordIssue
+    ]:
         records = json.loads(payload.raw_bytes)
         return parse_auctioned_securities(records, queried_type=self._security_type)
 

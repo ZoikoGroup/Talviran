@@ -19,7 +19,11 @@ from typing import Any
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.market.connectors.treasury_securities.mapping import TreasurySecurityCandidate
+from app.modules.market.connectors.treasury_securities.mapping import (
+    TreasuryDiscountCandidate,
+    TreasuryFrnCandidate,
+    TreasurySecurityCandidate,
+)
 from app.modules.market.pipeline.identity_resolution import (
     ResolvedIdentity,
     resolve_instrument_by_alias,
@@ -62,10 +66,36 @@ def treasury_security_semantic_observation_key(
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-async def ingest_treasury_security_reference_candidate(
+def treasury_discount_candidate_value(candidate: TreasuryDiscountCandidate) -> dict[str, Any]:
+    return {
+        "security_type": "Bill",
+        "security_term": candidate.security_term,
+        "high_rate": str(candidate.high_rate),
+        "investment_rate": str(candidate.investment_rate),
+        "is_cash_management_bill": candidate.is_cash_management_bill,
+        "maturity_date": candidate.maturity_date.isoformat(),
+        "issue_date": candidate.issue_date.isoformat(),
+    }
+
+
+def treasury_frn_candidate_value(candidate: TreasuryFrnCandidate) -> dict[str, Any]:
+    return {
+        "security_type": "FRN",
+        "security_term": candidate.security_term,
+        "spread": str(candidate.spread),
+        "index_determination_rate": str(candidate.index_determination_rate),
+        "frequency_of_interest_payments": candidate.frequency_of_interest_payments,
+        "maturity_date": candidate.maturity_date.isoformat(),
+        "issue_date": candidate.issue_date.isoformat(),
+    }
+
+
+async def _ingest_treasury_reference_candidate(
     session: AsyncSession,
     *,
-    candidate: TreasurySecurityCandidate,
+    cusip: str,
+    issue_date: dt.date,
+    value: dict[str, Any],
     source_artifact_id: uuid.UUID,
     source_code: str,
     dataset_code: str,
@@ -78,24 +108,18 @@ async def ingest_treasury_security_reference_candidate(
             reason=f"rights check denied 'store' for profile {rights_profile_id}"
         )
 
-    identity = await resolve_instrument_by_alias(
-        session, alias_type="CUSIP", alias_value=candidate.cusip
-    )
+    identity = await resolve_instrument_by_alias(session, alias_type="CUSIP", alias_value=cusip)
     if not isinstance(identity, ResolvedIdentity):
         return TreasurySecurityIngestSkipped(reason=identity.reason)
 
     key = treasury_security_semantic_observation_key(
-        source_code=source_code,
-        dataset_code=dataset_code,
-        cusip=candidate.cusip,
-        issue_date=candidate.issue_date,
+        source_code=source_code, dataset_code=dataset_code, cusip=cusip, issue_date=issue_date
     )
-    value = treasury_security_candidate_value(candidate)
 
     # Reference terms are valid from issuance onward, indefinitely - not
     # from "when we happened to observe them." Mirrors stages.py's own
     # gilt-reference-terms reasoning exactly.
-    valid_from_dt = dt.datetime.combine(candidate.issue_date, dt.time.min, tzinfo=dt.UTC)
+    valid_from_dt = dt.datetime.combine(issue_date, dt.time.min, tzinfo=dt.UTC)
 
     outcome = await ingest_and_reconcile(
         session,
@@ -107,7 +131,7 @@ async def ingest_treasury_security_reference_candidate(
         metric_id=METRIC_TREASURY_SECURITY_REFERENCE_TERMS,
         semantic_observation_key=key,
         value=value,
-        valid_from=candidate.issue_date,
+        valid_from=issue_date,
         valid_range=Range(lower=valid_from_dt, upper=None, bounds="[)"),
         fetched_at=fetched_at,
         policy=TREASURY_SECURITY_REFERENCE_TERMS_POLICY,
@@ -115,4 +139,73 @@ async def ingest_treasury_security_reference_candidate(
 
     return TreasurySecurityIngestResult(
         observation_id=outcome.observation_id, reconciliation=outcome.reconciliation
+    )
+
+
+async def ingest_treasury_security_reference_candidate(
+    session: AsyncSession,
+    *,
+    candidate: TreasurySecurityCandidate,
+    source_artifact_id: uuid.UUID,
+    source_code: str,
+    dataset_code: str,
+    rights_profile_id: uuid.UUID,
+    fetched_at: dt.datetime,
+) -> TreasurySecurityIngestResult | TreasurySecurityIngestSkipped:
+    return await _ingest_treasury_reference_candidate(
+        session,
+        cusip=candidate.cusip,
+        issue_date=candidate.issue_date,
+        value=treasury_security_candidate_value(candidate),
+        source_artifact_id=source_artifact_id,
+        source_code=source_code,
+        dataset_code=dataset_code,
+        rights_profile_id=rights_profile_id,
+        fetched_at=fetched_at,
+    )
+
+
+async def ingest_treasury_discount_reference_candidate(
+    session: AsyncSession,
+    *,
+    candidate: TreasuryDiscountCandidate,
+    source_artifact_id: uuid.UUID,
+    source_code: str,
+    dataset_code: str,
+    rights_profile_id: uuid.UUID,
+    fetched_at: dt.datetime,
+) -> TreasurySecurityIngestResult | TreasurySecurityIngestSkipped:
+    return await _ingest_treasury_reference_candidate(
+        session,
+        cusip=candidate.cusip,
+        issue_date=candidate.issue_date,
+        value=treasury_discount_candidate_value(candidate),
+        source_artifact_id=source_artifact_id,
+        source_code=source_code,
+        dataset_code=dataset_code,
+        rights_profile_id=rights_profile_id,
+        fetched_at=fetched_at,
+    )
+
+
+async def ingest_treasury_frn_reference_candidate(
+    session: AsyncSession,
+    *,
+    candidate: TreasuryFrnCandidate,
+    source_artifact_id: uuid.UUID,
+    source_code: str,
+    dataset_code: str,
+    rights_profile_id: uuid.UUID,
+    fetched_at: dt.datetime,
+) -> TreasurySecurityIngestResult | TreasurySecurityIngestSkipped:
+    return await _ingest_treasury_reference_candidate(
+        session,
+        cusip=candidate.cusip,
+        issue_date=candidate.issue_date,
+        value=treasury_frn_candidate_value(candidate),
+        source_artifact_id=source_artifact_id,
+        source_code=source_code,
+        dataset_code=dataset_code,
+        rights_profile_id=rights_profile_id,
+        fetched_at=fetched_at,
     )

@@ -360,6 +360,40 @@ async def seed() -> None:
                 "- stays DRAFT until it is."
             ),
         )
+        await _seed_calculation_specification(
+            session,
+            code="gilt_treasury_spread_v1",
+            version="1",
+            description=(
+                "UK gilt vs US Treasury cross-market yield spread at matching "
+                "benchmark tenors. Talvrin's own comparison methodology - "
+                "neither market publishes a combined cross-market series."
+            ),
+        )
+        await _seed_calculation_specification(
+            session,
+            code="gilt_holding_period_return_v1",
+            version="1",
+            description=(
+                "Conventional-gilt holding-period return between two dates "
+                "(price return + coupon income received, over starting dirty "
+                "price). Standard textbook definition; no DMO-published source "
+                "exists for returns."
+            ),
+        )
+        await _seed_calculation_specification(
+            session,
+            code="treasury_price_from_curve_v1",
+            version="1",
+            description=(
+                "Model-implied US Treasury Note/Bond pricing from the Treasury "
+                "par-yield curve, discounting the security's own cash flows. "
+                "No per-security Treasury price source exists at all - this is "
+                "the only priced view of a Treasury Note/Bond this platform can "
+                "currently produce. TIPS/Bill/FRN are out of scope - see the "
+                "spec's own docstring."
+            ),
+        )
         await session.commit()
     print("Seed complete.")
 

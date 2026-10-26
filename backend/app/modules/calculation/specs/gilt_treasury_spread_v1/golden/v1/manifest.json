@@ -1,0 +1,6 @@
+{
+  "version": "v1",
+  "sha256": "4df390170c97eac390aa1f40c5ff0539fd843ead9170bcf6f5fa0d5941a64053",
+  "reason": "Initial golden corpus: 6 hand-built arithmetic cases covering positive/negative/zero/fractional spreads - no DMO or TreasuryDirect source exists for a cross-market comparison, this is Talvrin's own methodology (plain subtraction, standard bp convention)",
+  "created_at": "2026-10-23T04:48:37.315821+00:00"
+}
