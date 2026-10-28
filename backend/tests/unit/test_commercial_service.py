@@ -66,6 +66,7 @@ class _MockRow:
     current_period_end = None
     name = "Test Account"
     stripe_customer_id = None
+    stripe_subscription_id = None
 
 
 class _MockScalarResult:

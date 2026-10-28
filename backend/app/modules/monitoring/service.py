@@ -231,7 +231,7 @@ async def list_my_rules(
     )
     stmt = select(MonitoringRuleVersion).join(
         MonitoringRule, MonitoringRule.current_rule_version_id == MonitoringRuleVersion.id
-    )
+    ).where(MonitoringRuleVersion.status == STATUS_ARMED)
     return await paginate_by_id(
         session,
         stmt,
@@ -255,3 +255,24 @@ async def get_my_rule(
     if rule is None or rule.current_rule_version_id is None:
         return None
     return await session.get(MonitoringRuleVersion, rule.current_rule_version_id)
+
+
+async def delete_my_rule(
+    session: AsyncSession, *, rule_id: uuid.UUID, principal_id: uuid.UUID, account_id: uuid.UUID
+) -> bool:
+    await _enforce_access(
+        session,
+        principal_id=principal_id,
+        account_id=account_id,
+        capability_code=MONITORING_RULES_READ_CAPABILITY,
+    )
+    rule = await session.get(MonitoringRule, rule_id)
+    if rule is None or rule.current_rule_version_id is None:
+        return False
+    version = await session.get(MonitoringRuleVersion, rule.current_rule_version_id)
+    if version is None:
+        return False
+    from app.modules.monitoring.models import STATUS_RETIRED
+    version.status = STATUS_RETIRED
+    await session.flush()
+    return True

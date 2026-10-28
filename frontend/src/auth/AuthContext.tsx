@@ -86,6 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Cleared even if the network call fails - a caller choosing to sign
       // out must end up signed out locally regardless.
       clearDisplayNameOverride()
+      try { sessionStorage.removeItem('talvrin_active_view') } catch {}
       setSession(null)
     }
   }, [])
@@ -95,6 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await api.deleteAccount()
     } finally {
       clearDisplayNameOverride()
+      try { sessionStorage.removeItem('talvrin_active_view') } catch {}
       setSession(null)
     }
   }, [])

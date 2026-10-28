@@ -62,11 +62,15 @@ class AccountUsage(BaseModel):
 
 class AccountEntitlement(BaseModel):
     account_id: str
+    account_name: str | None = None
     plan_tier: PlanTier
     billing_cadence: BillingCadence
     is_active: bool
     current_period_end: str
     seat_count: int
+    stripe_customer_id: str | None = None
+    stripe_subscription_id: str | None = None
+    stripe_configured: bool = False
     quotas: QuotaLimits
     usage: AccountUsage
 
@@ -85,3 +89,9 @@ class CheckoutSessionResponse(BaseModel):
     plan_tier: PlanTier
     billing_cadence: BillingCadence
     total_amount_usd: int
+
+
+class UpdatePlanRequest(BaseModel):
+    plan_tier: PlanTier
+    billing_cadence: BillingCadence = BillingCadence.ANNUAL
+    additional_seats: int = Field(default=0, ge=0)

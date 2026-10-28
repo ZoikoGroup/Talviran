@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 
 export interface CustomAlertTrigger {
   id: string
+  ruleId?: string
   assetSymbol: string
   assetName: string
   direction: 'CROSSES_ABOVE' | 'CROSSES_BELOW'
@@ -156,7 +157,7 @@ export default function SetAlertModal({
           // ignore
         }
 
-        // Also register to backend rule if sovereign instrument
+        // Register continuous rule in the backend monitoring engine (MON-001)
         try {
           const input: CreateRuleInput = {
             metricId: 'UK_GILT_NOMINAL_SPOT_CURVE',
@@ -164,9 +165,12 @@ export default function SetAlertModal({
             thresholdValue: threshold.replace(/[^0-9.]/g, ''),
             tenorYears: '10',
           }
-          await createRule(input)
+          const rule = await createRule(input)
+          if (rule && rule.id) {
+            newAlert.ruleId = rule.id
+          }
         } catch {
-          // ignore fallback
+          // fallback
         }
 
         if (

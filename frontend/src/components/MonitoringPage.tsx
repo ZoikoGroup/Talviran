@@ -18,6 +18,7 @@ import {
   ApiError,
   type Alert as ApiAlert,
   listAlerts,
+  deleteRule,
   dispatchTriggeredAlert,
 } from '@/lib/api'
 
@@ -36,6 +37,7 @@ type Tab = 'active_alerts' | 'history'
 
 export interface CustomAlertTrigger {
   id: string
+  ruleId?: string
   assetSymbol: string
   assetName: string
   direction: 'CROSSES_ABOVE' | 'CROSSES_BELOW'
@@ -343,12 +345,21 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
     setModifyingAlert(alert)
   }
 
-  const handleDeleteAlert = (id: string) => {
+  const handleDeleteAlert = async (id: string) => {
+    const targetAlert = customAlerts.find((a) => a.id === id)
+    if (targetAlert?.ruleId) {
+      try {
+        await deleteRule(targetAlert.ruleId)
+      } catch {
+        // rule deletion error handled silently
+      }
+    }
     const updated = customAlerts.filter((a) => a.id !== id)
     saveAlertsToStorage(updated)
     if (modifyingAlert?.id === id) {
       setModifyingAlert(null)
     }
+    toast.success('Alert trigger removed')
   }
 
   return (

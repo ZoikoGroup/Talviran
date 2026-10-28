@@ -530,6 +530,11 @@ export const listRules = (cursor?: string): Promise<Page<Rule>> =>
     hasMore: p.has_more,
   }))
 
+
+export const deleteRule = (ruleId: string): Promise<void> =>
+  apiFetch<void>(`/api/v1/monitoring-rules/${encodeURIComponent(ruleId)}`, {
+    method: 'DELETE',
+  })
 interface AlertWire {
   id: string
   rule_id: string
@@ -889,11 +894,15 @@ export interface AccountUsage {
 
 export interface AccountEntitlement {
   account_id: string
+  account_name?: string | null
   plan_tier: PlanTier
   billing_cadence: BillingCadence
   is_active: boolean
   current_period_end: string
   seat_count: number
+  stripe_customer_id?: string | null
+  stripe_subscription_id?: string | null
+  stripe_configured?: boolean
   quotas: QuotaLimits
   usage: AccountUsage
 }
@@ -946,4 +955,14 @@ export const startCheckoutSession = (
 export const getBillingPortalSession = (): Promise<{ portal_url: string }> =>
   apiFetch<{ portal_url: string }>('/api/v1/commercial/portal', {
     method: 'POST',
+  })
+
+export const updateAccountPlan = (payload: {
+  plan_tier: PlanTier
+  billing_cadence?: BillingCadence
+  additional_seats?: number
+}): Promise<AccountEntitlement> =>
+  apiFetch<AccountEntitlement>('/api/v1/commercial/plan', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
   })

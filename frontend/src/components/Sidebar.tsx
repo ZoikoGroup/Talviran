@@ -1116,56 +1116,7 @@ export default function Sidebar({
             </>
           ) : (
             <>
-              {menu.target.kind === 'chat' && (
-                <>
-                  <div className="px-2.5 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-widest text-sidebar-muted">
-                    Move to project
-                  </div>
 
-                  {projects.length === 0 && (
-                    <p className="px-2.5 pb-1.5 text-[12px] leading-relaxed text-sidebar-muted/70">
-                      No projects yet — add one from the Projects tab.
-                    </p>
-                  )}
-
-                  {projects.map((p) => {
-                    const chat = menu.target.kind === 'chat' ? menu.target.chat : null
-                    const current = chat?.projectId === p.id
-                    return (
-                      <button
-                        key={p.id}
-                        role="menuitem"
-                        onClick={() => chat && !current && move(chat.id, p.id)}
-                        className={cn(
-                          'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors',
-                          current
-                            ? 'text-sidebar-foreground'
-                            : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground'
-                        )}
-                      >
-                        <Folder className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                        <span className="truncate">{p.name}</span>
-                        {current && <Check className="ml-auto h-3.5 w-3.5 shrink-0" />}
-                      </button>
-                    )
-                  })}
-
-                  {menu.target.chat.projectId && (
-                    <button
-                      role="menuitem"
-                      onClick={() =>
-                        menu.target.kind === 'chat' && move(menu.target.chat.id, null)
-                      }
-                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                    >
-                      <FolderMinus className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                      Remove from project
-                    </button>
-                  )}
-
-                  <div className="my-1 h-px bg-sidebar-border" />
-                </>
-              )}
 
               <button
                 role="menuitem"

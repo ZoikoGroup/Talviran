@@ -241,7 +241,8 @@ async def resolve_account_entitlement(
     acc_row = (
         await db.execute(
             text(
-                "SELECT plan_tier, billing_cadence, seat_count, current_period_end "
+                "SELECT name, plan_tier, billing_cadence, seat_count, current_period_end, "
+                "stripe_customer_id, stripe_subscription_id "
                 "FROM identity.account WHERE id = :acc"
             ),
             {"acc": account_id},
@@ -281,13 +282,20 @@ async def resolve_account_entitlement(
     else:
         period_end = (month_start + dt.timedelta(days=365)).isoformat()
 
+    from app.core.config import get_settings
+    is_stripe_configured = bool(get_settings().stripe_secret_key)
+
     return AccountEntitlement(
         account_id=str(account_id),
+        account_name=acc_row.name if acc_row else None,
         plan_tier=plan_tier,
         billing_cadence=cadence,
         is_active=True,
         current_period_end=period_end,
         seat_count=seat_count,
+        stripe_customer_id=acc_row.stripe_customer_id if acc_row else None,
+        stripe_subscription_id=acc_row.stripe_subscription_id if acc_row else None,
+        stripe_configured=is_stripe_configured,
         quotas=plan_def.limits,
         usage=usage,
     )
@@ -462,18 +470,44 @@ async def create_billing_portal_session(
     ).first()
 
     customer_id = acc_row.stripe_customer_id if acc_row else None
-    if settings.stripe_secret_key and customer_id:
-        stripe.api_key = settings.stripe_secret_key
-        try:
-            portal_session = stripe.billing_portal.Session.create(
-                customer=customer_id,
-                return_url=ret_url,
-            )
-            return str(portal_session.url)
-        except Exception:
-            pass
+    if not settings.stripe_secret_key:
+        raise ValueError(
+            "Stripe Secret Key (STRIPE_SECRET_KEY) is not configured in environment. "
+            "Provide STRIPE_SECRET_KEY in backend/.env to access the live Customer Portal."
+        )
 
-    return f"{settings.frontend_url}/#settings"
+    stripe.api_key = settings.stripe_secret_key
+
+    # Validate if existing customer_id is a real customer in this Stripe account
+    valid_customer = False
+    if customer_id and not customer_id.startswith("cus_test_"):
+        try:
+            retrieved = stripe.Customer.retrieve(customer_id)
+            if not getattr(retrieved, "deleted", False):
+                valid_customer = True
+        except Exception:
+            valid_customer = False
+
+    if not valid_customer:
+        cust_params: dict[str, Any] = {
+            "name": acc_row.name if acc_row and acc_row.name else "Talvrin Account",
+            "metadata": {"account_id": str(account_id)},
+        }
+        if acc_row and acc_row.name and "@" in str(acc_row.name):
+            cust_params["email"] = str(acc_row.name)
+        cust = stripe.Customer.create(**cust_params)
+        customer_id = str(cust.id)
+        await db.execute(
+            text("UPDATE identity.account SET stripe_customer_id = :cid WHERE id = :aid"),
+            {"cid": customer_id, "aid": account_id},
+        )
+        await db.commit()
+
+    portal_session = stripe.billing_portal.Session.create(
+        customer=str(customer_id),
+        return_url=ret_url,
+    )
+    return str(portal_session.url)
 
 
 async def handle_stripe_webhook_event(db: AsyncSession, event_data: dict[str, Any]) -> bool:
@@ -515,6 +549,39 @@ async def handle_stripe_webhook_event(db: AsyncSession, event_data: dict[str, An
                 return True
             except Exception:
                 await db.rollback()
-                return False
+            return True
 
-    return True
+    return False
+
+
+async def update_account_plan(
+    db: AsyncSession,
+    account_id: uuid.UUID,
+    plan_tier: PlanTier,
+    billing_cadence: BillingCadence,
+    additional_seats: int = 0,
+) -> AccountEntitlement:
+    """Updates account plan_tier, cadence, and seat count directly in database."""
+    plan_def = PRICE_BOOK.get(plan_tier, PRICE_BOOK[PlanTier.PROFESSIONAL])
+    total_seats = plan_def.seats_included + max(0, additional_seats)
+    now = dt.datetime.now(dt.UTC)
+    period_days = 365 if billing_cadence == BillingCadence.ANNUAL else 30
+    period_end = now + dt.timedelta(days=period_days)
+
+    await db.execute(
+        text(
+            "UPDATE identity.account "
+            "SET plan_tier = :pt, billing_cadence = :bc, seat_count = :sc, "
+            "current_period_end = :cpe "
+            "WHERE id = :aid"
+        ),
+        {
+            "pt": plan_tier.value,
+            "bc": billing_cadence.value,
+            "sc": total_seats,
+            "cpe": period_end,
+            "aid": account_id,
+        },
+    )
+    await db.commit()
+    return await resolve_account_entitlement(db, account_id)

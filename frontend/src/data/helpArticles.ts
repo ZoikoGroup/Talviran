@@ -145,13 +145,12 @@ export const ARTICLES: Article[] = [
   },
 
   {
-    id: 'chats-projects',
+    id: 'chats',
     category: 'Organising research',
-    question: 'How do chats and projects work?',
+    question: 'How do chats work?',
     answer: [
       'Each question starts a chat, and chats are listed in the sidebar grouped by when you started them — today, yesterday, and so on.',
-      'Projects group related chats: a curve you are tracking, an issuer, a client mandate. Create one from the Projects tab, then either start a chat inside it or move an existing chat in — drag it onto the project, or use the ⋯ menu on the chat.',
-      'Every chat and project can be renamed or deleted from that same ⋯ menu.',
+      'Every chat can be renamed or deleted from the ⋯ menu beside its name in the sidebar.',
     ],
   },
   {

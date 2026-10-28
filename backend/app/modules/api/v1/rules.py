@@ -103,3 +103,15 @@ async def get_rule(rule_id: uuid.UUID, session: SessionDep, identity: IdentityDe
     if version is None:
         raise _not_found()
     return _rule_out(version)
+
+@router.delete('/{rule_id}', status_code=status.HTTP_204_NO_CONTENT)
+async def delete_rule(rule_id: uuid.UUID, session: SessionDep, identity: IdentityDep) -> None:
+    ok = await service.delete_my_rule(
+        session,
+        rule_id=rule_id,
+        principal_id=identity.principal_id,
+        account_id=identity.account_id,
+    )
+    if not ok:
+        raise _not_found()
+    await session.commit()

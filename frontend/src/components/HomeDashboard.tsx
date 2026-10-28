@@ -452,26 +452,26 @@ const AVAILABLE_TIMEZONES = [
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
           <div>
             <div className="text-[13px] font-medium text-muted-foreground">{getGreeting()}</div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-              Turn questions into evidence.
-            </h1>
-            <div className="mt-2.5 flex items-center gap-3">
-              <p className="text-[14px] text-muted-foreground">
-                Search authoritative sources. Get clear answers. Make better decisions.
-              </p>
+            <div className="mt-0.5 flex flex-wrap items-center gap-3">
+              <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+                Turn questions into evidence.
+              </h1>
               <button
                 type="button"
                 onClick={() => {
                   if (onOpenGuides) onOpenGuides('how-to-use')
                   else window.open('/guides?topic=how-to-use', '_blank')
                 }}
-                className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-[12px] font-medium text-primary transition-all hover:bg-primary/20 active:scale-95 cursor-pointer"
+                className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[12px] font-medium text-primary transition-all hover:bg-primary/20 hover:border-primary/50 active:scale-95 cursor-pointer shadow-sm shadow-primary/10"
               >
-                <BookOpen className="h-3 w-3" />
+                <BookOpen className="h-3.5 w-3.5" />
                 <span>User Guide</span>
                 <ChevronRight className="h-3 w-3 opacity-70" />
               </button>
             </div>
+            <p className="mt-1.5 text-[14px] text-muted-foreground">
+              Search authoritative sources. Get clear answers. Make better decisions.
+            </p>
           </div>
 
           <div className="relative flex shrink-0 items-center gap-4 sm:gap-5 rounded-xl border border-border/60 bg-card/60 px-4 py-2.5 backdrop-blur-md">

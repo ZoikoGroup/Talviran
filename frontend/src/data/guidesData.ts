@@ -52,8 +52,7 @@ export const GUIDE_TOPICS: GuideTopic[] = [
         ],
         keyPoints: [
           'Selecting Your Model: Choose talvrin-go (Groq) for rapid convention lookups and spot metrics; choose talvrin-pro (Gemini) for multi-source evidence synthesis and mathematical decompositions.',
-          'Attaching Context & Assets: Tag specific sovereign instruments or tickers to focus retrieval strictly on those entities.',
-          'Project Isolation: Assign conversations to Projects in the sidebar to keep different coverage universes strictly separated.'
+          'Attaching Context & Assets: Tag specific sovereign instruments or tickers to focus retrieval strictly on those entities.'
         ]
       },
       {
@@ -105,7 +104,7 @@ export const GUIDE_TOPICS: GuideTopic[] = [
         ],
         keyPoints: [
           'Ctrl / Cmd + K: Open global search across all instruments, issuers, and past research.',
-          'Ctrl / Cmd + B: Toggle sidebar expansion between collapsed icon rail and full project panel.',
+          'Ctrl / Cmd + B: Toggle sidebar expansion between collapsed icon rail and full sidebar panel.',
           'Enter: Send prompt (Shift + Enter for multi-line drafting).',
           'Esc: Instantly dismiss modal dialogs, drawers, and active search prompts.'
         ]

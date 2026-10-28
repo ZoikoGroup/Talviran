@@ -7,6 +7,17 @@
             "title": "Account Id",
             "type": "string"
           },
+          "account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Name"
+          },
           "billing_cadence": {
             "$ref": "#/components/schemas/BillingCadence"
           },
@@ -27,6 +38,33 @@
           "seat_count": {
             "title": "Seat Count",
             "type": "integer"
+          },
+          "stripe_configured": {
+            "default": false,
+            "title": "Stripe Configured",
+            "type": "boolean"
+          },
+          "stripe_customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stripe Customer Id"
+          },
+          "stripe_subscription_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stripe Subscription Id"
           },
           "usage": {
             "$ref": "#/components/schemas/AccountUsage"
@@ -2530,6 +2568,28 @@
         "title": "TriggerAlertIn",
         "type": "object"
       },
+      "UpdatePlanRequest": {
+        "properties": {
+          "additional_seats": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Additional Seats",
+            "type": "integer"
+          },
+          "billing_cadence": {
+            "$ref": "#/components/schemas/BillingCadence",
+            "default": "annual"
+          },
+          "plan_tier": {
+            "$ref": "#/components/schemas/PlanTier"
+          }
+        },
+        "required": [
+          "plan_tier"
+        ],
+        "title": "UpdatePlanRequest",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -3821,6 +3881,48 @@
         ]
       }
     },
+    "/api/v1/commercial/plan": {
+      "patch": {
+        "description": "Updates active tier and billing cadence directly in the account record.",
+        "operationId": "change_plan_api_v1_commercial_plan_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountEntitlement"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Plan",
+        "tags": [
+          "commercial"
+        ]
+      }
+    },
     "/api/v1/commercial/plans": {
       "get": {
         "description": "Retrieve full commercial price book and entitlement specifications (Chapter 5 & 7).",
@@ -4166,6 +4268,40 @@
       }
     },
     "/api/v1/monitoring-rules/{rule_id}": {
+      "delete": {
+        "operationId": "delete_rule_api_v1_monitoring_rules__rule_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Rule",
+        "tags": [
+          "monitoring"
+        ]
+      },
       "get": {
         "operationId": "get_rule_api_v1_monitoring_rules__rule_id__get",
         "parameters": [

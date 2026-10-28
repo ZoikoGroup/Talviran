@@ -122,11 +122,14 @@ export default function App() {
   // Retrieve initial view on reload/refresh from history state, URL hash, or session storage
   const getInitialView = (): NavView => {
     if (typeof window === 'undefined') return 'home'
-    const hashView = window.location.hash.replace('#', '') as NavView
+    const pathView = window.location.pathname.replace(/^\//, '').split('/')[0] as NavView
     const validViews: NavView[] = ['home', 'markets', 'watchlists', 'monitoring', 'settings', 'research', 'compare']
+    if (validViews.includes(pathView)) return pathView
+    const hashView = window.location.hash.replace('#', '') as NavView
     if (validViews.includes(hashView)) return hashView
     const stateView = window.history.state?.talvrinView as NavView
     if (validViews.includes(stateView)) return stateView
+    if (window.location.pathname === '/') return 'home'
     try {
       const saved = sessionStorage.getItem('talvrin_active_view') as NavView
       if (validViews.includes(saved)) return saved
@@ -171,8 +174,7 @@ export default function App() {
     }
 
     const stateObj = { talvrinView: nextView }
-    const urlHash = nextView === 'home' ? '' : `#${nextView}`
-    const targetUrl = window.location.pathname + (urlHash ? `${urlHash}` : '')
+    const targetUrl = nextView === 'home' ? '/' : `/${nextView}`
     if (replace) {
       window.history.replaceState(stateObj, '', targetUrl)
     } else {
@@ -189,10 +191,10 @@ export default function App() {
   // Hardware backing (Android back button/gestures, mouse button 3, Alt+Left, and browser back)
   useEffect(() => {
     // Prime initial history entry with current view (not unconditionally overriding to home on reload)
-    const urlHash = initialView === 'home' ? '' : `#${initialView}`
-    window.history.replaceState({ talvrinView: initialView, depth: 0 }, '', window.location.pathname + urlHash)
+    const targetUrl = initialView === 'home' ? '/' : `/${initialView}`
+    window.history.replaceState({ talvrinView: initialView, depth: 0 }, '', targetUrl)
     // Push an additional defensive buffer state so hardware back stays within Talvrin
-    window.history.pushState({ talvrinView: initialView, depth: 1 }, '', window.location.pathname + urlHash)
+    window.history.pushState({ talvrinView: initialView, depth: 1 }, '', targetUrl)
 
     const handlePopState = (e: PopStateEvent) => {
       const stateView: NavView = e.state?.talvrinView || getInitialView()

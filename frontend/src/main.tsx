@@ -23,17 +23,27 @@ import { LiveMarketProvider } from '@/hooks/useLiveMarket'
 import { EntitlementProvider } from '@/context/EntitlementContext'
 import '@/index.css'
 
-/** Sends signed-out visitors to sign in, remembering where they were going.
- * Renders nothing while the initial session check is in flight - deciding
- * before it settles would bounce a signed-in visitor through /login on
- * every reload, since there is no synchronous way to know a cookie is
- * still valid. */
+/** Sends signed-out visitors to sign in, remembering where they were going
+ * ONLY if they deliberately navigated to a specific URL (e.g. /settings).
+ * Generic visitors are routed to home after login. */
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   const location = useLocation()
   if (loading) return null
   if (!session) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />
+    const isSpecificPath =
+      location.pathname !== '/' || Boolean(location.search) || Boolean(location.hash)
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={
+          isSpecificPath
+            ? { from: location.pathname + location.search + location.hash }
+            : undefined
+        }
+      />
+    )
   }
   return <>{children}</>
 }
@@ -77,25 +87,35 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                     </RedirectIfSignedIn>
                   }
                 />
-                {/* Reachable by anyone holding a valid recovery token, signed in
-                    or not — unlike the other auth screens, this isn't gated on
-                    the current session either way. */}
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/contact" element={<Contact />} />
                 <Route path="/help" element={<Help />} />
                 <Route path="/guides" element={<Guides />} />
+
+                {/* Explicit deep-link routes wrapped with RequireAuth */}
+                {['/', '/settings', '/markets', '/watchlists', '/monitoring', '/compare', '/research'].map((p) => (
+                  <Route
+                    key={p}
+                    path={p}
+                    element={
+                      <RequireAuth>
+                        <App />
+                      </RequireAuth>
+                    }
+                  />
+                ))}
+
+                {/* Unknown paths fall back to the app, which itself requires auth. */}
                 <Route
-                  path="/"
+                  path="*"
                   element={
                     <RequireAuth>
                       <App />
                     </RequireAuth>
                   }
                 />
-                {/* Unknown paths fall back to the app, which itself requires auth. */}
-                <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </BrowserRouter>
           </EntitlementProvider>

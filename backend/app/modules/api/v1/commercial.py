@@ -9,6 +9,7 @@ from app.modules.commercial.models import (
     CheckoutSessionRequest,
     CheckoutSessionResponse,
     PlanDefinition,
+    UpdatePlanRequest,
 )
 from app.modules.commercial.service import (
     create_billing_portal_session,
@@ -16,6 +17,7 @@ from app.modules.commercial.service import (
     get_catalog,
     handle_stripe_webhook_event,
     resolve_account_entitlement,
+    update_account_plan,
 )
 
 router = APIRouter(prefix="/commercial", tags=["commercial"])
@@ -34,6 +36,22 @@ async def get_entitlement(
 ) -> AccountEntitlement:
     """Retrieve active plan, quotas, and real-time usage for the authenticated account."""
     return await resolve_account_entitlement(db, account_id=identity.account_id)
+
+
+@router.patch("/plan", response_model=AccountEntitlement)
+async def change_plan(
+    db: SessionDep,
+    identity: IdentityDep,
+    req: UpdatePlanRequest,
+) -> AccountEntitlement:
+    """Updates active tier and billing cadence directly in the account record."""
+    return await update_account_plan(
+        db,
+        account_id=identity.account_id,
+        plan_tier=req.plan_tier,
+        billing_cadence=req.billing_cadence,
+        additional_seats=req.additional_seats,
+    )
 
 
 @router.post("/checkout", response_model=CheckoutSessionResponse)
@@ -56,8 +74,15 @@ async def get_billing_portal(
     identity: IdentityDep,
 ) -> PortalSessionResponse:
     """Retrieve Stripe customer portal URL for invoice history and payment methods."""
-    url = await create_billing_portal_session(db, account_id=identity.account_id)
-    return PortalSessionResponse(portal_url=url)
+    try:
+        url = await create_billing_portal_session(db, account_id=identity.account_id)
+        return PortalSessionResponse(portal_url=url)
+    except ValueError as err:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except Exception as err:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=502, detail=f"Stripe Gateway Error: {err}") from err
 
 
 @router.post("/webhook", status_code=status.HTTP_200_OK)

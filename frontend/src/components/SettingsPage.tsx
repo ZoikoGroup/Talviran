@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -6,7 +6,6 @@ import {
   Check,
   CreditCard,
   Database,
-  HardDrive,
   LogOut,
   Moon,
   Palette,
@@ -19,13 +18,19 @@ import {
   Trash2,
   User,
   BookOpen,
+  ExternalLink,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Activity,
+  Layers,
+  Radio,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/auth/AuthContext'
 import * as api from '@/lib/api'
 import { Field, SubmitButton } from '@/components/ui/field'
 import { passwordProblem } from '@/auth/session'
-import { COMMERCIAL_PLANS } from '@/data/pricing'
 import { useEntitlement, formatPlanTier } from '@/context/EntitlementContext'
 
 interface SettingsPageProps {
@@ -45,7 +50,6 @@ const SECTIONS = [
   { id: 'billing', label: 'Billing', Icon: CreditCard },
   { id: 'usage', label: 'Usage', Icon: BarChart3 },
   { id: 'data', label: 'Data controls', Icon: Database },
-  { id: 'storage', label: 'Storage', Icon: HardDrive },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]['id']
@@ -107,26 +111,12 @@ function Row({
   )
 }
 
-/** Marks anything with no backend behind it, so nothing reads as working. */
-function NotYet({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded-full border border-border bg-secondary px-2.5 py-1 text-[11.5px] text-muted-foreground">
-      {children}
-    </span>
-  )
-}
-
-const formatBytes = (n: number) =>
-  n < 1024
-    ? `${n} B`
-    : n < 1024 * 1024
-      ? `${(n / 1024).toFixed(1)} KB`
-      : `${(n / 1024 / 1024).toFixed(2)} MB`
 
 /* ---------------- sections ---------------- */
 
-function AccountSection() {
+function AccountSection({ onNavigateToBilling }: { onNavigateToBilling?: () => void }) {
   const { session, rename, signOut } = useAuth()
+  const { entitlement } = useEntitlement()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(session?.name ?? '')
 
@@ -135,10 +125,12 @@ function AccountSection() {
     setEditing(false)
   }
 
+  const currentPlan = (entitlement?.plan_tier || 'free').toUpperCase()
+
   return (
     <Panel title="Account" description="Who you are signed in as on this device.">
       <Card>
-        <Row label="Display name" hint="Used for the greeting and your sidebar avatar.">
+        <Row label="Display name" hint="Used for greeting and in-app display.">
           {editing ? (
             <div className="flex items-center gap-2">
               <input
@@ -178,19 +170,24 @@ function AccountSection() {
         </Row>
 
         <Row
-          label="Username or email"
-          hint="Changing this needs identity verification, which is not connected yet."
+          label="Email address"
+          hint="Primary login email for this account."
         >
-          <div className="flex items-center gap-3">
-            <span className="text-[13.5px] text-muted-foreground">{session?.email}</span>
-            <NotYet>Locked</NotYet>
-          </div>
+          <span className="text-[13.5px] font-mono text-muted-foreground">{session?.email}</span>
         </Row>
 
-        <Row label="Plan" hint="See Billing for what each plan includes.">
-          <span className="rounded-full bg-primary/15 px-2.5 py-1 text-[11.5px] font-semibold tracking-wide text-primary">
-            FREE
-          </span>
+        <Row label="Plan" hint="See Billing for subscription details, invoices, and quotas.">
+          <button
+            type="button"
+            onClick={onNavigateToBilling}
+            className="group inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[12px] font-semibold tracking-wide text-primary transition-all hover:bg-primary/20 hover:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/40"
+            title="Go to Billing & Subscription"
+          >
+            <span>{currentPlan}</span>
+            <span className="text-[11px] font-normal text-primary/70 group-hover:text-primary group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+              Manage &rarr;
+            </span>
+          </button>
         </Row>
 
         <Row label="Sign out" hint="Ends the session on this device.">
@@ -623,125 +620,416 @@ function SecuritySection() {
 }
 
 function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
-  const { entitlement } = useEntitlement()
+  const { entitlement, refreshEntitlement, loading: entitlementLoading } = useEntitlement()
+  const [portalLoading, setPortalLoading] = useState(false)
+  const [updatingTier, setUpdatingTier] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+
   const activePlanTier = entitlement?.plan_tier || 'professional'
   const activePlanName = formatPlanTier(activePlanTier)
   const isAnnual = entitlement?.billing_cadence === 'annual'
+  const renewalDate = entitlement?.current_period_end
+    ? new Date(entitlement.current_period_end).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })
+    : 'Active'
+
+  // Live Quotas & Usage straight from backend database counts
+  const watchlistsQuota = entitlement?.quotas.watchlists ?? 50
+  const watchlistsUsed = entitlement?.usage.watchlists_count ?? 0
+  const rulesQuota = entitlement?.quotas.active_monitoring_rules ?? 125
+  const rulesUsed = entitlement?.usage.active_rules_count ?? 0
+  const researchQuota = entitlement?.quotas.verified_research_runs_per_month ?? 500
+  const researchUsed = entitlement?.usage.research_runs_this_month ?? 0
+  const exportsQuota = entitlement?.quotas.evidence_dossier_exports_per_month ?? 125
+  const exportsUsed = entitlement?.usage.evidence_exports_this_month ?? 0
+
+  const handleOpenStripePortal = async () => {
+    if (!entitlement?.stripe_configured) {
+      setErrorMessage(
+        'Stripe API keys are not yet configured in backend/.env. To open a live Stripe Billing Portal, set STRIPE_SECRET_KEY=sk_test_... in backend/.env.'
+      )
+      return
+    }
+    try {
+      setPortalLoading(true)
+      setErrorMessage(null)
+      const res = await api.getBillingPortalSession()
+      if (res?.portal_url && res.portal_url.startsWith('http')) {
+        await refreshEntitlement()
+        window.open(res.portal_url, '_blank')
+        return
+      }
+      setErrorMessage('Unable to initialize customer portal session')
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Unable to connect to Stripe Billing Portal')
+    } finally {
+      setPortalLoading(false)
+    }
+  }
+
+  const handleDirectPlanSwitch = async (targetTier: api.PlanTier) => {
+    if (targetTier === activePlanTier) return
+    try {
+      setUpdatingTier(targetTier)
+      setErrorMessage(null)
+      await api.updateAccountPlan({
+        plan_tier: targetTier,
+        billing_cadence: entitlement?.billing_cadence || 'annual',
+      })
+      await refreshEntitlement()
+      setSuccessMessage(`Account plan successfully updated to ${formatPlanTier(targetTier)} Tier.`)
+      setTimeout(() => setSuccessMessage(null), 4000)
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to update account tier')
+    } finally {
+      setUpdatingTier(null)
+    }
+  }
 
   return (
     <Panel
-      title="Billing & Subscription Plans"
-      description="Review your active plan, verifiable capacity quotas, and institutional entitlements."
+      title="Billing & Subscription"
+      description="Manage your subscription plan, usage quotas, and payment details."
     >
-      {/* Active plan header card */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-primary/50 bg-gradient-to-r from-primary/10 via-card to-card p-4 sm:p-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[16px] font-bold text-white">{activePlanName} Plan</span>
-            <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10.5px] font-bold text-emerald-400">
-              ACTIVE
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Billed {isAnnual ? 'annually' : 'monthly'} • Renewal: {entitlement?.current_period_end ? new Date(entitlement.current_period_end).toLocaleDateString() : 'Annual cycle'} • {entitlement?.seat_count || 1} Seat{(entitlement?.seat_count || 1) > 1 ? 's' : ''} included.
-          </p>
-        </div>
-
-        {onOpenPricing && (
+      {/* Alert Notifications */}
+      {errorMessage && (
+        <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span className="flex-1 font-medium">{errorMessage}</span>
           <button
             type="button"
-            onClick={onOpenPricing}
-            className="shrink-0 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-all shadow-md shadow-primary/20"
+            onClick={() => setErrorMessage(null)}
+            className="text-destructive font-semibold hover:underline"
           >
-            Change Plan & Upgrade
+            Dismiss
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* 4 Commercial Tiers Overview Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {COMMERCIAL_PLANS.map((p) => {
-          const current = p.id === activePlanTier
-          return (
-            <div
-              key={p.id}
-              className={cn(
-                'rounded-xl border p-4 transition-all',
-                current
-                  ? 'border-primary/60 bg-primary/5 shadow-sm'
-                  : 'border-border bg-card'
-              )}
+      {successMessage && (
+        <div className="flex items-center gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-400">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+          <span className="flex-1 font-medium">{successMessage}</span>
+        </div>
+      )}
+
+      {/* 1. Subscription Overview */}
+      <Card>
+        <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2.5">
+              <span className="text-lg font-semibold tracking-tight text-foreground">
+                {activePlanName} Plan
+              </span>
+              <span className="rounded-full bg-secondary border border-border px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                {isAnnual ? 'Annual' : 'Monthly'}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Renews on <strong className="font-medium text-foreground">{renewalDate}</strong>
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {onOpenPricing && (
+              <button
+                type="button"
+                onClick={onOpenPricing}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3.5 py-2 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
+              >
+                Compare Plans
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleOpenStripePortal}
+              disabled={portalLoading}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-medium text-primary-foreground transition-all hover:bg-primary/90 shadow-sm disabled:opacity-50"
             >
-              <div className="flex items-center justify-between gap-2">
+              {portalLoading ? (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-primary-foreground" />
+                  <span>Opening...</span>
+                </>
+              ) : (
+                <>
+                  <CreditCard className="h-3.5 w-3.5" />
+                  <span>Manage Billing & Invoices</span>
+                  <ExternalLink className="h-3 w-3 opacity-70 ml-0.5" />
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </Card>
+
+      {/* 2. Real Quotas & Usage */}
+      <Card>
+        <div className="p-5 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-medium text-foreground">
+                Plan Quotas & Usage
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Current usage tracked against your active subscription limits.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void refreshEntitlement()}
+              disabled={entitlementLoading}
+              title="Refresh usage"
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', entitlementLoading && 'animate-spin')} />
+              <span>Refresh</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Watchlists */}
+            <div className="rounded-lg border border-border bg-secondary/30 p-3.5 flex flex-col justify-between gap-3">
+              <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-[14px] font-bold text-white">{p.name}</span>
-                  <span className="text-xs text-muted-foreground font-mono">
-                    {p.monthlyPrice === 0 ? '$0' : `$${p.monthlyPrice}/mo`}
+                  <div className="h-6 w-6 rounded bg-primary/10 grid place-items-center text-primary">
+                    <Layers className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="text-xs font-medium text-foreground">Watchlists</span>
+                </div>
+                <div className="text-right whitespace-nowrap shrink-0">
+                  <span className="text-sm font-semibold text-foreground font-mono">{watchlistsUsed}</span>
+                  <span className="text-xs text-muted-foreground font-mono ml-1">
+                    / {typeof watchlistsQuota === 'number' ? watchlistsQuota : '∞'}
                   </span>
                 </div>
-                {current && (
-                  <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
-                    CURRENT
-                  </span>
-                )}
               </div>
-              <p className="mt-1.5 text-xs text-muted-foreground line-clamp-2">
-                {p.tagline}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-300">
-                <span className="rounded-md bg-muted/40 px-2 py-0.5 border border-border/40">
-                  {p.limits.watchlists}
-                </span>
-                <span className="rounded-md bg-muted/40 px-2 py-0.5 border border-border/40">
-                  {p.limits.activeRules}
-                </span>
-                <span className="rounded-md bg-muted/40 px-2 py-0.5 border border-border/40">
-                  {p.limits.researchRuns}
+
+              <div className="space-y-1.5">
+                <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, (watchlistsUsed / (typeof watchlistsQuota === 'number' ? Math.max(1, watchlistsQuota) : 100)) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <span className="text-[11px] text-muted-foreground block">
+                  {typeof watchlistsQuota === 'number'
+                    ? `${Math.max(0, watchlistsQuota - watchlistsUsed)} remaining`
+                    : 'Unlimited'}
                 </span>
               </div>
             </div>
-          )
-        })}
-      </div>
 
-      <Card>
-        <Row
-          label="Payment Method"
-          hint="Institutional invoice via Stripe & ACH Wire Transfer."
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-300">Corporate Card ending in 4242</span>
-            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">
-              Verified
-            </span>
+            {/* Alert Rules */}
+            <div className="rounded-lg border border-border bg-secondary/30 p-3.5 flex flex-col justify-between gap-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="h-6 w-6 rounded bg-rose-500/10 grid place-items-center text-rose-400">
+                    <Radio className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="text-xs font-medium text-foreground">Alert Rules</span>
+                </div>
+                <div className="text-right whitespace-nowrap shrink-0">
+                  <span className="text-sm font-semibold text-foreground font-mono">{rulesUsed}</span>
+                  <span className="text-xs text-muted-foreground font-mono ml-1">
+                    / {typeof rulesQuota === 'number' ? rulesQuota : '∞'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className="h-full rounded-full bg-rose-500 transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, (rulesUsed / (typeof rulesQuota === 'number' ? Math.max(1, rulesQuota) : 125)) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <span className="text-[11px] text-muted-foreground block">
+                  {typeof rulesQuota === 'number'
+                    ? `${Math.max(0, rulesQuota - rulesUsed)} remaining`
+                    : 'Unlimited'}
+                </span>
+              </div>
+            </div>
+
+            {/* Research Runs */}
+            <div className="rounded-lg border border-border bg-secondary/30 p-3.5 flex flex-col justify-between gap-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="h-6 w-6 rounded bg-purple-500/10 grid place-items-center text-purple-400">
+                    <Activity className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="text-xs font-medium text-foreground">Research Runs</span>
+                </div>
+                <div className="text-right whitespace-nowrap shrink-0">
+                  <span className="text-sm font-semibold text-foreground font-mono">{researchUsed}</span>
+                  <span className="text-xs text-muted-foreground font-mono ml-1">
+                    / {typeof researchQuota === 'number' ? researchQuota : '∞'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className="h-full rounded-full bg-purple-500 transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, (researchUsed / (typeof researchQuota === 'number' ? Math.max(1, researchQuota) : 500)) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <span className="text-[11px] text-muted-foreground block">
+                  {typeof researchQuota === 'number'
+                    ? `${Math.max(0, researchQuota - researchUsed)} remaining this month`
+                    : 'Unlimited'}
+                </span>
+              </div>
+            </div>
+
+            {/* Dossier Exports */}
+            <div className="rounded-lg border border-border bg-secondary/30 p-3.5 flex flex-col justify-between gap-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="h-6 w-6 rounded bg-emerald-500/10 grid place-items-center text-emerald-400">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="text-xs font-medium text-foreground">Exports</span>
+                </div>
+                <div className="text-right whitespace-nowrap shrink-0">
+                  <span className="text-sm font-semibold text-foreground font-mono">{exportsUsed}</span>
+                  <span className="text-xs text-muted-foreground font-mono ml-1">
+                    / {typeof exportsQuota === 'number' ? exportsQuota : '∞'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, (exportsUsed / (typeof exportsQuota === 'number' ? Math.max(1, exportsQuota) : 125)) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <span className="text-[11px] text-muted-foreground block">
+                  {typeof exportsQuota === 'number'
+                    ? `${Math.max(0, exportsQuota - exportsUsed)} remaining this month`
+                    : 'Unlimited'}
+                </span>
+              </div>
+            </div>
           </div>
-        </Row>
-        <Row
-          label="Tax & VAT Information"
-          hint="Automatic statutory receipt generation with EU VAT & UK Companies House registration."
-        >
-          <span className="text-xs text-muted-foreground font-mono">GB-948201948</span>
-        </Row>
-        <Row label="Invoices & Receipts" hint="Download audit-grade billing records for accounting.">
-          <button
-            type="button"
-            className="text-xs text-primary hover:underline font-semibold"
-            onClick={async () => {
-              try {
-                const res = await api.getBillingPortalSession()
-                if (res?.portal_url) {
-                  window.open(res.portal_url, '_blank')
-                  return
-                }
-              } catch {
-                // Fallback to pricing modal if portal isn't active
-              }
-              if (onOpenPricing) onOpenPricing()
-            }}
-          >
-            Manage in Billing Portal
-          </button>
-        </Row>
+        </div>
+      </Card>
+
+      {/* 3. Change Plan Tier */}
+      <Card>
+        <div className="p-5 flex flex-col gap-4">
+          <div>
+            <h3 className="text-sm font-medium text-foreground">
+              Change Plan
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Switch your plan tier to update quotas and features.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              {
+                id: 'explorer' as api.PlanTier,
+                name: 'Explorer',
+                price: '$0',
+                cadence: '/mo',
+                desc: 'Basic search and up to 2 watchlists.',
+              },
+              {
+                id: 'research' as api.PlanTier,
+                name: 'Research',
+                price: '$29',
+                cadence: '/mo',
+                desc: '10 watchlists, 25 alert rules, 100 runs.',
+              },
+              {
+                id: 'professional' as api.PlanTier,
+                name: 'Professional',
+                price: '$79',
+                cadence: '/mo',
+                desc: 'Unlimited watchlists, 125 alert rules.',
+              },
+              {
+                id: 'teams' as api.PlanTier,
+                name: 'Teams',
+                price: '$249',
+                cadence: '/mo',
+                desc: 'Multi-seat access and 400 alert rules.',
+              },
+            ].map((tier) => {
+              const isCurrent = activePlanTier === tier.id
+              const isUpdating = updatingTier === tier.id
+              return (
+                <div
+                  key={tier.id}
+                  className={cn(
+                    'rounded-lg border p-4 flex flex-col justify-between gap-3 transition-colors',
+                    isCurrent
+                      ? 'border-primary/50 bg-primary/[0.04]'
+                      : 'border-border bg-secondary/20 hover:bg-secondary/40'
+                  )}
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-xs font-semibold text-foreground">{tier.name}</span>
+                      <div className="flex items-baseline gap-0.5">
+                        <span className="text-sm font-bold text-foreground font-mono">{tier.price}</span>
+                        <span className="text-[11px] text-muted-foreground">{tier.cadence}</span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      {tier.desc}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isCurrent || isUpdating}
+                    onClick={() => void handleDirectPlanSwitch(tier.id)}
+                    className={cn(
+                      'w-full rounded-md py-1.5 px-3 text-xs font-medium transition-colors flex items-center justify-center gap-1.5',
+                      isCurrent
+                        ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 cursor-default font-semibold'
+                        : 'border border-border bg-secondary hover:bg-accent text-foreground'
+                    )}
+                  >
+                    {isUpdating ? (
+                      <>
+                        <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />
+                        <span>Updating...</span>
+                      </>
+                    ) : isCurrent ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                        <span>Current Plan</span>
+                      </>
+                    ) : (
+                      <span>Select {tier.name}</span>
+                    )}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       </Card>
     </Panel>
   )
@@ -761,7 +1049,6 @@ function UsageSection({ stats }: Pick<SettingsPageProps, 'stats'>) {
 
   const tiles: [string, number][] = [
     ['Chats', stats.chats],
-    ['Projects', stats.projects],
     ['Messages', stats.messages],
   ]
 
@@ -770,7 +1057,7 @@ function UsageSection({ stats }: Pick<SettingsPageProps, 'stats'>) {
       title="Plan Quotas & Server Usage"
       description="Real-time capacity tracking against your institutional tier entitlements."
     >
-      <div className="grid gap-2.5 sm:grid-cols-3">
+      <div className="grid gap-2.5 sm:grid-cols-2">
         {tiles.map(([label, value]) => (
           <div key={label} className="rounded-xl border border-border bg-card px-4 py-4">
             <div className="text-[24px] font-semibold leading-none tabular-nums">
@@ -886,7 +1173,7 @@ function DataSection({
       <Card>
         <Row
           label="Export your workspace"
-          hint={`Downloads ${stats.chats} chats and ${stats.projects} projects as JSON.`}
+          hint={`Downloads ${stats.chats} chats as JSON.`}
         >
           <button
             onClick={() => void onExportWorkspace()}
@@ -897,7 +1184,7 @@ function DataSection({
         </Row>
 
         <Row
-          label="Delete all chats and projects"
+          label="Delete all chats"
           hint="Permanently deletes them from your account. This cannot be undone."
         >
           {confirming ? (
@@ -966,70 +1253,6 @@ function DataSection({
   )
 }
 
-function StorageSection({ stats }: Pick<SettingsPageProps, 'stats'>) {
-  // Recomputed whenever the workspace changes, so the figure stays truthful.
-  const usage = useMemo(() => {
-    let total = 0
-    const items: [string, number][] = []
-    try {
-      for (const key of Object.keys(localStorage)) {
-        const size = new Blob([key, localStorage.getItem(key) ?? '']).size
-        total += size
-        items.push([key, size])
-      }
-    } catch {
-      // Storage unavailable — report nothing rather than guess.
-    }
-    return { total, items: items.sort((a, b) => b[1] - a[1]) }
-  }, [stats.chats, stats.projects, stats.messages])
-
-  // Browsers typically allow around 5 MB of localStorage per origin.
-  const LIMIT = 5 * 1024 * 1024
-  const pct = Math.min(100, (usage.total / LIMIT) * 100)
-
-  return (
-    <Panel
-      title="Storage"
-      description="Chats and projects are stored on Talvrin's servers, tied to your account — this browser only keeps small local preferences, listed below."
-    >
-      <Card>
-        <div className="px-4 py-4">
-          <div className="flex items-baseline justify-between gap-4">
-            <span className="text-[14px] font-medium">
-              {formatBytes(usage.total)} of about {formatBytes(LIMIT)} used
-            </span>
-            <span className="text-[12.5px] tabular-nums text-muted-foreground">
-              {pct < 1 ? '<1' : pct.toFixed(0)}%
-            </span>
-          </div>
-          <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-secondary">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-[width]"
-              style={{ width: `${Math.max(pct, 1)}%` }}
-            />
-          </div>
-          <p className="mt-2.5 text-[12px] leading-relaxed text-muted-foreground">
-            The limit is set by your browser, not by your plan, and is approximate.
-          </p>
-        </div>
-      </Card>
-
-      <Card>
-        {usage.items.length === 0 ? (
-          <Row label="Nothing stored" hint="This browser holds no Talvrin data." />
-        ) : (
-          usage.items.map(([key, size]) => (
-            <Row key={key} label={key}>
-              <span className="text-[13px] tabular-nums text-muted-foreground">
-                {formatBytes(size)}
-              </span>
-            </Row>
-          ))
-        )}
-      </Card>
-    </Panel>
-  )
-}
 
 /* ---------------- page ---------------- */
 
@@ -1053,7 +1276,7 @@ export default function SettingsPage({
 
   return (
     <div className="scrollbar-slim flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-4xl px-6 pb-20 pt-8">
+      <div className="mx-auto max-w-5xl px-6 pb-20 pt-8">
         <div className="mb-7 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
@@ -1100,7 +1323,9 @@ export default function SettingsPage({
           </nav>
 
           <div className="min-w-0 flex-1">
-            {active === 'account' && <AccountSection />}
+            {active === 'account' && (
+              <AccountSection onNavigateToBilling={() => setActive('billing')} />
+            )}
             {active === 'appearance' && (
               <AppearanceSection theme={theme} onThemeChange={onThemeChange} />
             )}
@@ -1114,7 +1339,6 @@ export default function SettingsPage({
                 onExportWorkspace={onExportWorkspace}
               />
             )}
-            {active === 'storage' && <StorageSection stats={stats} />}
           </div>
         </div>
       </div>
