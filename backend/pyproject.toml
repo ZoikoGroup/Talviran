@@ -25,6 +25,7 @@ dependencies = [
     "qrcode>=8.2",
     "pillow>=13.0.0",
     "stripe>=16.0.0",
+    "google-cloud-kms>=3.18.0",
 ]
 
 [dependency-groups]
