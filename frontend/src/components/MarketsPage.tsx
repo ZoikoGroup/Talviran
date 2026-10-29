@@ -208,9 +208,11 @@ export default function MarketsPage({
   ]
 
   const filteredAssets = useMemo(() => {
-    return allAssets.filter((a) => {
-      if (search.trim()) {
-        if (!matchAssetSearch(a, search)) return false
+    const q = search.trim().toLowerCase()
+
+    const results = allAssets.filter((a) => {
+      if (q) {
+        if (!matchAssetSearch(a, q)) return false
       }
       if (activeTab !== 'ALL' && a.assetClass !== activeTab) return false
       if (activeRegion !== 'ALL' && a.region !== activeRegion && a.region !== 'GLOBAL') return false
@@ -223,6 +225,36 @@ export default function MarketsPage({
         if (activeSource === 'Central Banks' && !['bank of england', 'federal reserve', 'deutsche bundesbank', 'ministry of finance japan', 'bank of japan', 'reserve bank of india', 'ecb', 'ons', 'bls', 'swiss national bank', 'reserve bank of australia', 'bank of canada', 'people\'s bank of china', 'eurostat', 'mospi', 'treasury', 'dmo'].some(cb => s.includes(cb))) return false
       }
       return true
+    })
+
+    if (!q) return results
+
+    // Relevance Ranking: prioritize exact ticker match, ticker prefix, name match
+    return results.sort((a, b) => {
+      const aSym = a.symbol.toLowerCase()
+      const bSym = b.symbol.toLowerCase()
+      const aName = a.name.toLowerCase()
+      const bName = b.name.toLowerCase()
+
+      // Exact symbol match is top rank
+      const aExact = aSym === q
+      const bExact = bSym === q
+      if (aExact && !bExact) return -1
+      if (!aExact && bExact) return 1
+
+      // Prefix symbol match
+      const aPrefix = aSym.startsWith(q)
+      const bPrefix = bSym.startsWith(q)
+      if (aPrefix && !bPrefix) return -1
+      if (!aPrefix && bPrefix) return 1
+
+      // Exact name match or starts with name
+      const aNamePrefix = aName.startsWith(q)
+      const bNamePrefix = bName.startsWith(q)
+      if (aNamePrefix && !bNamePrefix) return -1
+      if (!aNamePrefix && bNamePrefix) return 1
+
+      return 0
     })
   }, [allAssets, activeTab, activeRegion, activeSource, search])
 

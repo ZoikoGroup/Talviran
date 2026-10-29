@@ -14,9 +14,7 @@ export interface MarketAsset {
 }
 
 export const GLOBAL_MARKET_ASSETS: MarketAsset[] = [
-  // =================================================================
-  // 1. SOVEREIGN FIXED INCOME & BENCHMARK YIELDS (18 ASSETS)
-  // =================================================================
+
   {
     symbol: 'UK 10Y Gilt',
     name: 'United Kingdom 10-Year Benchmark Gilt',
@@ -3215,9 +3213,7 @@ export const GLOBAL_MARKET_ASSETS: MarketAsset[] = [
     freshness: 'Real-time',
     bitemporalStatus: 'CANONICAL',
   },
-  // =================================================================
-  // 9. UPCOMING & PRIMARY IPO ISSUES
-  // =================================================================
+
   {
     symbol: 'JIO-IPO',
     name: 'Jio Platforms Limited (Reliance Jio IPO)',
@@ -3274,9 +3270,7 @@ export const GLOBAL_MARKET_ASSETS: MarketAsset[] = [
     freshness: 'Official Exchange Close',
     bitemporalStatus: 'CANONICAL',
   },
-  // =================================================================
-  // 10. INSTITUTIONAL MUTUAL FUNDS & DAILY NAVs
-  // =================================================================
+
   {
     symbol: 'VFIAX',
     name: 'Vanguard 500 Index Fund Admiral Shares',
@@ -3390,20 +3384,6 @@ export const GLOBAL_MARKET_ASSETS: MarketAsset[] = [
     bitemporalStatus: 'CANONICAL',
   },
   {
-    symbol: 'SMH',
-    name: 'VanEck Semiconductor ETF',
-    assetClass: 'ETF',
-    region: 'US',
-    price: '$264.30',
-    change: '+4.12',
-    pctChange: '+1.58%',
-    direction: 'up',
-    sparkline: [256, 258, 260, 262, 264.3],
-    source: 'NASDAQ Consolidated Tape',
-    freshness: 'Real-time',
-    bitemporalStatus: 'CANONICAL',
-  },
-  {
     symbol: 'IBIT',
     name: 'iShares Bitcoin Trust ETF (BlackRock)',
     assetClass: 'ETF',
@@ -3414,34 +3394,6 @@ export const GLOBAL_MARKET_ASSETS: MarketAsset[] = [
     direction: 'up',
     sparkline: [36.8, 37.2, 37.9, 38.4, 38.9],
     source: 'NASDAQ Consolidated Tape / BlackRock Custody',
-    freshness: 'Real-time',
-    bitemporalStatus: 'CANONICAL',
-  },
-  {
-    symbol: 'GLD',
-    name: 'SPDR Gold Shares Physical Trust',
-    assetClass: 'ETF',
-    region: 'US',
-    price: '$251.80',
-    change: '+1.20',
-    pctChange: '+0.48%',
-    direction: 'up',
-    sparkline: [248, 249.5, 250.2, 251.0, 251.8],
-    source: 'NYSE Arca / World Gold Council Audit',
-    freshness: 'Real-time',
-    bitemporalStatus: 'CANONICAL',
-  },
-  {
-    symbol: 'TLT',
-    name: 'iShares 20+ Year Treasury Bond ETF',
-    assetClass: 'ETF',
-    region: 'US',
-    price: '$92.40',
-    change: '-0.35',
-    pctChange: '-0.38%',
-    direction: 'down',
-    sparkline: [93.5, 93.1, 92.8, 92.6, 92.4],
-    source: 'NASDAQ / Fixed Income Clearing Corp',
     freshness: 'Real-time',
     bitemporalStatus: 'CANONICAL',
   },
@@ -3474,20 +3426,6 @@ export const GLOBAL_MARKET_ASSETS: MarketAsset[] = [
     bitemporalStatus: 'CANONICAL',
   },
   {
-    symbol: 'AVGO',
-    name: 'Broadcom Inc. Common Stock',
-    assetClass: 'EQUITY',
-    region: 'US',
-    price: '$176.50',
-    change: '+3.40',
-    pctChange: '+1.96%',
-    direction: 'up',
-    sparkline: [170, 172, 173.5, 175, 176.5],
-    source: 'NASDAQ Consolidated Tape / SEC Form 10-K',
-    freshness: 'Real-time',
-    bitemporalStatus: 'CANONICAL',
-  },
-  {
     symbol: 'TSMC',
     name: 'Taiwan Semiconductor Manufacturing Co ADR (TSM)',
     assetClass: 'EQUITY',
@@ -3498,20 +3436,6 @@ export const GLOBAL_MARKET_ASSETS: MarketAsset[] = [
     direction: 'up',
     sparkline: [190, 192, 194.5, 196.8, 198.4],
     source: 'NYSE / Taiwan Stock Exchange Tape',
-    freshness: 'Real-time',
-    bitemporalStatus: 'CANONICAL',
-  },
-  {
-    symbol: 'ASML',
-    name: 'ASML Holding N.V. NY Registry Shares',
-    assetClass: 'EQUITY',
-    region: 'EU',
-    price: '$714.50',
-    change: '+9.30',
-    pctChange: '+1.32%',
-    direction: 'up',
-    sparkline: [698, 702, 708, 711, 714.5],
-    source: 'Euronext Amsterdam / NASDAQ',
     freshness: 'Real-time',
     bitemporalStatus: 'CANONICAL',
   },
@@ -3600,34 +3524,6 @@ export const GLOBAL_MARKET_ASSETS: MarketAsset[] = [
     bitemporalStatus: 'CANONICAL',
   },
   {
-    symbol: 'WTI CRUDE',
-    name: 'West Texas Intermediate Light Sweet Crude Oil',
-    assetClass: 'COMMODITIES',
-    region: 'GLOBAL',
-    price: '$71.45/bbl',
-    change: '+0.85',
-    pctChange: '+1.20%',
-    direction: 'up',
-    sparkline: [69.8, 70.2, 70.8, 71.1, 71.45],
-    source: 'New York Mercantile Exchange (NYMEX / CME)',
-    freshness: 'Real-time',
-    bitemporalStatus: 'CANONICAL',
-  },
-  {
-    symbol: 'BRENT CRUDE',
-    name: 'Brent North Sea Crude Oil Continuous Contract',
-    assetClass: 'COMMODITIES',
-    region: 'GLOBAL',
-    price: '$74.80/bbl',
-    change: '+0.92',
-    pctChange: '+1.25%',
-    direction: 'up',
-    sparkline: [73.2, 73.6, 74.1, 74.4, 74.8],
-    source: 'Intercontinental Exchange (ICE Futures Europe)',
-    freshness: 'Real-time',
-    bitemporalStatus: 'CANONICAL',
-  },
-  {
     symbol: 'COPPER',
     name: 'High Grade Copper Futures (COMEX)',
     assetClass: 'COMMODITIES',
@@ -3641,47 +3537,4 @@ export const GLOBAL_MARKET_ASSETS: MarketAsset[] = [
     freshness: 'Real-time',
     bitemporalStatus: 'CANONICAL',
   },
-  {
-    symbol: 'SILVER (XAG/USD)',
-    name: 'LBMA Silver Physical Spot Price',
-    assetClass: 'COMMODITIES',
-    region: 'GLOBAL',
-    price: '$31.65/oz',
-    change: '+0.42',
-    pctChange: '+1.34%',
-    direction: 'up',
-    sparkline: [30.8, 31.0, 31.2, 31.45, 31.65],
-    source: 'London Bullion Market Association (LBMA)',
-    freshness: 'Real-time',
-    bitemporalStatus: 'CANONICAL',
-  },
-  {
-    symbol: 'SOL/USD',
-    name: 'Solana High-Performance L1 Token',
-    assetClass: 'CRYPTO',
-    region: 'GLOBAL',
-    price: '$158.40',
-    change: '+6.20',
-    pctChange: '+4.07%',
-    direction: 'up',
-    sparkline: [148, 150.5, 153, 156, 158.4],
-    source: 'CoinMarketCap / TradingView Aggregated Spot',
-    freshness: 'Real-time',
-    bitemporalStatus: 'CANONICAL',
-  },
-  {
-    symbol: 'AVAX/USD',
-    name: 'Avalanche Consensus Platform',
-    assetClass: 'CRYPTO',
-    region: 'GLOBAL',
-    price: '$28.45',
-    change: '+1.10',
-    pctChange: '+4.02%',
-    direction: 'up',
-    sparkline: [26.8, 27.2, 27.6, 28.0, 28.45],
-    source: 'CoinMarketCap / TradingView Aggregated Spot',
-    freshness: 'Real-time',
-    bitemporalStatus: 'CANONICAL',
-  },
 ]
-
