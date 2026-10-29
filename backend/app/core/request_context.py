@@ -1,9 +1,12 @@
+import logging
 import uuid
 from contextvars import ContextVar
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
+
+logger = logging.getLogger(__name__)
 
 _request_id: ContextVar[str] = ContextVar("request_id", default="")
 _principal_id: ContextVar[str | None] = ContextVar("principal_id", default=None)
@@ -45,6 +48,14 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             from fastapi.responses import JSONResponse
 
             from app.core.errors import ErrorCode, TalvrinAPIError
+
+            # This is the only place an unhandled exception from any route
+            # ever surfaces - without this, every crash is silently replaced
+            # by "An internal error occurred." with zero trace of the real
+            # cause, anywhere, ever (found live: two real chat queries
+            # returned this generic message with nothing in the logs to
+            # diagnose them).
+            logger.exception("Unhandled exception for request_id=%s", request_id)
 
             wrapped = TalvrinAPIError(ErrorCode.INTERNAL_ERROR, "An internal error occurred.")
             response = JSONResponse(status_code=500, content=wrapped.to_body())

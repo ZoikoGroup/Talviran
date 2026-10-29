@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react'
+import { API_BASE } from '@/lib/api'
 
 export interface LiveTick {
   symbol: string
@@ -34,9 +35,12 @@ export function LiveMarketProvider({ children }: { children: React.ReactNode }) 
     const connect = () => {
       if (!active) return
       try {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-        const wsHost = window.location.port === '5173' ? `${window.location.hostname}:8000` : window.location.host
-        const wsUrl = `${protocol}//${wsHost}/api/v1/sync/ws`
+        // Must derive from the real API host (API_BASE, same source of
+        // truth every other request uses), never the page's own host -
+        // in production the frontend (app.talvrin.com) and the API are on
+        // different hosts, so building this from window.location silently
+        // points the socket at the wrong server there.
+        const wsUrl = `${API_BASE.replace(/^http/, 'ws')}/api/v1/sync/ws`
 
         const ws = new WebSocket(wsUrl)
         wsRef.current = ws

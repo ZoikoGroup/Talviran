@@ -47,7 +47,7 @@ class CloudKmsKeyWrapper:
 
     def __init__(self, key_name: str) -> None:
         try:
-            from google.cloud import kms  # type: ignore[import-not-found]
+            from google.cloud import kms
         except ImportError as exc:  # pragma: no cover - deployment-time path
             raise KeyConfigurationError(
                 "kms_key_name is set but google-cloud-kms is not installed; "
