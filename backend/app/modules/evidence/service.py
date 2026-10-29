@@ -37,6 +37,7 @@ could silently drift apart.
 """
 
 import datetime as dt
+import logging
 import re
 import uuid
 from collections.abc import Callable
@@ -2869,21 +2870,18 @@ _POLICY_BLOCKED_REPLY = ResearchAnswer(
 #: classification and every downstream branch sees only the real question.
 _TAGGED_ASSET_CONTEXT_PREFIX = re.compile(r"^\[Context: Tagged Asset [^\]]*\]\.\s*Query:\s*", re.I)
 
+logger = logging.getLogger(__name__)
 
-async def assemble_research_answer(
-    session: AsyncSession,
-    *,
-    query_text: str,
-    principal_id: uuid.UUID | None,
-    account_id: uuid.UUID | None,
-    http: httpx.AsyncClient | None = None,
+
+async def _dispatch_answer(
+    session: AsyncSession, query_text: str, http: httpx.AsyncClient | None
 ) -> ResearchAnswer:
-    """`http` is optional and only used by the catch-all document-search
-    fallback (semantic search needs an outbound call to Gemini) - every
-    other branch works identically without it, and passing None just
-    means the fallback degrades to lexical-only search, never an error.
+    """The big intent-classification chain, pulled out of
+    assemble_research_answer so that function can wrap this call in a
+    safety net - this part alone is where every keyword/regex branch and
+    every per-branch DB query lives, i.e. the real surface area for an
+    unanticipated bug in any one of them.
     """
-    query_text = _TAGGED_ASSET_CONTEXT_PREFIX.sub("", query_text, count=1)
     if _is_advice(query_text):
         answer = _advice_reply()
     elif _is_greeting(query_text):
@@ -2983,6 +2981,36 @@ async def assemble_research_answer(
         answer = await _document_backed_fallback_reply(session, query_text, http) or _default_reply(
             query_text
         )
+    return answer
+
+
+async def assemble_research_answer(
+    session: AsyncSession,
+    *,
+    query_text: str,
+    principal_id: uuid.UUID | None,
+    account_id: uuid.UUID | None,
+    http: httpx.AsyncClient | None = None,
+) -> ResearchAnswer:
+    """`http` is optional and only used by the catch-all document-search
+    fallback (semantic search needs an outbound call to Gemini) - every
+    other branch works identically without it, and passing None just
+    means the fallback degrades to lexical-only search, never an error.
+    """
+    query_text = _TAGGED_ASSET_CONTEXT_PREFIX.sub("", query_text, count=1)
+    try:
+        answer = await _dispatch_answer(session, query_text, http)
+    except Exception:
+        # Defense in depth: an unanticipated bug in any single branch of
+        # _dispatch_answer's classification chain must still produce the
+        # platform's normal, honest "ask within these limits" reply, never
+        # a raw internal error - found live, 2026-10-28: two real chat
+        # queries surfaced "An internal error occurred" instead of this.
+        # The real exception is still logged here, not silently discarded.
+        logger.exception(
+            "assemble_research_answer: dispatch failed for query %r", query_text
+        )
+        answer = _default_reply(query_text)
 
     permitted = await _pdp_permits(
         session,

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+import logging
 import re
 import uuid
 from decimal import Decimal, InvalidOperation
@@ -41,6 +42,8 @@ from app.modules.evidence.service import DEV_JURISDICTION
 from app.modules.research import service as research_service
 
 router = APIRouter(tags=["research"])
+
+logger = logging.getLogger(__name__)
 
 _IDEMPOTENCY_SCOPE = "POST /api/v1/research"
 
@@ -278,18 +281,30 @@ async def _try_ai_composed_text(
         if key
     }
 
-    outcome = await invoke_model(
-        db,
-        task_type=task_type,
-        evidence_bundle_id=answer.evidence_bundle_id,
-        instruction=query_text,
-        http=http,
-        api_keys=api_keys,
-        principal_id=principal_id,
-        account_id=account_id,
-        jurisdiction_code=DEV_JURISDICTION,
-        requested_output_type=answer.allowed_output_type,
-    )
+    try:
+        outcome = await invoke_model(
+            db,
+            task_type=task_type,
+            evidence_bundle_id=answer.evidence_bundle_id,
+            instruction=query_text,
+            http=http,
+            api_keys=api_keys,
+            principal_id=principal_id,
+            account_id=account_id,
+            jurisdiction_code=DEV_JURISDICTION,
+            requested_output_type=answer.allowed_output_type,
+        )
+    except Exception:
+        # invoke_model already turns every anticipated failure (kill
+        # switch, PDP deny, no PRODUCTION model, a provider's own
+        # Generation/transport errors) into InvokeRejected - this is only
+        # reached by something genuinely unanticipated (e.g. a malformed
+        # provider response shape). "AI is fully removable" means this
+        # must still degrade to the rule-based answer already computed
+        # above, never a raw internal error - the real exception is
+        # logged here for diagnosis, not silently discarded.
+        logger.exception("AI Gateway invoke_model failed unexpectedly for %r", task_type)
+        return answer
     if isinstance(outcome, InvokeResult):
         if _AI_DECLINATION_PATTERN.search(outcome.text):
             # The model declined to answer rather than composed one. Keep
