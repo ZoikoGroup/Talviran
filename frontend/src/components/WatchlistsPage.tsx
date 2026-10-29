@@ -20,6 +20,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Field, SubmitButton } from '@/components/ui/field'
 import TradingViewModal from '@/components/TradingViewModal'
+import { matchAssetSearch } from '@/lib/searchSynonyms'
 import {
   type Watchlist,
   listWatchlists,
@@ -457,8 +458,7 @@ export default function WatchlistsPage({
 
   const filteredItems = (currentList?.items || []).filter((item) => {
     if (!tableSearch) return true
-    const q = tableSearch.toLowerCase()
-    return item.symbol.toLowerCase().includes(q) || item.name.toLowerCase().includes(q)
+    return matchAssetSearch(item, tableSearch)
   })
 
   return (
@@ -636,8 +636,20 @@ export default function WatchlistsPage({
               <tbody className="divide-y divide-border/60">
                 {filteredItems.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-muted-foreground">
-                      No instruments found in this watchlist.
+                    <td colSpan={8} className="py-16 text-center text-muted-foreground">
+                      <div className="flex flex-col items-center justify-center gap-2.5 max-w-sm mx-auto">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground border border-border">
+                          <Search className="h-5 w-5" />
+                        </div>
+                        <div className="text-sm font-semibold text-foreground">
+                          {tableSearch.trim() ? 'No matching instruments found' : 'No instruments in this watchlist'}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {tableSearch.trim()
+                            ? `No items match "${tableSearch}". Try searching by asset symbol or company name.`
+                            : 'Add assets to track live prices, yield benchmarks, and risk metrics.'}
+                        </p>
+                      </div>
                     </td>
                   </tr>
                 ) : (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Search,
   ArrowRight,
@@ -15,6 +15,9 @@ import {
   X,
   Check,
   BookOpen,
+  TrendingUp,
+  TrendingDown,
+  Sparkles,
 } from 'lucide-react'
 import earthImg from '@/assets/earth_space_view.jpg'
 import {
@@ -23,16 +26,52 @@ import {
 } from '@/lib/api'
 import type { Chat } from '@/components/Sidebar'
 import { useLiveMarket } from '@/hooks/useLiveMarket'
+import { GLOBAL_MARKET_ASSETS, type MarketAsset } from '@/data/globalAssets'
+import { matchAssetSearch } from '@/lib/searchSynonyms'
+import TradingViewModal from '@/components/TradingViewModal'
+import type { TaggedAsset } from '@/data/mockReply'
 
 interface HomeDashboardProps {
   onSearch: (query: string) => void
-  onStartResearch: () => void
-  onOpenMonitoring?: () => void
+  onStartResearch: (assetOrQuery?: string | TaggedAsset, prompt?: string) => void
+  onOpenMonitoring?: (symbol?: string) => void
   onOpenWatchlists?: () => void
   onOpenMarkets?: (symbol?: string) => void
   onOpenGuides?: (topicId?: string) => void
   chats?: Chat[]
   onSelectChat?: (chatId: string) => void
+}
+
+function MiniSparkline({ data, direction }: { data: number[]; direction: 'up' | 'down' | 'flat' }) {
+  const min = Math.min(...data)
+  const max = Math.max(...data)
+  const range = max - min || 1
+  const width = 76
+  const height = 22
+
+  const points = data
+    .map((val, i) => {
+      const x = (i / (data.length - 1)) * width
+      const y = height - ((val - min) / range) * (height - 6) - 3
+      return `${x.toFixed(1)},${y.toFixed(1)}`
+    })
+    .join(' ')
+
+  const strokeColor =
+    direction === 'up' ? '#10b981' : direction === 'down' ? '#f43f5e' : '#94a3b8'
+
+  return (
+    <svg width={width} height={height} className="overflow-visible">
+      <polyline
+        fill="none"
+        stroke={strokeColor}
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={points}
+      />
+    </svg>
+  )
 }
 
 export default function HomeDashboard({
@@ -47,6 +86,45 @@ export default function HomeDashboard({
 }: HomeDashboardProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedSource, setSelectedSource] = useState('All sources')
+  const [isSearchFocused, setIsSearchFocused] = useState(false)
+  const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1)
+  const [selectedAssetForChart, setSelectedAssetForChart] = useState<MarketAsset | null>(null)
+  const searchContainerRef = useRef<HTMLDivElement>(null)
+
+  // Live filter matching assets based on search query and optional selected source
+  const matchedAssets = useMemo(() => {
+    const q = searchQuery.trim()
+    if (!q) return []
+    return GLOBAL_MARKET_ASSETS.filter((asset) => {
+      if (!matchAssetSearch(asset, q)) return false
+      if (selectedSource !== 'All sources') {
+        const s = asset.source.toLowerCase()
+        if (selectedSource === 'TradingView' && !s.includes('tradingview')) return false
+        if (selectedSource === 'CoinMarketCap' && !s.includes('coinmarketcap')) return false
+        if (selectedSource === 'Primary Exchanges' && !['nasdaq', 'nyse', 'london stock exchange', 'bombay stock exchange', 'national stock exchange', 'deutsche', 'euronext', 'hkex', 'tokyo stock exchange', 'six swiss', 'asx', 'krx', 'cboe', 'sp dow jones'].some(ex => s.includes(ex))) return false
+        if (selectedSource === 'Commodities' && !['lbma', 'cme', 'ice', 'nymex', 'comex', 'cbot'].some(c => s.includes(c))) return false
+        if (selectedSource === 'Central Banks' && !['bank of england', 'federal reserve', 'deutsche bundesbank', 'ministry of finance japan', 'bank of japan', 'reserve bank of india', 'ecb', 'ons', 'bls', 'swiss national bank', 'reserve bank of australia', 'bank of canada', "people's bank of china", 'eurostat', 'mospi', 'treasury', 'dmo'].some(cb => s.includes(cb))) return false
+        if (selectedSource === 'UK DMO & Gilts' && !s.includes('dmo') && !s.includes('gilt') && !s.includes('bank of england')) return false
+      }
+      return true
+    }).slice(0, 8)
+  }, [searchQuery, selectedSource])
+
+  // Handle outside click to close search dropdown
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setIsSearchFocused(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Reset highlight index when query changes
+  useEffect(() => {
+    setSelectedSearchIndex(-1)
+  }, [searchQuery])
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [overview, setOverview] = useState<DashboardOverviewResponse | null>(null)
   const { livePrices } = useLiveMarket()
@@ -160,10 +238,69 @@ const AVAILABLE_TIMEZONES = [
     }
   }
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (searchQuery.trim()) {
-      onSearch(searchQuery.trim())
+  const handleSelectAsset = (asset: MarketAsset) => {
+    setIsSearchFocused(false)
+    setSelectedAssetForChart(asset)
+  }
+
+  const handleResearchAsset = (asset: MarketAsset) => {
+    setIsSearchFocused(false)
+    const prompt = `Provide institutional evidence, valuation analysis, and primary driver breakdown for ${asset.name} (${asset.symbol}).`
+    onStartResearch(
+      {
+        symbol: asset.symbol,
+        name: asset.name,
+        assetClass: asset.assetClass,
+        price: asset.price,
+        change: asset.change,
+        pctChange: asset.pctChange,
+        direction: asset.direction,
+        source: asset.source,
+      },
+      prompt
+    )
+  }
+
+  const handleSearchSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    const q = searchQuery.trim()
+    if (!q) return
+    setIsSearchFocused(false)
+
+    // If an asset in the dropdown is highlighted via ArrowDown, open that asset
+    if (selectedSearchIndex >= 0 && selectedSearchIndex < matchedAssets.length) {
+      handleSelectAsset(matchedAssets[selectedSearchIndex])
+      return
+    }
+
+    // Check if query exactly or synonymously matches an asset
+    if (matchedAssets.length > 0) {
+      const exactMatch = matchedAssets.find(
+        (a) =>
+          a.symbol.toLowerCase() === q.toLowerCase() ||
+          a.name.toLowerCase() === q.toLowerCase()
+      )
+      if (exactMatch) {
+        handleSelectAsset(exactMatch)
+        return
+      }
+    }
+
+    onSearch(q)
+  }
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedSearchIndex((prev) => (prev < matchedAssets.length - 1 ? prev + 1 : prev))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedSearchIndex((prev) => (prev > -1 ? prev - 1 : -1))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      handleSearchSubmit()
+    } else if (e.key === 'Escape') {
+      setIsSearchFocused(false)
     }
   }
 
@@ -657,20 +794,38 @@ const AVAILABLE_TIMEZONES = [
           </div>
         )}
 
-        {/* Master Search Bar & Filter */}
-        <div className="space-y-3">
+        {/* Master Search Bar & Filter with Live Autocomplete Dropdown */}
+        <div ref={searchContainerRef} className="relative z-30 space-y-3">
           <form
             onSubmit={handleSearchSubmit}
-            className="flex items-center gap-3 rounded-2xl border border-border/80 bg-card/90 px-4 py-3 shadow-lg shadow-black/20 ring-1 ring-border/40 backdrop-blur-xl focus-within:border-primary/80 focus-within:ring-2 focus-within:ring-primary/20"
+            className="relative flex items-center gap-3 rounded-2xl border border-border/80 bg-card/95 px-4 py-3 shadow-lg shadow-black/25 ring-1 ring-border/40 backdrop-blur-xl focus-within:border-primary/80 focus-within:ring-2 focus-within:ring-primary/20"
           >
-            <Search className="h-5 w-5 text-muted-foreground" />
+            <Search className="h-5 w-5 text-muted-foreground shrink-0" />
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Ask a question about markets, assets, companies or economic data..."
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setIsSearchFocused(true)
+              }}
+              onFocus={() => setIsSearchFocused(true)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search assets (BTC, Tata Steel, Gilts, NVDA), ticker aliases or research questions..."
               className="flex-1 bg-transparent text-[15px] text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
+            {searchQuery.trim().length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('')
+                  setIsSearchFocused(false)
+                }}
+                title="Clear search"
+                className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
             <div className="flex items-center gap-2">
               <select
                 value={selectedSource}
@@ -697,6 +852,127 @@ const AVAILABLE_TIMEZONES = [
               </button>
             </div>
           </form>
+
+          {/* Live Search Results Dropdown Panel */}
+          {isSearchFocused && searchQuery.trim().length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-2 overflow-hidden rounded-2xl border border-border/80 bg-card/95 shadow-2xl backdrop-blur-xl ring-1 ring-black/40 animate-in fade-in zoom-in-95 duration-150 z-50">
+              <div className="flex items-center justify-between border-b border-border/60 bg-muted/30 px-4 py-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                <span>
+                  {matchedAssets.length > 0
+                    ? `Matching Assets (${matchedAssets.length})`
+                    : 'Search Results'}
+                </span>
+                <span>Press Enter to select · Esc to close</span>
+              </div>
+
+              {matchedAssets.length > 0 ? (
+                <div className="max-h-[380px] overflow-y-auto divide-y divide-border/40 scrollbar-slim">
+                  {matchedAssets.map((asset, idx) => {
+                    const isSelected = idx === selectedSearchIndex
+                    const isUp = asset.direction === 'up'
+                    return (
+                      <div
+                        key={`${asset.symbol}-${idx}`}
+                        onClick={() => handleSelectAsset(asset)}
+                        className={`group flex items-center justify-between gap-3 px-4 py-3 transition-colors cursor-pointer ${
+                          isSelected ? 'bg-primary/10' : 'hover:bg-muted/40'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border/80 bg-background/80 text-xs font-bold text-foreground">
+                            {asset.symbol.slice(0, 3)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-sm text-foreground truncate">
+                                {asset.symbol}
+                              </span>
+                              <span className="rounded px-1.5 py-0.2 text-[10px] font-semibold uppercase tracking-wider bg-muted text-muted-foreground">
+                                {asset.assetClass}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground hidden sm:inline">
+                                {asset.region}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate max-w-[280px] sm:max-w-md">
+                              {asset.name}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 shrink-0">
+                          <div className="hidden sm:block">
+                            <MiniSparkline data={asset.sparkline} direction={asset.direction} />
+                          </div>
+                          <div className="text-right min-w-[70px]">
+                            <div className="font-mono text-xs font-semibold text-foreground">
+                              {asset.price}
+                            </div>
+                            <div
+                              className={`flex items-center justify-end gap-0.5 text-[11px] font-medium ${
+                                isUp ? 'text-emerald-500' : 'text-rose-500'
+                              }`}
+                            >
+                              {isUp ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                              <span>{asset.pctChange}</span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleResearchAsset(asset)
+                            }}
+                            title="Start AI deep research for this asset"
+                            className="hidden md:inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary hover:bg-primary/20 transition-colors"
+                          >
+                            <Sparkles className="h-3 w-3" />
+                            <span>Evidence</span>
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="py-8 px-4 text-center">
+                  <div className="flex h-11 w-11 mx-auto items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground/80 border border-border/80 mb-2.5">
+                    <Search className="h-5 w-5" />
+                  </div>
+                  <h4 className="text-sm font-semibold text-foreground">
+                    No matching assets found for "{searchQuery}"
+                  </h4>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                    Try searching by asset ticker (e.g. BTC, ETH, TATASTEEL, AVGO), company name, or asset class.
+                  </p>
+                </div>
+              )}
+
+              {/* Action Bar Footer: Ask AI Research with full query */}
+              <div className="border-t border-border/60 bg-muted/30 p-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSearchFocused(false)
+                    onSearch(searchQuery.trim())
+                  }}
+                  className="w-full flex items-center justify-between gap-2 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/30 px-3.5 py-2 text-xs font-medium text-primary transition-all text-left"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+                    <span className="truncate">
+                      Ask AI Research: <strong className="font-semibold text-foreground">"{searchQuery}"</strong>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 text-[11px] opacity-80">
+                    <span>Evidence Mode</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Quick Filter Pill Buttons */}
           <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
@@ -810,7 +1086,7 @@ const AVAILABLE_TIMEZONES = [
 
             <div className="relative z-10 pt-6">
               <button
-                onClick={onStartResearch}
+                onClick={() => onStartResearch()}
                 className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-[13px] font-semibold text-black shadow-lg transition-all hover:bg-white/90 active:scale-95"
               >
                 <span>Start new research</span>
@@ -869,7 +1145,7 @@ const AVAILABLE_TIMEZONES = [
               <div className="flex items-center justify-between pb-2 border-b border-border/50">
                 <h3 className="text-[13px] font-semibold text-foreground">Your alerts</h3>
                 <button
-                  onClick={onOpenMonitoring}
+                  onClick={() => { if (onOpenMonitoring) onOpenMonitoring() }}
                   className="flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
                 >
                   View all <ArrowRight className="h-3 w-3" />
@@ -880,7 +1156,7 @@ const AVAILABLE_TIMEZONES = [
                 {userAlerts.map((a, i) => (
                   <div
                     key={i}
-                    onClick={onOpenMonitoring}
+                    onClick={() => { if (onOpenMonitoring) onOpenMonitoring() }}
                     className="flex cursor-pointer items-center justify-between rounded-xl border border-border/40 bg-background/50 p-2.5 transition-all hover:border-primary/40 hover:bg-background"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -938,7 +1214,7 @@ const AVAILABLE_TIMEZONES = [
             <div className="flex items-center justify-between pb-3 border-b border-border/50">
               <h3 className="text-[14px] font-semibold text-foreground">Continue your research</h3>
               <button
-                onClick={onStartResearch}
+                onClick={() => onStartResearch()}
                 className="flex items-center gap-1 text-[11.5px] font-medium text-primary hover:underline"
               >
                 View all <ArrowRight className="h-3 w-3" />
@@ -1047,7 +1323,7 @@ const AVAILABLE_TIMEZONES = [
 
             <div className="pt-3">
               <button
-                onClick={onStartResearch}
+                onClick={() => onStartResearch()}
                 className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-[12px] font-semibold text-black shadow transition-all hover:bg-white/90 active:scale-95"
               >
                 <span>Learn more</span>
@@ -1069,6 +1345,31 @@ const AVAILABLE_TIMEZONES = [
           </div>
         </div>
       </div>
+
+      {/* Interactive Asset TradingView Modal on Click */}
+      {selectedAssetForChart && (
+        <TradingViewModal
+          symbol={selectedAssetForChart.symbol}
+          name={selectedAssetForChart.name}
+          assetClass={selectedAssetForChart.assetClass}
+          last={selectedAssetForChart.price}
+          change={selectedAssetForChart.change}
+          pctChange={selectedAssetForChart.pctChange}
+          direction={selectedAssetForChart.direction}
+          source={selectedAssetForChart.source}
+          freshness={selectedAssetForChart.freshness}
+          bitemporalStatus={selectedAssetForChart.bitemporalStatus}
+          onClose={() => setSelectedAssetForChart(null)}
+          onStartResearch={(asset, prompt) => {
+            setSelectedAssetForChart(null)
+            onStartResearch(asset, prompt)
+          }}
+          onOpenMonitoring={(symbol) => {
+            setSelectedAssetForChart(null)
+            if (onOpenMonitoring) onOpenMonitoring(symbol)
+          }}
+        />
+      )}
     </div>
   )
 }
