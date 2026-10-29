@@ -42,6 +42,7 @@ interface MarketsPageProps {
 
 export { GLOBAL_MARKET_ASSETS, type MarketAsset } from '@/data/globalAssets'
 import { GLOBAL_MARKET_ASSETS, type MarketAsset } from '@/data/globalAssets'
+import { matchAssetSearch } from '@/lib/searchSynonyms'
 
 function MiniSparkline({ data, direction }: { data: number[]; direction: 'up' | 'down' | 'flat' }) {
   const min = Math.min(...data)
@@ -209,9 +210,7 @@ export default function MarketsPage({
   const filteredAssets = useMemo(() => {
     return allAssets.filter((a) => {
       if (search.trim()) {
-        const q = search.toLowerCase()
-        const matchesQuery = a.symbol.toLowerCase().includes(q) || a.name.toLowerCase().includes(q) || a.source.toLowerCase().includes(q)
-        if (!matchesQuery) return false
+        if (!matchAssetSearch(a, search)) return false
       }
       if (activeTab !== 'ALL' && a.assetClass !== activeTab) return false
       if (activeRegion !== 'ALL' && a.region !== activeRegion && a.region !== 'GLOBAL') return false
@@ -444,9 +443,31 @@ export default function MarketsPage({
                 <tbody className="divide-y divide-border/60">
                   {filteredAssets.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-muted-foreground">
-                        <div className="flex flex-col items-center justify-center gap-3">
-                          <span>No pre-configured benchmark matching "{search}"</span>
+                      <td colSpan={8} className="py-16 text-center text-muted-foreground">
+                        <div className="flex flex-col items-center justify-center gap-3.5 max-w-md mx-auto">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground/80 border border-border/80">
+                            <Search className="h-6 w-6" />
+                          </div>
+                          <div className="space-y-1">
+                            <h3 className="text-sm font-semibold text-foreground">No matching assets found</h3>
+                            <p className="text-xs text-muted-foreground">
+                              {search.trim()
+                                ? `No instruments or benchmarks match "${search}". Try searching ticker, company name, or asset class.`
+                                : 'No assets match the selected filter criteria.'}
+                            </p>
+                          </div>
+                          {(activeTab !== 'ALL' || activeRegion !== 'ALL' || activeSource !== 'ALL') && (
+                            <button
+                              onClick={() => {
+                                setActiveTab('ALL')
+                                setActiveRegion('ALL')
+                                setActiveSource('ALL')
+                              }}
+                              className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline font-medium"
+                            >
+                              Reset filters to search all 247+ assets
+                            </button>
+                          )}
                           {search.trim().length > 1 && (
                             <div className="flex flex-wrap items-center justify-center gap-2">
                               <button

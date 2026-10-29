@@ -16,6 +16,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { TaggedAsset } from '@/data/mockReply'
 import { GLOBAL_MARKET_ASSETS } from '@/components/MarketsPage'
+import { matchAssetSearch } from '@/lib/searchSynonyms'
 import type { Chat } from '@/components/Sidebar'
 
 interface SearchModalProps {
@@ -77,17 +78,11 @@ export default function SearchModal({
     })
   }
 
-  // 2. Filter Market Assets
+  // 2. Filter Market Assets with fuzzy & synonym matching
   const matchedAssets = GLOBAL_MARKET_ASSETS.filter((a) => {
     if (!trimmed) return false
-    const q = trimmed.toLowerCase()
-    return (
-      a.symbol.toLowerCase().includes(q) ||
-      a.name.toLowerCase().includes(q) ||
-      a.assetClass.toLowerCase().includes(q) ||
-      a.source.toLowerCase().includes(q)
-    )
-  }).slice(0, 7)
+    return matchAssetSearch(a, trimmed)
+  }).slice(0, 10)
 
   matchedAssets.forEach((a) => {
     items.push({
@@ -319,8 +314,14 @@ export default function SearchModal({
           className="max-h-[60vh] overflow-y-auto p-2 scrollbar-slim divide-y divide-border/20"
         >
           {items.length === 0 ? (
-            <div className="py-12 text-center text-[13.5px] text-muted-foreground">
-              No matching instruments, conversations, or actions found for "{query}".
+            <div className="flex flex-col items-center justify-center gap-2.5 py-12 text-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground border border-border">
+                <Search className="h-5 w-5" />
+              </div>
+              <div className="text-sm font-semibold text-foreground">No results found</div>
+              <div className="text-xs text-muted-foreground max-w-sm">
+                No matching instruments, conversations, or actions found for "{query}". Try searching by asset symbol (e.g. BTC, TATASTEEL, AAPL) or company name.
+              </div>
             </div>
           ) : (
             items.map((item, index) => {
