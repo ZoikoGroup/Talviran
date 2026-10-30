@@ -861,11 +861,11 @@ function BillingSection() {
     : 'Active'
 
   // Live Quotas & Usage straight from backend database counts
-  const watchlistsQuota = entitlement?.quotas.watchlists ?? 50
+  const watchlistsQuota = entitlement?.quotas.watchlists ?? 'unlimited'
   const watchlistsUsed = entitlement?.usage.watchlists_count ?? 0
   const rulesQuota = entitlement?.quotas.active_monitoring_rules ?? 125
   const rulesUsed = entitlement?.usage.active_rules_count ?? 0
-  const researchQuota = entitlement?.quotas.verified_research_runs_per_month ?? 500
+  const researchQuota = entitlement?.quotas.verified_research_runs_per_month ?? 400
   const researchUsed = entitlement?.usage.research_runs_this_month ?? 0
   const exportsQuota = entitlement?.quotas.evidence_dossier_exports_per_month ?? 125
   const exportsUsed = entitlement?.usage.evidence_exports_this_month ?? 0
@@ -1107,7 +1107,7 @@ function BillingSection() {
                   <div
                     className="h-full rounded-full bg-purple-500 transition-all duration-300"
                     style={{
-                      width: `${Math.min(100, (researchUsed / (typeof researchQuota === 'number' ? Math.max(1, researchQuota) : 500)) * 100)}%`,
+                      width: `${Math.min(100, (researchUsed / (typeof researchQuota === 'number' ? Math.max(1, researchQuota) : 400)) * 100)}%`,
                     }}
                   />
                 </div>
@@ -1173,15 +1173,15 @@ function BillingSection() {
           </div>
 
           {/* Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3.5">
             {[
               {
                 id: 'explorer' as api.PlanTier,
                 name: 'Explorer',
-                badge: 'Evaluation Tier',
+                badge: 'Evaluate UX',
                 price: '$0',
                 cadence: '/mo',
-                desc: 'Prove evidence-backed intelligence & verified calculation engine at zero risk.',
+                desc: 'Evaluate evidence UX and sovereign verification at zero financial commitment.',
                 limits: [
                   '2 saved watchlists',
                   '3 monitoring rules',
@@ -1189,18 +1189,19 @@ function BillingSection() {
                   '2 brief exports / mo',
                 ],
                 features: [
-                  'Sovereign Calculation Engine',
-                  'Point-in-Time Verification',
-                  'Statutory EDGAR Search',
+                  '1 individual user seat',
+                  'Personal workspace only',
+                  'Evidence replay manifest view',
+                  'Self-help support',
                 ],
               },
               {
                 id: 'research' as api.PlanTier,
                 name: 'Research',
-                badge: 'Serious Private Investor',
+                badge: 'Individual Research',
                 price: '$29',
                 cadence: '/mo',
-                desc: 'Deep sovereign forensic analysis, expanded filings, and continuous alert monitoring.',
+                desc: 'Regular individual research with expanded monitoring and evidence packs.',
                 limits: [
                   '10 saved watchlists',
                   '25 monitoring rules',
@@ -1208,18 +1209,19 @@ function BillingSection() {
                   '25 dossier exports / mo',
                 ],
                 features: [
-                  'Real-time Alerting (Telegram/Email)',
-                  'Audit-Grade Evidence Dossier (PDF)',
-                  '5 years statutory filings',
+                  '1 named user seat',
+                  'Personal workspace only',
+                  'View + standard replay',
+                  'Standard support',
                 ],
               },
               {
                 id: 'professional' as api.PlanTier,
                 name: 'Professional',
-                badge: 'Most Popular',
+                badge: 'High Intensity',
                 price: '$79',
                 cadence: '/mo',
-                desc: 'High-frequency institutional research, sovereign audit trails, and priority queues.',
+                desc: 'High-intensity institutional research, priority queue, and enhanced exports.',
                 popular: true,
                 limits: [
                   'Unlimited watchlists',
@@ -1228,28 +1230,50 @@ function BillingSection() {
                   '125 dossier exports / mo',
                 ],
                 features: [
-                  'Unlimited Audit-Grade Dossiers',
-                  'Priority Research Queue',
-                  '15+ years full historical corpus',
+                  '1 named user seat',
+                  'Enhanced replay export',
+                  'Priority execution queue',
+                  'Priority support queue',
                 ],
               },
               {
                 id: 'teams' as api.PlanTier,
                 name: 'Teams',
-                badge: 'Multi-Seat Pod',
+                badge: 'Small Teams',
                 price: '$249',
                 cadence: '/mo',
-                desc: 'Shared institutional evidence archives, collaborative pods, and pooled quota capacity.',
+                desc: 'Collaborative team pods with pooled quotas, shared roles, and business SLA.',
                 limits: [
                   'Unlimited pooled watchlists',
-                  '400 active rules (pooled)',
+                  '400 active rules pooled',
                   '1,200 verified runs / mo',
                   '350 dossier exports / mo',
                 ],
                 features: [
-                  '3 Team Seats with RBAC',
-                  'Shared Institutional Workspace',
-                  'Business-Hours Priority SLA',
+                  '3 named users included',
+                  'Shared team + roles',
+                  'Org-scoped replay archive',
+                  'Business-hours priority',
+                ],
+              },
+              {
+                id: 'enterprise' as api.PlanTier,
+                name: 'Enterprise',
+                badge: 'Institutional Orgs',
+                price: 'Custom',
+                cadence: 'quote',
+                desc: 'Institutional organizations with contracted governance, SSO, and custom SLA.',
+                limits: [
+                  'Contracted watchlists',
+                  'Contracted active rules',
+                  'Committed / pooled runs',
+                  'Contracted pack exports',
+                ],
+                features: [
+                  'Multi-team + policy',
+                  'Contracted retention',
+                  'SSO / SCIM optional SKU',
+                  'Contracted SLA',
                 ],
               },
             ].map((tier) => {

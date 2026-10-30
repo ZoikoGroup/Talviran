@@ -29,14 +29,14 @@ const DEFAULT_FALLBACK_ENTITLEMENT: AccountEntitlement = {
   current_period_end: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
   seat_count: 5,
   quotas: {
-    watchlists: 50,
+    watchlists: 'unlimited',
     active_monitoring_rules: 125,
-    verified_research_runs_per_month: 500,
+    verified_research_runs_per_month: 400,
     evidence_dossier_exports_per_month: 125,
-    filing_history_years: 10,
+    filing_history_years: 'unlimited',
     tick_level_realtime: true,
     team_workspaces: false,
-    seat_count: 5,
+    seat_count: 1,
   },
   usage: {
     watchlists_count: 2,
