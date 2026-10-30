@@ -51,22 +51,53 @@ type SectionId = (typeof SECTIONS)[number]['id']
 
 const SETTING_SEARCH_INDEX: Record<SectionId, { keywords: string[] }> = {
   account: {
-    keywords: ['name', 'display name', 'email', 'profile', 'user', 'sign out', 'logout', 'plan', 'account'],
+    keywords: [
+      'name', 'display name', 'email', 'profile', 'user', 'sign out', 'logout',
+      'plan', 'account', 'identity', 'username', 'edit name', 'device session',
+      'who you are', 'credentials', 'switch account', 'exit session',
+    ],
   },
   appearance: {
-    keywords: ['theme', 'dark', 'light', 'system', 'display', 'preference', 'mode', 'transparent', 'sidebar', 'appearance', 'look'],
+    keywords: [
+      'theme', 'dark', 'light', 'system', 'display', 'preference', 'mode',
+      'transparent', 'sidebar', 'appearance', 'look', 'style', 'color',
+      'contrast', 'ui', 'interface', 'dark mode', 'light mode', 'system preference',
+      'visuals', 'backdrop', 'blur', 'glassmorphism', 'layout',
+    ],
   },
   security: {
-    keywords: ['password', 'pass', 'security', '2fa', 'totp', 'two-factor', 'authentication', 'auth', 'shield', 'protect', 'qr'],
+    keywords: [
+      'password', 'pass', 'security', '2fa', 'totp', 'two-factor', 'authentication',
+      'auth', 'shield', 'protect', 'qr', 'qr code', 'authenticator', 'google authenticator',
+      'authy', '1password', 'one-time code', 'otp', 'multi-factor', 'mfa',
+      'verify', 'reset password', 'new password', 'current password', 'change password',
+      'breach check', 'secret key',
+    ],
   },
   billing: {
-    keywords: ['billing', 'subscription', 'invoice', 'plan', 'upgrade', 'pricing', 'stripe', 'payment', 'quotas', 'explorer', 'research', 'professional', 'teams'],
+    keywords: [
+      'billing', 'subscription', 'invoice', 'plan', 'upgrade', 'pricing', 'stripe',
+      'payment', 'quotas', 'explorer', 'research', 'professional', 'teams',
+      'enterprise', 'credit card', 'renewal', 'receipt', 'manage billing',
+      'billing portal', 'tier', 'annual', 'monthly', 'compare plans', 'seats',
+      'allowance', 'billing frequency', 'downgrade',
+    ],
   },
   usage: {
-    keywords: ['usage', 'quota', 'limits', 'metrics', 'watchlists', 'alert rules', 'runs', 'research runs', 'exports', 'chats', 'messages'],
+    keywords: [
+      'usage', 'quota', 'limits', 'metrics', 'watchlists', 'rules', 'alert rules',
+      'runs', 'research runs', 'exports', 'chats', 'messages', 'consumption',
+      'activity', 'allowance', 'dossier exports', 'historical queries', 'storage',
+      'monitoring rules', 'remaining runs', 'usage overview', 'capacity',
+    ],
   },
   data: {
-    keywords: ['data', 'export', 'delete', 'download', 'backup', 'privacy', 'erase', 'clear', 'account deletion'],
+    keywords: [
+      'data', 'export', 'delete', 'download', 'backup', 'privacy', 'erase',
+      'clear', 'account deletion', 'data controls', 'export workspace', 'json',
+      'clear workspace', 'delete all chats', 'delete account', 'erase history',
+      'gdpr', 'compliance', 'purge data', 'permanent delete',
+    ],
   },
 }
 
