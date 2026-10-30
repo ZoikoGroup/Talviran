@@ -398,11 +398,12 @@ export default function Sidebar({
       )}
 
       <aside
+        data-sidebar="true"
         className={cn(
           'flex flex-col overflow-hidden text-sidebar-foreground',
           // Acrylic: a translucent tint over a blurred, slightly saturated
           // backdrop, finished with a hairline edge so it reads as a pane.
-          'bg-sidebar/60 backdrop-blur-2xl backdrop-saturate-150 group-[.sidebar-transparent]/body:bg-transparent group-[.sidebar-transparent]/body:backdrop-blur-none group-[.sidebar-transparent]/body:border-sidebar-border/20',
+          'bg-sidebar/60 backdrop-blur-2xl backdrop-saturate-150',
           'border-r border-sidebar-border/60',
           // Mobile: a fixed off-canvas drawer, sliding in over the app.
           'fixed inset-y-0 left-0 z-40 w-[252px]',
