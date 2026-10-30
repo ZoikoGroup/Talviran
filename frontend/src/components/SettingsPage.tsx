@@ -23,7 +23,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/auth/AuthContext'
 import * as api from '@/lib/api'
-import { Field, SubmitButton } from '@/components/ui/field'
+import { Field } from '@/components/ui/field'
 import { passwordProblem } from '@/auth/session'
 import { useEntitlement, formatPlanTier } from '@/context/EntitlementContext'
 
@@ -775,8 +775,13 @@ function SecuritySection() {
             </p>
           )}
 
-          <div className="self-start">
-            <SubmitButton>Update password</SubmitButton>
+          <div className="pt-2 flex justify-start">
+            <button
+              type="submit"
+              className="inline-flex h-10 items-center justify-center rounded-xl bg-primary px-5 text-[13.5px] font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              Update password
+            </button>
           </div>
         </form>
       </Card>
