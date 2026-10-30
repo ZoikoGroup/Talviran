@@ -1369,102 +1369,107 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
             })}
           </div>
 
-          {/* Comparative Matrix Table */}
+          {/* Comparative Matrix Table matching Table 11 of Talvrin Commercial Architecture */}
           <div className="mt-4 pt-4 border-t border-border/60">
             <h4 className="text-sm font-semibold text-foreground mb-3">
-              Side-by-Side Entitlements Comparison
+              Official Entitlements & Capacity Matrix
             </h4>
             <div className="overflow-x-auto rounded-xl border border-border/70 scrollbar-slim">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-border/70 bg-muted/40">
                     <th className="p-3.5 font-semibold text-muted-foreground min-w-[200px]">
-                      Capability / Specification
+                      Entitlement / month
                     </th>
-                    <th className="p-3.5 font-semibold text-foreground text-center min-w-[130px]">
+                    <th className="p-3.5 font-semibold text-foreground text-center min-w-[120px]">
                       Explorer ($0)
                     </th>
-                    <th className="p-3.5 font-semibold text-foreground text-center min-w-[130px]">
+                    <th className="p-3.5 font-semibold text-foreground text-center min-w-[120px]">
                       Research ($29)
                     </th>
-                    <th className="p-3.5 font-semibold text-primary text-center min-w-[140px] bg-primary/5">
+                    <th className="p-3.5 font-semibold text-primary text-center min-w-[130px] bg-primary/5">
                       Professional ($79)
                     </th>
                     <th className="p-3.5 font-semibold text-indigo-400 text-center min-w-[130px]">
                       Teams ($249)
                     </th>
+                    <th className="p-3.5 font-semibold text-slate-300 text-center min-w-[120px]">
+                      Enterprise
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50 bg-background/50">
                   <tr>
-                    <td className="p-3.5 font-medium text-foreground">Saved Watchlists</td>
+                    <td className="p-3.5 font-medium text-foreground">Saved watchlists</td>
                     <td className="p-3.5 text-center text-muted-foreground">2</td>
                     <td className="p-3.5 text-center text-muted-foreground">10</td>
                     <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">Unlimited</td>
-                    <td className="p-3.5 text-center text-indigo-400 font-semibold">Unlimited (Pooled)</td>
+                    <td className="p-3.5 text-center text-indigo-400 font-semibold">Unlimited (pooled)</td>
+                    <td className="p-3.5 text-center text-slate-300">Contracted</td>
                   </tr>
                   <tr>
-                    <td className="p-3.5 font-medium text-foreground">Active Alert Rules</td>
+                    <td className="p-3.5 font-medium text-foreground">Active monitoring rules</td>
                     <td className="p-3.5 text-center text-muted-foreground">3</td>
                     <td className="p-3.5 text-center text-muted-foreground">25</td>
                     <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">125</td>
-                    <td className="p-3.5 text-center text-indigo-400 font-semibold">400 (Pooled)</td>
+                    <td className="p-3.5 text-center text-indigo-400 font-semibold">400 pooled</td>
+                    <td className="p-3.5 text-center text-slate-300">Contracted</td>
                   </tr>
                   <tr>
-                    <td className="p-3.5 font-medium text-foreground">Verified Research Runs</td>
-                    <td className="p-3.5 text-center text-muted-foreground">10 / mo</td>
-                    <td className="p-3.5 text-center text-muted-foreground">100 / mo</td>
-                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">400 / mo</td>
-                    <td className="p-3.5 text-center text-indigo-400 font-semibold">1,200 / mo</td>
+                    <td className="p-3.5 font-medium text-foreground">Verified research runs</td>
+                    <td className="p-3.5 text-center text-muted-foreground">10</td>
+                    <td className="p-3.5 text-center text-muted-foreground">100</td>
+                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">400</td>
+                    <td className="p-3.5 text-center text-indigo-400 font-semibold">1,200 pooled</td>
+                    <td className="p-3.5 text-center text-slate-300">Committed / pooled</td>
                   </tr>
                   <tr>
-                    <td className="p-3.5 font-medium text-foreground">Evidence Exports (PDF/MD)</td>
-                    <td className="p-3.5 text-center text-muted-foreground">2 brief / mo</td>
-                    <td className="p-3.5 text-center text-muted-foreground">25 dossier / mo</td>
-                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">125 dossier / mo</td>
-                    <td className="p-3.5 text-center text-indigo-400 font-semibold">350 dossier / mo</td>
+                    <td className="p-3.5 font-medium text-foreground">Evidence-pack exports</td>
+                    <td className="p-3.5 text-center text-muted-foreground">2</td>
+                    <td className="p-3.5 text-center text-muted-foreground">25</td>
+                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">125</td>
+                    <td className="p-3.5 text-center text-indigo-400 font-semibold">350 pooled</td>
+                    <td className="p-3.5 text-center text-slate-300">Contracted</td>
                   </tr>
                   <tr>
-                    <td className="p-3.5 font-medium text-foreground">Statutory Filing Corpus</td>
-                    <td className="p-3.5 text-center text-muted-foreground">1 Year</td>
-                    <td className="p-3.5 text-center text-muted-foreground">5 Years</td>
-                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">15+ Years Historical</td>
-                    <td className="p-3.5 text-center text-indigo-400 font-semibold">Full Global Corpus</td>
+                    <td className="p-3.5 font-medium text-foreground">Workspaces / collaboration</td>
+                    <td className="p-3.5 text-center text-muted-foreground">Personal only</td>
+                    <td className="p-3.5 text-center text-muted-foreground">Personal only</td>
+                    <td className="p-3.5 text-center text-primary bg-primary/5">Personal only</td>
+                    <td className="p-3.5 text-center text-indigo-400 font-semibold">Shared team + roles</td>
+                    <td className="p-3.5 text-center text-slate-300">Multi-team + policy</td>
                   </tr>
                   <tr>
-                    <td className="p-3.5 font-medium text-foreground">Data Feed Latency</td>
-                    <td className="p-3.5 text-center text-muted-foreground">15-min Delayed</td>
-                    <td className="p-3.5 text-center text-muted-foreground">Near Real-Time</td>
-                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">Real-Time Tick Feeds</td>
-                    <td className="p-3.5 text-center text-indigo-400 font-semibold">Institutional Bridge</td>
+                    <td className="p-3.5 font-medium text-foreground">Evidence replay manifest</td>
+                    <td className="p-3.5 text-center text-muted-foreground">View permitted</td>
+                    <td className="p-3.5 text-center text-muted-foreground">View + standard</td>
+                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">Enhanced export</td>
+                    <td className="p-3.5 text-center text-indigo-400 font-semibold">Org-scoped archive</td>
+                    <td className="p-3.5 text-center text-slate-300">Contracted retention</td>
                   </tr>
                   <tr>
-                    <td className="p-3.5 font-medium text-foreground">Multi-Seat Collaboration</td>
-                    <td className="p-3.5 text-center text-muted-foreground">1 User</td>
-                    <td className="p-3.5 text-center text-muted-foreground">1 User</td>
-                    <td className="p-3.5 text-center text-primary bg-primary/5">1 Named Seat</td>
-                    <td className="p-3.5 text-center font-semibold text-indigo-400">3 Seats Included</td>
-                  </tr>
-                  <tr>
-                    <td className="p-3.5 font-medium text-foreground">Sovereign Point-in-Time Engine</td>
-                    <td className="p-3.5 text-center"><Check className="h-4 w-4 text-emerald-400 mx-auto" /></td>
-                    <td className="p-3.5 text-center"><Check className="h-4 w-4 text-emerald-400 mx-auto" /></td>
-                    <td className="p-3.5 text-center bg-primary/5"><Check className="h-4 w-4 text-emerald-400 mx-auto" /></td>
-                    <td className="p-3.5 text-center"><Check className="h-4 w-4 text-emerald-400 mx-auto" /></td>
-                  </tr>
-                  <tr>
-                    <td className="p-3.5 font-medium text-foreground">Priority Execution Queue</td>
+                    <td className="p-3.5 font-medium text-foreground">SSO / SCIM</td>
                     <td className="p-3.5 text-center text-muted-foreground">—</td>
                     <td className="p-3.5 text-center text-muted-foreground">—</td>
-                    <td className="p-3.5 text-center bg-primary/5"><Check className="h-4 w-4 text-primary mx-auto" /></td>
-                    <td className="p-3.5 text-center"><Check className="h-4 w-4 text-indigo-400 mx-auto" /></td>
+                    <td className="p-3.5 text-center text-muted-foreground bg-primary/5">—</td>
+                    <td className="p-3.5 text-center text-indigo-400">Optional contract</td>
+                    <td className="p-3.5 text-center text-slate-300">Optional standard SKU</td>
                   </tr>
                   <tr>
-                    <td className="p-3.5 font-medium text-foreground">Support & SLA</td>
-                    <td className="p-3.5 text-center text-muted-foreground">Community</td>
-                    <td className="p-3.5 text-center text-muted-foreground">Standard Email</td>
-                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">Priority Queue</td>
-                    <td className="p-3.5 text-center font-semibold text-indigo-400">Business-Hours SLA</td>
+                    <td className="p-3.5 font-medium text-foreground">Product API</td>
+                    <td className="p-3.5 text-center text-muted-foreground">—</td>
+                    <td className="p-3.5 text-center text-muted-foreground">—</td>
+                    <td className="p-3.5 text-center text-muted-foreground bg-primary/5">—</td>
+                    <td className="p-3.5 text-center text-indigo-400">Quote and rights gate</td>
+                    <td className="p-3.5 text-center text-slate-300">Contracted + rights gate</td>
+                  </tr>
+                  <tr>
+                    <td className="p-3.5 font-medium text-foreground">Support</td>
+                    <td className="p-3.5 text-center text-muted-foreground">Self-help</td>
+                    <td className="p-3.5 text-center text-muted-foreground">Standard</td>
+                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">Priority queue</td>
+                    <td className="p-3.5 text-center font-semibold text-indigo-400">Business-hours priority</td>
+                    <td className="p-3.5 text-center text-slate-300">Contracted SLA</td>
                   </tr>
                 </tbody>
               </table>
