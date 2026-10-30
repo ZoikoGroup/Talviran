@@ -19,6 +19,7 @@ import {
   Layers,
   Radio,
   Activity,
+  X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/auth/AuthContext'
@@ -47,6 +48,27 @@ const SECTIONS = [
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]['id']
+
+const SETTING_SEARCH_INDEX: Record<SectionId, { keywords: string[] }> = {
+  account: {
+    keywords: ['name', 'display name', 'email', 'profile', 'user', 'sign out', 'logout', 'plan', 'account'],
+  },
+  appearance: {
+    keywords: ['theme', 'dark', 'light', 'system', 'display', 'preference', 'mode', 'transparent', 'sidebar', 'appearance', 'look'],
+  },
+  security: {
+    keywords: ['password', 'pass', 'security', '2fa', 'totp', 'two-factor', 'authentication', 'auth', 'shield', 'protect', 'qr'],
+  },
+  billing: {
+    keywords: ['billing', 'subscription', 'invoice', 'plan', 'upgrade', 'pricing', 'stripe', 'payment', 'quotas', 'explorer', 'research', 'professional', 'teams'],
+  },
+  usage: {
+    keywords: ['usage', 'quota', 'limits', 'metrics', 'watchlists', 'alert rules', 'runs', 'research runs', 'exports', 'chats', 'messages'],
+  },
+  data: {
+    keywords: ['data', 'export', 'delete', 'download', 'backup', 'privacy', 'erase', 'clear', 'account deletion'],
+  },
+}
 
 /* ---------------- shared bits ---------------- */
 
@@ -1438,6 +1460,20 @@ export default function SettingsPage({
   const [active, setActive] = useState<SectionId>('appearance')
   const [searchQuery, setSearchQuery] = useState('')
 
+  // Automatically navigate/highlight section when search query matches
+  useEffect(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return
+
+    for (const [secId, def] of Object.entries(SETTING_SEARCH_INDEX) as [SectionId, { keywords: string[] }][]) {
+      const match = def.keywords.some((k) => k.toLowerCase().includes(q) || q.includes(k.toLowerCase()))
+      if (match) {
+        setActive(secId)
+        break
+      }
+    }
+  }, [searchQuery])
+
   // Escape is the only keyboard way out of a full-pane view.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onBack()
@@ -1466,11 +1502,21 @@ export default function SettingsPage({
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search"
+                placeholder="Search settings..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-xl border border-border/80 bg-background pl-9 pr-3.5 py-1.5 text-[13.5px] text-foreground placeholder:text-muted-foreground outline-none transition-all focus:border-primary/60 focus:ring-1 focus:ring-primary/40 shadow-sm"
+                className="w-full rounded-xl border border-border/80 bg-background pl-9 pr-8 py-1.5 text-[13.5px] text-foreground placeholder:text-muted-foreground outline-none transition-all focus:border-primary/60 focus:ring-1 focus:ring-primary/40 shadow-sm"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Clear search"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
             <Link
               to="/guides"
