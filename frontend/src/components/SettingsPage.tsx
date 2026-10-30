@@ -197,122 +197,35 @@ function AccountSection({ onNavigateToBilling }: { onNavigateToBilling?: () => v
   )
 }
 
-const BRAND_COLORS = [
-  { id: 'slate', hex: '#475467', label: 'Slate' },
-  { id: 'green', hex: '#16A34A', label: 'Green' },
-  { id: 'blue', hex: '#2563EB', label: 'Blue' },
-  { id: 'indigo', hex: '#6366F1', label: 'Indigo' },
-  { id: 'purple', hex: '#7F56D9', label: 'Purple' },
-  { id: 'pink', hex: '#D946EF', label: 'Pink' },
-  { id: 'red', hex: '#EF4444', label: 'Red' },
-  { id: 'orange', hex: '#F97316', label: 'Orange' },
-]
-
 function AppearanceSection({
   theme,
   onThemeChange,
 }: Pick<SettingsPageProps, 'theme' | 'onThemeChange'>) {
-  const [selectedColor, setSelectedColor] = useState('#7F56D9')
-  const [customHex, setCustomHex] = useState('#7F56D9')
-  const [transparentSidebar, setTransparentSidebar] = useState(false)
+  const [transparentSidebar, setTransparentSidebar] = useState(() => {
+    return localStorage.getItem('talvrin-transparent-sidebar') === 'true'
+  })
+
+  const toggleTransparentSidebar = () => {
+    const next = !transparentSidebar
+    setTransparentSidebar(next)
+    try {
+      localStorage.setItem('talvrin-transparent-sidebar', String(next))
+    } catch {
+      // private mode
+    }
+    document.body.classList.toggle('sidebar-transparent', next)
+  }
+
+  useEffect(() => {
+    document.body.classList.toggle('sidebar-transparent', transparentSidebar)
+  }, [transparentSidebar])
 
   return (
     <Panel
       title="Appearance"
       description="Change how your dashboard looks and feels."
     >
-      {/* 1. Company logo */}
-      <Row
-        label="Company logo"
-        hint="Update your company logo."
-      >
-        <div className="flex items-center gap-4">
-          <div
-            className="flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm transition-transform hover:scale-105"
-            style={{ backgroundColor: selectedColor }}
-          >
-            {/* Elegant logo emblem matching screenshot */}
-            <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
-              <div className="h-5 w-2.5 rounded-l-full bg-white/90"></div>
-              <div className="h-5 w-2.5 rounded-r-full bg-white/40"></div>
-            </div>
-          </div>
-          <label className="cursor-pointer">
-            <span className="inline-flex items-center rounded-lg border border-border/80 bg-background px-3.5 py-2 text-[13px] font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground">
-              Replace logo
-            </span>
-            <input
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) {
-                  // feedback
-                }
-              }}
-            />
-          </label>
-        </div>
-      </Row>
-
-      {/* 2. Brand color */}
-      <Row
-        label="Brand color"
-        hint="Select or customize your brand color."
-      >
-        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-          {BRAND_COLORS.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => {
-                setSelectedColor(c.hex)
-                setCustomHex(c.hex)
-              }}
-              title={c.label}
-              className={cn(
-                'relative h-7 w-7 rounded-full transition-transform hover:scale-110 focus:outline-none',
-                selectedColor.toLowerCase() === c.hex.toLowerCase()
-                  ? 'ring-2 ring-primary ring-offset-2 ring-offset-background scale-105'
-                  : 'opacity-90 hover:opacity-100'
-              )}
-              style={{ backgroundColor: c.hex }}
-            >
-              {selectedColor.toLowerCase() === c.hex.toLowerCase() && (
-                <span className="absolute inset-0 flex items-center justify-center text-white">
-                  <Check className="h-3.5 w-3.5 drop-shadow-sm" />
-                </span>
-              )}
-            </button>
-          ))}
-
-          <div className="flex items-center gap-2 pl-2">
-            <span className="text-[13px] font-medium text-muted-foreground">Custom</span>
-            <div
-              className="h-7 w-7 rounded-full border border-border/80 shrink-0"
-              style={{ backgroundColor: customHex }}
-            />
-            <div className="relative">
-              <input
-                type="text"
-                value={customHex}
-                onChange={(e) => {
-                  const val = e.target.value
-                  setCustomHex(val)
-                  if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
-                    setSelectedColor(val)
-                  }
-                }}
-                className="w-24 rounded-lg border border-border/80 bg-background px-2.5 py-1 text-xs font-mono font-medium text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                placeholder="#7F56D9"
-              />
-            </div>
-          </div>
-        </div>
-      </Row>
-
-      {/* 3. Display preference */}
+      {/* 1. Display preference */}
       <Row
         label="Display preference"
         hint="Switch between light and dark modes."
@@ -324,7 +237,7 @@ function AppearanceSection({
             onClick={() => onThemeChange('dark')}
             className={cn(
               'group relative flex flex-col items-center rounded-xl border p-2.5 text-left transition-all hover:border-primary/60 focus:outline-none',
-              theme === 'dark' // can represent active or match user's default
+              theme === 'dark'
                 ? 'border-primary ring-2 ring-primary/20 bg-primary/[0.02]'
                 : 'border-border/70 bg-card hover:bg-accent/30'
             )}
@@ -466,7 +379,7 @@ function AppearanceSection({
         </div>
       </Row>
 
-      {/* 4. Transparent sidebar */}
+      {/* 2. Transparent sidebar */}
       <Row
         label="Transparent sidebar"
         hint="Make the sidebar transparent."
@@ -475,7 +388,7 @@ function AppearanceSection({
           type="button"
           role="switch"
           aria-checked={transparentSidebar}
-          onClick={() => setTransparentSidebar(!transparentSidebar)}
+          onClick={toggleTransparentSidebar}
           className={cn(
             'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2',
             transparentSidebar ? 'bg-primary' : 'bg-secondary'
@@ -1565,11 +1478,11 @@ export default function SettingsPage({
           </div>
         </div>
 
-        {/* Top Horizontal Pill Navigation Bar */}
-        <div className="mb-8">
+        {/* Top Horizontal Pill Navigation Bar (Centered) */}
+        <div className="mb-8 flex justify-center">
           <nav
             aria-label="Settings sections"
-            className="scrollbar-slim -mx-2 flex items-center gap-1 overflow-x-auto rounded-2xl border border-border/80 bg-background/95 p-1.5 shadow-sm px-2 backdrop-blur-sm"
+            className="scrollbar-slim flex items-center justify-center gap-1.5 overflow-x-auto rounded-2xl border border-border/80 bg-background/95 p-1.5 shadow-sm px-2 backdrop-blur-sm max-w-full"
           >
             {SECTIONS.map((sec) => {
               const isSelected = active === sec.id
@@ -1579,7 +1492,7 @@ export default function SettingsPage({
                   onClick={() => setActive(sec.id)}
                   aria-current={isSelected}
                   className={cn(
-                    'flex shrink-0 items-center gap-2 rounded-xl px-4 py-2 text-[13.5px] font-medium transition-all',
+                    'flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2 text-[13.5px] font-medium transition-all',
                     isSelected
                       ? 'bg-card text-foreground shadow-sm ring-1 ring-border/80 font-semibold'
                       : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'

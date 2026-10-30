@@ -117,6 +117,16 @@ export default function App() {
   // unlike `collapsed`, this is session state, not a device preference.
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const { theme, setTheme } = useTheme()
+
+  // Initialize transparent sidebar preference on body
+  useEffect(() => {
+    try {
+      const isTransparent = localStorage.getItem('talvrin-transparent-sidebar') === 'true'
+      document.body.classList.toggle('sidebar-transparent', isTransparent)
+    } catch {
+      // fallback
+    }
+  }, [])
   type NavView = 'home' | 'markets' | 'watchlists' | 'monitoring' | 'settings' | 'research' | 'compare'
 
   // Retrieve initial view on reload/refresh from history state, URL hash, or session storage
