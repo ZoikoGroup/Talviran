@@ -12,7 +12,6 @@ import MarketsPage, { GLOBAL_MARKET_ASSETS } from '@/components/MarketsPage'
 import HomeDashboard from '@/components/HomeDashboard'
 import { ComparisonPage } from '@/components/ComparisonPage'
 import SearchModal from '@/components/SearchModal'
-import PricingModal from '@/components/PricingModal'
 import GuidesPanel from '@/components/GuidesPanel'
 import TalvrinMoonChat from '@/components/ui/talvrin-moon-chat'
 import { buildReply, type ChatMessage, type TaggedAsset } from '@/data/mockReply'
@@ -30,9 +29,7 @@ import {
   patchChat,
   patchProject,
   postResearch,
-  startCheckoutSession,
   type ChatMessageWire,
-  type PlanTier,
 } from '@/lib/api'
 import { useEntitlement } from '@/context/EntitlementContext'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
@@ -158,14 +155,14 @@ export default function App() {
   const [showCompare, setShowCompare] = useState(initialView === 'compare')
   const [showHome, setShowHome] = useState(initialView === 'home')
   const [showSearch, setShowSearch] = useState(false)
-  const [showPricing, setShowPricing] = useState(false)
+  const [settingsInitialSection, setSettingsInitialSection] = useState<'account' | 'appearance' | 'security' | 'billing' | 'usage' | 'data'>('appearance')
   const [showGuides, setShowGuides] = useState(false)
   const [guidesTopicId, setGuidesTopicId] = useState<string | null>(null)
   const [guidesTab, setGuidesTab] = useState<'guides' | 'faq' | 'ticket'>('guides')
   const [monitoringInitialSymbol, setMonitoringInitialSymbol] = useState<string | null>(null)
   const [marketsInitialSymbol, setMarketsInitialSymbol] = useState<string | null>(null)
   const [taggedAsset, setTaggedAsset] = useState<TaggedAsset | null>(null)
-  const { entitlement, checkLimit } = useEntitlement()
+  const { checkLimit } = useEntitlement()
 
   // Internal view navigation helper that syncs with browser history, hash and storage
   const navigateToView = useCallback((nextView: NavView, replace = false) => {
@@ -191,6 +188,11 @@ export default function App() {
       window.history.pushState(stateObj, '', targetUrl)
     }
   }, [])
+
+  const handleOpenPricing = useCallback(() => {
+    setSettingsInitialSection('billing')
+    navigateToView('settings')
+  }, [navigateToView])
 
   // In-app Back action: goes back to previous view or returns to home
   const handleGoBack = useCallback(() => {
@@ -412,7 +414,7 @@ export default function App() {
       toast.error(
         `Monthly research allowance reached (${quota.current} / ${quota.max} runs). Upgrade your plan to run unlimited institutional queries.`
       )
-      setShowPricing(true)
+      handleOpenPricing()
       return
     }
 
@@ -764,7 +766,7 @@ export default function App() {
         onOpenSettings={() => navigateToView('settings')}
         onOpenMonitoring={() => navigateToView('monitoring')}
         onOpenSearch={() => setShowSearch(true)}
-        onOpenPricing={() => setShowPricing(true)}
+        onOpenPricing={handleOpenPricing}
         onOpenGuides={(topicId) => {
           setGuidesTopicId(topicId || null)
           setShowGuides(true)
@@ -807,7 +809,7 @@ export default function App() {
             }}
             onClearWorkspace={clearWorkspace}
             onExportWorkspace={exportWorkspace}
-            onOpenPricing={() => setShowPricing(true)}
+            initialSection={settingsInitialSection}
           />
         ) : showMonitoring ? (
           <MonitoringPage
@@ -840,7 +842,7 @@ export default function App() {
               setMonitoringInitialSymbol(symbol)
               navigateToView('monitoring')
             }}
-            onOpenPricing={() => setShowPricing(true)}
+            onOpenPricing={handleOpenPricing}
           />
         ) : showCompare ? (
           <ComparisonPage
@@ -853,7 +855,7 @@ export default function App() {
               setGuidesTopicId(topicId || null)
               setShowGuides(true)
             }}
-            onOpenPricing={() => setShowPricing(true)}
+            onOpenPricing={handleOpenPricing}
           />
         ) : showHome ? (
           <HomeDashboard
@@ -1008,29 +1010,6 @@ export default function App() {
             navigateToView('monitoring')
           } else if (surface === 'settings') {
             navigateToView('settings')
-          }
-        }}
-      />
-
-      <PricingModal
-        isOpen={showPricing}
-        onClose={() => setShowPricing(false)}
-        currentPlanId={entitlement?.plan_tier ?? 'professional'}
-        onSelectPlan={async (planId, cycle) => {
-          try {
-            toast.loading(`Initializing secure checkout for ${planId.toUpperCase()}...`, { id: 'checkout' })
-            const resp = await startCheckoutSession({
-              plan_tier: planId as PlanTier,
-              billing_cadence: cycle,
-            })
-            toast.success(`Redirecting to secure billing session (${resp.session_id})...`, { id: 'checkout' })
-            setShowPricing(false)
-            // In institutional setup, redirect to checkout session URL
-            if (resp.checkout_url) {
-              window.open(resp.checkout_url, '_blank')
-            }
-          } catch (err: unknown) {
-            toast.error(err instanceof Error ? err.message : 'Failed to create checkout session', { id: 'checkout' })
           }
         }}
       />

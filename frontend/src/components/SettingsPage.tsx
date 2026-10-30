@@ -35,7 +35,7 @@ interface SettingsPageProps {
   stats: { chats: number; projects: number; messages: number }
   onClearWorkspace: () => void
   onExportWorkspace: () => void
-  onOpenPricing?: () => void
+  initialSection?: SectionId
 }
 
 const SECTIONS = [
@@ -842,7 +842,7 @@ function SecuritySection() {
   )
 }
 
-function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
+function BillingSection() {
   const { entitlement, refreshEntitlement, loading: entitlementLoading } = useEntitlement()
   const [portalLoading, setPortalLoading] = useState(false)
   const [updatingTier, setUpdatingTier] = useState<string | null>(null)
@@ -958,15 +958,16 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
           </div>
 
           <div className="flex items-center gap-2">
-            {onOpenPricing && (
-              <button
-                type="button"
-                onClick={onOpenPricing}
-                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3.5 py-2 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
-              >
-                Compare Plans
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.getElementById('plans-comparison-matrix')
+                if (el) el.scrollIntoView({ behavior: 'smooth' })
+              }}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary/50 px-3.5 py-2 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
+            >
+              Compare Plans
+            </button>
 
             <button
               type="button"
@@ -1156,6 +1157,7 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
       </Card>
 
       {/* 3. Change Plan Tier with Expanded Details & Comparative View */}
+      <div id="plans-comparison-matrix">
       <Card>
         <div className="p-5 flex flex-col gap-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-4">
@@ -1167,16 +1169,7 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
                 Side-by-side comparative matrix of quotas, sovereign verification engine capabilities, and support SLAs.
               </p>
             </div>
-            {onOpenPricing && (
-              <button
-                type="button"
-                onClick={onOpenPricing}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors self-start sm:self-auto shrink-0 shadow-sm"
-              >
-                <span>Full Pricing Modal</span>
-                <ExternalLink className="h-3 w-3 text-muted-foreground" />
-              </button>
-            )}
+
           </div>
 
           {/* Cards Grid */}
@@ -1477,6 +1470,7 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
           </div>
         </div>
       </Card>
+      </div>
     </Panel>
   )
 }
@@ -1709,9 +1703,9 @@ export default function SettingsPage({
   stats,
   onClearWorkspace,
   onExportWorkspace,
-  onOpenPricing,
+  initialSection,
 }: SettingsPageProps) {
-  const [active, setActive] = useState<SectionId>('appearance')
+  const [active, setActive] = useState<SectionId>(initialSection || 'appearance')
   const [searchQuery, setSearchQuery] = useState('')
 
   // Automatically navigate/highlight section when search query matches
@@ -1819,7 +1813,7 @@ export default function SettingsPage({
             <AppearanceSection theme={theme} onThemeChange={onThemeChange} />
           )}
           {active === 'security' && <SecuritySection />}
-          {active === 'billing' && <BillingSection onOpenPricing={onOpenPricing} />}
+          {active === 'billing' && <BillingSection />}
           {active === 'usage' && <UsageSection stats={stats} />}
           {active === 'data' && (
             <DataSection
