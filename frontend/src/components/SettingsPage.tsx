@@ -850,6 +850,8 @@ function BillingSection() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const activePlanTier = entitlement?.plan_tier || 'professional'
+  const isTeamOrEnterprise = activePlanTier === 'teams' || activePlanTier === 'enterprise'
+  const [planAudience, setPlanAudience] = useState<'individual' | 'team'>(isTeamOrEnterprise ? 'team' : 'individual')
   const activePlanName = formatPlanTier(activePlanTier)
   const isAnnual = entitlement?.billing_cadence === 'annual'
   const renewalDate = entitlement?.current_period_end
@@ -1160,7 +1162,7 @@ function BillingSection() {
       <div id="plans-comparison-matrix">
       <Card>
         <div className="p-5 flex flex-col gap-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/60 pb-4">
             <div>
               <h3 className="text-base font-semibold text-foreground tracking-tight">
                 Subscription Plans & Capacity Comparison
@@ -1170,6 +1172,33 @@ function BillingSection() {
               </p>
             </div>
 
+            {/* Segmented Audience Toggle */}
+            <div className="inline-flex items-center rounded-xl border border-border/80 bg-secondary/50 p-1 shrink-0 self-start sm:self-auto shadow-inner">
+              <button
+                type="button"
+                onClick={() => setPlanAudience('individual')}
+                className={cn(
+                  'rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all',
+                  planAudience === 'individual'
+                    ? 'bg-background text-foreground shadow-sm font-bold'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                Individual Plans (3)
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlanAudience('team')}
+                className={cn(
+                  'rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all',
+                  planAudience === 'team'
+                    ? 'bg-background text-foreground shadow-sm font-bold'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                Teams & Enterprise (2)
+              </button>
+            </div>
           </div>
 
           {/* Plan Cards: 3 Individual/Pro Plans on Top, 2 Multi-Seat/Institutional Plans Center-Aligned Below */}
@@ -1397,17 +1426,32 @@ function BillingSection() {
             }
 
             return (
-              <div className="flex flex-col gap-5">
-                {/* Top Row: 3 Individual & Pro Researcher Plans */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch">
-                  {allTiers.slice(0, 3).map(renderCard)}
-                </div>
-
-                {/* Bottom Row: 2 Team & Institutional Plans Center-Aligned */}
-                <div className="flex justify-center">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full md:max-w-[67.5%] items-stretch">
-                    {allTiers.slice(3, 5).map(renderCard)}
+              <div className="flex flex-col gap-4">
+                {planAudience === 'individual' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-stretch animate-in fade-in duration-200">
+                    {allTiers.slice(0, 3).map(renderCard)}
                   </div>
+                ) : (
+                  <div className="flex justify-center animate-in fade-in duration-200">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full md:max-w-[67.5%] items-stretch">
+                      {allTiers.slice(3, 5).map(renderCard)}
+                    </div>
+                  </div>
+                )}
+
+                {/* Quick Switch Callout / Cue */}
+                <div className="flex items-center justify-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setPlanAudience(planAudience === 'individual' ? 'team' : 'individual')}
+                    className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-primary transition-colors py-1 px-3 rounded-lg hover:bg-muted/30"
+                  >
+                    <span>
+                      {planAudience === 'individual'
+                        ? 'Looking for multi-seat team workspaces or institutional SLAs? View Teams & Enterprise Plans →'
+                        : 'Looking for single-researcher plans? View Individual Plans (Explorer, Research, Professional) →'}
+                    </span>
+                  </button>
                 </div>
               </div>
             )
