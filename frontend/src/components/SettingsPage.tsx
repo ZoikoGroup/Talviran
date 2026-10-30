@@ -38,17 +38,12 @@ interface SettingsPageProps {
 }
 
 const SECTIONS = [
-  { id: 'details', label: 'My details' },
-  { id: 'profile', label: 'Profile' },
-  { id: 'password', label: 'Password' },
-  { id: 'team', label: 'Team' },
+  { id: 'account', label: 'Account' },
   { id: 'appearance', label: 'Appearance' },
+  { id: 'security', label: 'Security' },
   { id: 'billing', label: 'Billing' },
   { id: 'usage', label: 'Usage' },
-  { id: 'email', label: 'Email' },
-  { id: 'notifications', label: 'Notifications', count: 2 },
-  { id: 'integrations', label: 'Integrations' },
-  { id: 'api', label: 'API' },
+  { id: 'data', label: 'Data controls' },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]['id']
@@ -1570,7 +1565,7 @@ export default function SettingsPage({
           </div>
         </div>
 
-        {/* Top Horizontal Pill Navigation Bar (Matching Mockup) */}
+        {/* Top Horizontal Pill Navigation Bar */}
         <div className="mb-8">
           <nav
             aria-label="Settings sections"
@@ -1591,18 +1586,6 @@ export default function SettingsPage({
                   )}
                 >
                   <span>{sec.label}</span>
-                  {'count' in sec && sec.count && (
-                    <span
-                      className={cn(
-                        'flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold',
-                        isSelected
-                          ? 'bg-primary/15 text-primary'
-                          : 'bg-muted text-muted-foreground'
-                      )}
-                    >
-                      {sec.count}
-                    </span>
-                  )}
                 </button>
               )
             })}
@@ -1611,88 +1594,16 @@ export default function SettingsPage({
 
         {/* Settings Body */}
         <div className="w-full">
-          {(active === 'details' || active === 'profile') && (
+          {active === 'account' && (
             <AccountSection onNavigateToBilling={() => setActive('billing')} />
           )}
           {active === 'appearance' && (
             <AppearanceSection theme={theme} onThemeChange={onThemeChange} />
           )}
-          {active === 'password' && <SecuritySection />}
+          {active === 'security' && <SecuritySection />}
           {active === 'billing' && <BillingSection onOpenPricing={onOpenPricing} />}
           {active === 'usage' && <UsageSection stats={stats} />}
-          {active === 'team' && (
-            <Panel
-              title="Team Members"
-              description="Manage who has access to your organization and their research permissions."
-            >
-              <Row
-                label="Team members"
-                hint="Invite team members to collaborate on public market research."
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex -space-x-2 overflow-hidden">
-                    <div className="inline-block h-8 w-8 rounded-full ring-2 ring-background bg-primary/20 text-primary font-semibold text-xs flex items-center justify-center">
-                      V
-                    </div>
-                    <div className="inline-block h-8 w-8 rounded-full ring-2 ring-background bg-secondary text-muted-foreground font-semibold text-xs flex items-center justify-center">
-                      +1
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="rounded-lg border border-border/80 bg-background px-3.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors shadow-sm"
-                  >
-                    Invite member
-                  </button>
-                </div>
-              </Row>
-            </Panel>
-          )}
-          {active === 'email' && (
-            <Panel
-              title="Email Preferences"
-              description="Control email summaries, alerts, and report delivery."
-            >
-              <Row
-                label="Market brief emails"
-                hint="Receive morning briefings and major macroeconomic earnings updates."
-              >
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-500">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Active
-                </span>
-              </Row>
-            </Panel>
-          )}
-          {active === 'notifications' && (
-            <Panel
-              title="Notifications"
-              description="Manage in-app sound, push notices, and research trigger alerts."
-            >
-              <Row
-                label="Desktop notifications"
-                hint="Notify when financial model background citations or alerts trigger."
-              >
-                <span className="text-xs text-muted-foreground">Enabled for this browser</span>
-              </Row>
-            </Panel>
-          )}
-          {active === 'integrations' && (
-            <Panel
-              title="Integrations"
-              description="Connect external data sources, market providers, and communication channels."
-            >
-              <Row
-                label="Connected services"
-                hint="TradingView, SEC EDGAR, Bloomberg, and Reuters market feeds."
-              >
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                  4 active connections
-                </span>
-              </Row>
-            </Panel>
-          )}
-          {active === 'api' && (
+          {active === 'data' && (
             <DataSection
               stats={stats}
               onClearWorkspace={onClearWorkspace}
