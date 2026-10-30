@@ -1172,8 +1172,8 @@ function BillingSection() {
 
           </div>
 
-          {/* Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3.5 items-stretch">
+          {/* Cards Grid: 5-column institutional tier layout with responsive horizontal scroll on compact screens */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3.5 items-stretch">
             {[
               {
                 id: 'explorer' as api.PlanTier,
@@ -1283,17 +1283,17 @@ function BillingSection() {
                 <div
                   key={tier.id}
                   className={cn(
-                    'relative rounded-2xl border p-5 flex flex-col justify-between gap-4 transition-all duration-200',
+                    'relative rounded-2xl border p-4 sm:p-4.5 flex flex-col justify-between gap-4 transition-all duration-200 backdrop-blur-sm',
                     isCurrent
-                      ? 'border-emerald-500/50 bg-emerald-500/[0.03] ring-1 ring-emerald-500/30 shadow-sm'
+                      ? 'border-emerald-500/40 bg-emerald-500/[0.04] shadow-[0_0_20px_rgba(16,185,129,0.06)] ring-1 ring-emerald-500/20'
                       : tier.popular
-                      ? 'border-primary/50 bg-primary/[0.02] ring-1 ring-primary/20 shadow-sm'
-                      : 'border-border/80 bg-card hover:border-border hover:bg-accent/20'
+                      ? 'border-primary/40 bg-primary/[0.03] shadow-[0_0_20px_rgba(99,102,241,0.06)] ring-1 ring-primary/20'
+                      : 'border-border/70 bg-card/60 hover:border-border hover:bg-card/90 hover:shadow-md'
                   )}
                 >
                   {/* Top Popular or Current Pill */}
                   {tier.popular && !isCurrent && (
-                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary-foreground shadow-sm">
+                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-primary px-2.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-primary-foreground shadow-sm whitespace-nowrap">
                       Most Popular
                     </div>
                   )}
@@ -1301,59 +1301,59 @@ function BillingSection() {
                   <div className="flex flex-col flex-1 justify-between gap-3.5">
                     {/* 1. Header & Price */}
                     <div>
-                      <div className="flex items-start justify-between gap-1.5 min-h-[46px]">
-                        <div>
-                          <h4 className="text-base font-bold text-foreground leading-tight">{tier.name}</h4>
-                          <span className="text-[11px] font-medium text-muted-foreground block mt-0.5">{tier.badge}</span>
+                      <div className="flex items-start justify-between gap-1.5 min-h-[44px]">
+                        <div className="min-w-0 pr-1">
+                          <h4 className="text-[15px] font-bold text-foreground leading-tight truncate">{tier.name}</h4>
+                          <span className="text-[11px] font-medium text-muted-foreground block mt-0.5 truncate">{tier.badge}</span>
                         </div>
                         {isCurrent ? (
-                          <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400 shrink-0">
+                          <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[9.5px] font-bold text-emerald-400 shrink-0 uppercase tracking-wide">
                             CURRENT
                           </span>
                         ) : (
-                          <div className="h-5" />
+                          <div className="h-5 w-1" />
                         )}
                       </div>
 
                       {/* Price row */}
-                      <div className="flex items-baseline gap-1 border-b border-border/50 pb-3 pt-2">
-                        <span className="text-2xl font-extrabold text-foreground tracking-tight font-mono">
+                      <div className="flex items-baseline gap-1 border-b border-border/40 pb-3 pt-1">
+                        <span className="text-[22px] font-extrabold text-foreground tracking-tight font-mono">
                           {tier.price}
                         </span>
-                        <span className="text-xs text-muted-foreground">{tier.cadence}</span>
+                        <span className="text-[11.5px] text-muted-foreground font-medium">{tier.cadence}</span>
                       </div>
 
                       {/* Description */}
-                      <p className="text-xs text-muted-foreground leading-relaxed pt-2.5 min-h-[58px]">
+                      <p className="text-[11.5px] text-muted-foreground leading-relaxed pt-2.5 min-h-[52px]">
                         {tier.desc}
                       </p>
                     </div>
 
                     {/* 2. Capacity Limits Box */}
-                    <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 flex flex-col justify-between min-h-[148px]">
-                      <div className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider mb-1.5">
+                    <div className="rounded-xl border border-border/50 bg-secondary/30 p-2.5 flex flex-col justify-start min-h-[142px]">
+                      <div className="font-semibold text-muted-foreground text-[9.5px] uppercase tracking-wider mb-2">
                         Capacity Limits
                       </div>
                       <div className="space-y-1.5 text-[11px]">
                         {tier.limits.map((l, i) => (
-                          <div key={i} className="flex items-center gap-1.5 text-foreground leading-snug">
+                          <div key={i} className="flex items-center gap-1.5 text-foreground/90 leading-tight">
                             <Check className="h-3 w-3 text-primary shrink-0" />
-                            <span className="line-clamp-1">{l}</span>
+                            <span className="truncate" title={l}>{l}</span>
                           </div>
                         ))}
                       </div>
                     </div>
 
                     {/* 3. Key Features Box */}
-                    <div className="space-y-1.5 min-h-[148px]">
-                      <div className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider mb-1.5">
+                    <div className="space-y-1.5 min-h-[142px] flex flex-col justify-start">
+                      <div className="font-semibold text-muted-foreground text-[9.5px] uppercase tracking-wider mb-1">
                         Key Features
                       </div>
                       <div className="space-y-1.5">
                         {tier.features.map((f, i) => (
-                          <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground leading-snug">
+                          <div key={i} className="flex items-start gap-1.5 text-[11.5px] text-muted-foreground leading-tight">
                             <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                            <span className="line-clamp-2">{f}</span>
+                            <span className="line-clamp-2" title={f}>{f}</span>
                           </div>
                         ))}
                       </div>
@@ -1361,13 +1361,13 @@ function BillingSection() {
                   </div>
 
                   {/* CTA Switch Button */}
-                  <div className="pt-3 border-t border-border/50">
+                  <div className="pt-3 border-t border-border/40">
                     <button
                       type="button"
                       disabled={isCurrent || isUpdating}
                       onClick={() => void handleDirectPlanSwitch(tier.id)}
                       className={cn(
-                        'w-full rounded-xl py-2 px-3 text-xs font-semibold transition-all flex items-center justify-center gap-1.5',
+                        'w-full rounded-xl py-2 px-3 text-[12px] font-semibold transition-all flex items-center justify-center gap-1.5',
                         isCurrent
                           ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 cursor-default font-medium'
                           : tier.popular
