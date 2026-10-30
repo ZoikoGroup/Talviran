@@ -2,29 +2,23 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowLeft,
-  BarChart3,
   Check,
   CreditCard,
-  Database,
   LogOut,
-  Moon,
-  Palette,
   Pencil,
   QrCode,
-  Shield,
   ShieldAlert,
   ShieldCheck,
-  Sun,
   Trash2,
-  User,
   BookOpen,
   ExternalLink,
   CheckCircle2,
   AlertCircle,
   RefreshCw,
-  Activity,
+  Search,
   Layers,
   Radio,
+  Activity,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/auth/AuthContext'
@@ -44,20 +38,20 @@ interface SettingsPageProps {
 }
 
 const SECTIONS = [
-  { id: 'account', label: 'Account', Icon: User },
-  { id: 'appearance', label: 'Appearance', Icon: Palette },
-  { id: 'security', label: 'Security', Icon: Shield },
-  { id: 'billing', label: 'Billing', Icon: CreditCard },
-  { id: 'usage', label: 'Usage', Icon: BarChart3 },
-  { id: 'data', label: 'Data controls', Icon: Database },
+  { id: 'details', label: 'My details' },
+  { id: 'profile', label: 'Profile' },
+  { id: 'password', label: 'Password' },
+  { id: 'team', label: 'Team' },
+  { id: 'appearance', label: 'Appearance' },
+  { id: 'billing', label: 'Billing' },
+  { id: 'usage', label: 'Usage' },
+  { id: 'email', label: 'Email' },
+  { id: 'notifications', label: 'Notifications', count: 2 },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'api', label: 'API' },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]['id']
-
-const THEMES = [
-  { value: 'dark', label: 'Dark', Icon: Moon },
-  { value: 'light', label: 'Light', Icon: Sun },
-] as const
 
 /* ---------------- shared bits ---------------- */
 
@@ -71,20 +65,22 @@ function Panel({
   children: React.ReactNode
 }) {
   return (
-    <section>
-      <h2 className="text-[17px] font-semibold tracking-tight">{title}</h2>
-      {description && (
-        <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">
-          {description}
-        </p>
-      )}
-      <div className="mt-5 flex flex-col gap-4">{children}</div>
+    <section className="animate-in fade-in duration-150">
+      <div className="pb-5 pt-1">
+        <h2 className="text-[18px] font-semibold tracking-tight text-foreground">{title}</h2>
+        {description && (
+          <p className="mt-1 text-[13.5px] leading-relaxed text-muted-foreground">
+            {description}
+          </p>
+        )}
+      </div>
+      <div className="divide-y divide-border/60 border-t border-border/70">{children}</div>
     </section>
   )
 }
 
 function Card({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-xl border border-border bg-card">{children}</div>
+  return <div className="divide-y divide-border/60">{children}</div>
 }
 
 function Row({
@@ -97,16 +93,18 @@ function Row({
   children?: React.ReactNode
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border px-4 py-4 last:border-b-0">
-      <div className="min-w-0">
-        <div className="break-words text-[14px] font-medium">{label}</div>
+    <div className="grid grid-cols-1 gap-4 py-6 md:grid-cols-12 md:gap-8 items-start">
+      <div className="md:col-span-4 lg:col-span-4 pr-2">
+        <div className="text-[14px] font-medium text-foreground">{label}</div>
         {hint && (
-          <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">
+          <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
             {hint}
           </p>
         )}
       </div>
-      {children && <div className="shrink-0">{children}</div>}
+      <div className="md:col-span-8 lg:col-span-8 flex flex-wrap items-center gap-4">
+        {children}
+      </div>
     </div>
   )
 }
@@ -204,39 +202,298 @@ function AccountSection({ onNavigateToBilling }: { onNavigateToBilling?: () => v
   )
 }
 
+const BRAND_COLORS = [
+  { id: 'slate', hex: '#475467', label: 'Slate' },
+  { id: 'green', hex: '#16A34A', label: 'Green' },
+  { id: 'blue', hex: '#2563EB', label: 'Blue' },
+  { id: 'indigo', hex: '#6366F1', label: 'Indigo' },
+  { id: 'purple', hex: '#7F56D9', label: 'Purple' },
+  { id: 'pink', hex: '#D946EF', label: 'Pink' },
+  { id: 'red', hex: '#EF4444', label: 'Red' },
+  { id: 'orange', hex: '#F97316', label: 'Orange' },
+]
+
 function AppearanceSection({
   theme,
   onThemeChange,
 }: Pick<SettingsPageProps, 'theme' | 'onThemeChange'>) {
+  const [selectedColor, setSelectedColor] = useState('#7F56D9')
+  const [customHex, setCustomHex] = useState('#7F56D9')
+  const [transparentSidebar, setTransparentSidebar] = useState(false)
+
   return (
-    <Panel title="Appearance" description="How Talvrin looks on this device.">
-      <Card>
-        <Row label="Theme" hint="Applies across the app and is remembered on this device.">
+    <Panel
+      title="Appearance"
+      description="Change how your dashboard looks and feels."
+    >
+      {/* 1. Company logo */}
+      <Row
+        label="Company logo"
+        hint="Update your company logo."
+      >
+        <div className="flex items-center gap-4">
           <div
-            role="radiogroup"
-            aria-label="Theme"
-            className="flex gap-1 rounded-full bg-secondary p-1"
+            className="flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm transition-transform hover:scale-105"
+            style={{ backgroundColor: selectedColor }}
           >
-            {THEMES.map(({ value, label, Icon }) => (
-              <button
-                key={value}
-                role="radio"
-                aria-checked={theme === value}
-                onClick={() => onThemeChange(value)}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] transition-colors',
-                  theme === value
-                    ? 'bg-card font-medium text-foreground ring-1 ring-inset ring-border'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-              </button>
-            ))}
+            {/* Elegant logo emblem matching screenshot */}
+            <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
+              <div className="h-5 w-2.5 rounded-l-full bg-white/90"></div>
+              <div className="h-5 w-2.5 rounded-r-full bg-white/40"></div>
+            </div>
           </div>
-        </Row>
-      </Card>
+          <label className="cursor-pointer">
+            <span className="inline-flex items-center rounded-lg border border-border/80 bg-background px-3.5 py-2 text-[13px] font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground">
+              Replace logo
+            </span>
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) {
+                  // feedback
+                }
+              }}
+            />
+          </label>
+        </div>
+      </Row>
+
+      {/* 2. Brand color */}
+      <Row
+        label="Brand color"
+        hint="Select or customize your brand color."
+      >
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+          {BRAND_COLORS.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => {
+                setSelectedColor(c.hex)
+                setCustomHex(c.hex)
+              }}
+              title={c.label}
+              className={cn(
+                'relative h-7 w-7 rounded-full transition-transform hover:scale-110 focus:outline-none',
+                selectedColor.toLowerCase() === c.hex.toLowerCase()
+                  ? 'ring-2 ring-primary ring-offset-2 ring-offset-background scale-105'
+                  : 'opacity-90 hover:opacity-100'
+              )}
+              style={{ backgroundColor: c.hex }}
+            >
+              {selectedColor.toLowerCase() === c.hex.toLowerCase() && (
+                <span className="absolute inset-0 flex items-center justify-center text-white">
+                  <Check className="h-3.5 w-3.5 drop-shadow-sm" />
+                </span>
+              )}
+            </button>
+          ))}
+
+          <div className="flex items-center gap-2 pl-2">
+            <span className="text-[13px] font-medium text-muted-foreground">Custom</span>
+            <div
+              className="h-7 w-7 rounded-full border border-border/80 shrink-0"
+              style={{ backgroundColor: customHex }}
+            />
+            <div className="relative">
+              <input
+                type="text"
+                value={customHex}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setCustomHex(val)
+                  if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                    setSelectedColor(val)
+                  }
+                }}
+                className="w-24 rounded-lg border border-border/80 bg-background px-2.5 py-1 text-xs font-mono font-medium text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                placeholder="#7F56D9"
+              />
+            </div>
+          </div>
+        </div>
+      </Row>
+
+      {/* 3. Display preference */}
+      <Row
+        label="Display preference"
+        hint="Switch between light and dark modes."
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-2xl">
+          {/* Card 1: System preference (Split Light / Dark) */}
+          <button
+            type="button"
+            onClick={() => onThemeChange('dark')}
+            className={cn(
+              'group relative flex flex-col items-center rounded-xl border p-2.5 text-left transition-all hover:border-primary/60 focus:outline-none',
+              theme === 'dark' // can represent active or match user's default
+                ? 'border-primary ring-2 ring-primary/20 bg-primary/[0.02]'
+                : 'border-border/70 bg-card hover:bg-accent/30'
+            )}
+          >
+            <div className="relative h-28 w-full overflow-hidden rounded-lg border border-border/80 bg-white shadow-sm flex">
+              {/* Left half: Light UI mockup */}
+              <div className="w-1/2 p-2 border-r border-slate-200 bg-slate-50 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-1 mb-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="h-1.5 w-10 rounded bg-slate-300" />
+                    <div className="h-1.5 w-14 rounded bg-primary/40" />
+                  </div>
+                </div>
+                {/* Mini chart line */}
+                <div className="h-6 w-full flex items-end">
+                  <div className="h-3 w-full border-b-2 border-primary/60" />
+                </div>
+              </div>
+
+              {/* Right half: Dark UI mockup */}
+              <div className="w-1/2 p-2 bg-[#121417] flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-end gap-1 mb-2">
+                    <span className="h-1.5 w-4 rounded bg-primary/70" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="h-1.5 w-10 rounded bg-slate-700" />
+                    <div className="h-1.5 w-12 rounded bg-slate-800" />
+                  </div>
+                </div>
+                {/* Mini dark chart line */}
+                <div className="h-6 w-full flex items-end">
+                  <div className="h-4 w-full border-b-2 border-indigo-400" />
+                </div>
+              </div>
+
+              {/* Radio selection indicator pill inside mockup preview */}
+              <div className="absolute bottom-2 left-2 flex h-5 w-5 items-center justify-center rounded-full border-2 border-primary bg-background">
+                <span className="h-2 w-2 rounded-full bg-primary" />
+              </div>
+            </div>
+            <div className="mt-2.5 w-full text-center">
+              <span className="text-[13px] font-medium text-foreground">System preference</span>
+            </div>
+          </button>
+
+          {/* Card 2: Light mode */}
+          <button
+            type="button"
+            onClick={() => onThemeChange('light')}
+            className={cn(
+              'group relative flex flex-col items-center rounded-xl border p-2.5 text-left transition-all hover:border-primary/60 focus:outline-none',
+              theme === 'light'
+                ? 'border-primary ring-2 ring-primary/20 bg-primary/[0.02]'
+                : 'border-border/70 bg-card hover:bg-accent/30'
+            )}
+          >
+            <div className="relative h-28 w-full overflow-hidden rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  </div>
+                  <div className="h-2 w-5 rounded bg-primary/40" />
+                </div>
+                <div className="space-y-1">
+                  <div className="h-1.5 w-12 rounded bg-slate-300" />
+                  <div className="h-1.5 w-8 rounded bg-primary/60" />
+                </div>
+              </div>
+              {/* Mini wave chart in light mode */}
+              <div className="h-8 w-full flex items-end">
+                <svg className="w-full h-8 text-primary/40" viewBox="0 0 100 30" fill="none" preserveAspectRatio="none">
+                  <path d="M0,25 Q25,20 50,15 T100,5" stroke="currentColor" strokeWidth="2" fill="none" />
+                </svg>
+              </div>
+
+              {theme === 'light' && (
+                <div className="absolute bottom-2 left-2 flex h-5 w-5 items-center justify-center rounded-full border-2 border-primary bg-background">
+                  <span className="h-2 w-2 rounded-full bg-primary" />
+                </div>
+              )}
+            </div>
+            <div className="mt-2.5 w-full text-center">
+              <span className="text-[13px] font-medium text-foreground">Light mode</span>
+            </div>
+          </button>
+
+          {/* Card 3: Dark mode */}
+          <button
+            type="button"
+            onClick={() => onThemeChange('dark')}
+            className={cn(
+              'group relative flex flex-col items-center rounded-xl border p-2.5 text-left transition-all hover:border-primary/60 focus:outline-none',
+              theme === 'dark'
+                ? 'border-primary ring-2 ring-primary/20 bg-primary/[0.02]'
+                : 'border-border/70 bg-card hover:bg-accent/30'
+            )}
+          >
+            <div className="relative h-28 w-full overflow-hidden rounded-lg border border-slate-800 bg-[#0F1117] p-2.5 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
+                  </div>
+                  <div className="h-2 w-5 rounded bg-indigo-500/50" />
+                </div>
+                <div className="space-y-1">
+                  <div className="h-1.5 w-12 rounded bg-slate-700" />
+                  <div className="h-1.5 w-8 rounded bg-indigo-400" />
+                </div>
+              </div>
+              {/* Mini wave chart in dark mode */}
+              <div className="h-8 w-full flex items-end">
+                <svg className="w-full h-8 text-indigo-400" viewBox="0 0 100 30" fill="none" preserveAspectRatio="none">
+                  <path d="M0,25 Q25,20 50,15 T100,5" stroke="currentColor" strokeWidth="2" fill="none" />
+                </svg>
+              </div>
+
+              {theme === 'dark' && (
+                <div className="absolute bottom-2 left-2 flex h-5 w-5 items-center justify-center rounded-full border-2 border-primary bg-background">
+                  <span className="h-2 w-2 rounded-full bg-primary" />
+                </div>
+              )}
+            </div>
+            <div className="mt-2.5 w-full text-center">
+              <span className="text-[13px] font-medium text-foreground">Dark mode</span>
+            </div>
+          </button>
+        </div>
+      </Row>
+
+      {/* 4. Transparent sidebar */}
+      <Row
+        label="Transparent sidebar"
+        hint="Make the sidebar transparent."
+      >
+        <button
+          type="button"
+          role="switch"
+          aria-checked={transparentSidebar}
+          onClick={() => setTransparentSidebar(!transparentSidebar)}
+          className={cn(
+            'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2',
+            transparentSidebar ? 'bg-primary' : 'bg-secondary'
+          )}
+        >
+          <span
+            className={cn(
+              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+              transparentSidebar ? 'translate-x-5' : 'translate-x-0'
+            )}
+          />
+        </button>
+      </Row>
     </Panel>
   )
 }
@@ -1265,7 +1522,8 @@ export default function SettingsPage({
   onExportWorkspace,
   onOpenPricing,
 }: SettingsPageProps) {
-  const [active, setActive] = useState<SectionId>('account')
+  const [active, setActive] = useState<SectionId>('appearance')
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Escape is the only keyboard way out of a full-pane view.
   useEffect(() => {
@@ -1276,8 +1534,9 @@ export default function SettingsPage({
 
   return (
     <div className="scrollbar-slim flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-5xl px-6 pb-20 pt-8">
-        <div className="mb-7 flex items-center justify-between">
+      <div className="mx-auto max-w-6xl px-6 pb-24 pt-8">
+        {/* Top Header: Title and Search on the right */}
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <button
               onClick={onBack}
@@ -1286,60 +1545,160 @@ export default function SettingsPage({
             >
               <ArrowLeft className="h-[18px] w-[18px]" />
             </button>
-            <h1 className="text-[22px] font-semibold tracking-tight">Settings</h1>
+            <h1 className="text-[26px] font-semibold tracking-tight text-foreground">Settings</h1>
           </div>
-          <Link
-            to="/guides"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border/80 bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-            title="Open platform documentation and user manuals"
-          >
-            <BookOpen className="h-3.5 w-3.5 text-primary" />
-            <span>Platform Guides & Docs</span>
-          </Link>
+
+          <div className="flex items-center gap-3">
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-xl border border-border/80 bg-background pl-9 pr-3.5 py-1.5 text-[13.5px] text-foreground placeholder:text-muted-foreground outline-none transition-all focus:border-primary/60 focus:ring-1 focus:ring-primary/40 shadow-sm"
+              />
+            </div>
+            <Link
+              to="/guides"
+              className="hidden lg:inline-flex items-center gap-1.5 rounded-xl border border-border/80 bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition-colors shadow-sm"
+              title="Open platform documentation and user manuals"
+            >
+              <BookOpen className="h-3.5 w-3.5 text-primary" />
+              <span>Guides</span>
+            </Link>
+          </div>
         </div>
 
-        <div className="flex flex-col gap-8 md:flex-row md:gap-10">
-          {/* Horizontal chips when narrow, a list on desktop. */}
+        {/* Top Horizontal Pill Navigation Bar (Matching Mockup) */}
+        <div className="mb-8">
           <nav
             aria-label="Settings sections"
-            className="scrollbar-slim -mx-1 flex shrink-0 gap-1.5 overflow-x-auto px-1 pb-1 md:mx-0 md:w-48 md:flex-col md:overflow-visible md:px-0 md:pb-0"
+            className="scrollbar-slim -mx-2 flex items-center gap-1 overflow-x-auto rounded-2xl border border-border/80 bg-background/95 p-1.5 shadow-sm px-2 backdrop-blur-sm"
           >
-            {SECTIONS.map(({ id, label, Icon }) => (
-              <button
-                key={id}
-                onClick={() => setActive(id)}
-                aria-current={active === id}
-                className={cn(
-                  'flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13.5px] transition-colors',
-                  active === id
-                    ? 'bg-accent font-medium text-foreground'
-                    : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {label}
-              </button>
-            ))}
+            {SECTIONS.map((sec) => {
+              const isSelected = active === sec.id
+              return (
+                <button
+                  key={sec.id}
+                  onClick={() => setActive(sec.id)}
+                  aria-current={isSelected}
+                  className={cn(
+                    'flex shrink-0 items-center gap-2 rounded-xl px-4 py-2 text-[13.5px] font-medium transition-all',
+                    isSelected
+                      ? 'bg-card text-foreground shadow-sm ring-1 ring-border/80 font-semibold'
+                      : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+                  )}
+                >
+                  <span>{sec.label}</span>
+                  {'count' in sec && sec.count && (
+                    <span
+                      className={cn(
+                        'flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold',
+                        isSelected
+                          ? 'bg-primary/15 text-primary'
+                          : 'bg-muted text-muted-foreground'
+                      )}
+                    >
+                      {sec.count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
           </nav>
+        </div>
 
-          <div className="min-w-0 flex-1">
-            {active === 'account' && (
-              <AccountSection onNavigateToBilling={() => setActive('billing')} />
-            )}
-            {active === 'appearance' && (
-              <AppearanceSection theme={theme} onThemeChange={onThemeChange} />
-            )}
-            {active === 'security' && <SecuritySection />}
-            {active === 'billing' && <BillingSection onOpenPricing={onOpenPricing} />}
-            {active === 'usage' && <UsageSection stats={stats} />}
-            {active === 'data' && (
-              <DataSection
-                stats={stats}
-                onClearWorkspace={onClearWorkspace}
-                onExportWorkspace={onExportWorkspace}
-              />
-            )}
-          </div>
+        {/* Settings Body */}
+        <div className="w-full">
+          {(active === 'details' || active === 'profile') && (
+            <AccountSection onNavigateToBilling={() => setActive('billing')} />
+          )}
+          {active === 'appearance' && (
+            <AppearanceSection theme={theme} onThemeChange={onThemeChange} />
+          )}
+          {active === 'password' && <SecuritySection />}
+          {active === 'billing' && <BillingSection onOpenPricing={onOpenPricing} />}
+          {active === 'usage' && <UsageSection stats={stats} />}
+          {active === 'team' && (
+            <Panel
+              title="Team Members"
+              description="Manage who has access to your organization and their research permissions."
+            >
+              <Row
+                label="Team members"
+                hint="Invite team members to collaborate on public market research."
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex -space-x-2 overflow-hidden">
+                    <div className="inline-block h-8 w-8 rounded-full ring-2 ring-background bg-primary/20 text-primary font-semibold text-xs flex items-center justify-center">
+                      V
+                    </div>
+                    <div className="inline-block h-8 w-8 rounded-full ring-2 ring-background bg-secondary text-muted-foreground font-semibold text-xs flex items-center justify-center">
+                      +1
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-border/80 bg-background px-3.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors shadow-sm"
+                  >
+                    Invite member
+                  </button>
+                </div>
+              </Row>
+            </Panel>
+          )}
+          {active === 'email' && (
+            <Panel
+              title="Email Preferences"
+              description="Control email summaries, alerts, and report delivery."
+            >
+              <Row
+                label="Market brief emails"
+                hint="Receive morning briefings and major macroeconomic earnings updates."
+              >
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-500">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Active
+                </span>
+              </Row>
+            </Panel>
+          )}
+          {active === 'notifications' && (
+            <Panel
+              title="Notifications"
+              description="Manage in-app sound, push notices, and research trigger alerts."
+            >
+              <Row
+                label="Desktop notifications"
+                hint="Notify when financial model background citations or alerts trigger."
+              >
+                <span className="text-xs text-muted-foreground">Enabled for this browser</span>
+              </Row>
+            </Panel>
+          )}
+          {active === 'integrations' && (
+            <Panel
+              title="Integrations"
+              description="Connect external data sources, market providers, and communication channels."
+            >
+              <Row
+                label="Connected services"
+                hint="TradingView, SEC EDGAR, Bloomberg, and Reuters market feeds."
+              >
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                  4 active connections
+                </span>
+              </Row>
+            </Panel>
+          )}
+          {active === 'api' && (
+            <DataSection
+              stats={stats}
+              onClearWorkspace={onClearWorkspace}
+              onExportWorkspace={onExportWorkspace}
+            />
+          )}
         </div>
       </div>
     </div>
