@@ -1173,7 +1173,7 @@ function BillingSection() {
           </div>
 
           {/* Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3.5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3.5 items-stretch">
             {[
               {
                 id: 'explorer' as api.PlanTier,
@@ -1298,56 +1298,65 @@ function BillingSection() {
                     </div>
                   )}
 
-                  <div className="space-y-3">
-                    {/* Header: Name + Badge */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h4 className="text-base font-bold text-foreground">{tier.name}</h4>
-                        <span className="text-[11px] font-medium text-muted-foreground">{tier.badge}</span>
+                  <div className="flex flex-col flex-1 justify-between gap-3.5">
+                    {/* 1. Header & Price */}
+                    <div>
+                      <div className="flex items-start justify-between gap-1.5 min-h-[46px]">
+                        <div>
+                          <h4 className="text-base font-bold text-foreground leading-tight">{tier.name}</h4>
+                          <span className="text-[11px] font-medium text-muted-foreground block mt-0.5">{tier.badge}</span>
+                        </div>
+                        {isCurrent ? (
+                          <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400 shrink-0">
+                            CURRENT
+                          </span>
+                        ) : (
+                          <div className="h-5" />
+                        )}
                       </div>
-                      {isCurrent && (
-                        <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
-                          CURRENT
+
+                      {/* Price row */}
+                      <div className="flex items-baseline gap-1 border-b border-border/50 pb-3 pt-2">
+                        <span className="text-2xl font-extrabold text-foreground tracking-tight font-mono">
+                          {tier.price}
                         </span>
-                      )}
+                        <span className="text-xs text-muted-foreground">{tier.cadence}</span>
+                      </div>
+
+                      {/* Description */}
+                      <p className="text-xs text-muted-foreground leading-relaxed pt-2.5 min-h-[58px]">
+                        {tier.desc}
+                      </p>
                     </div>
 
-                    {/* Price */}
-                    <div className="flex items-baseline gap-1 border-b border-border/50 pb-3">
-                      <span className="text-2xl font-extrabold text-foreground tracking-tight font-mono">
-                        {tier.price}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{tier.cadence}</span>
-                    </div>
-
-                    <p className="text-xs text-muted-foreground leading-relaxed min-h-[36px]">
-                      {tier.desc}
-                    </p>
-
-                    {/* Capacity Limits Pill Box */}
-                    <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 space-y-1.5 text-[11px]">
-                      <div className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider mb-1">
+                    {/* 2. Capacity Limits Box */}
+                    <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 flex flex-col justify-between min-h-[148px]">
+                      <div className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider mb-1.5">
                         Capacity Limits
                       </div>
-                      {tier.limits.map((l, i) => (
-                        <div key={i} className="flex items-center gap-1.5 text-foreground">
-                          <Check className="h-3 w-3 text-primary shrink-0" />
-                          <span>{l}</span>
-                        </div>
-                      ))}
+                      <div className="space-y-1.5 text-[11px]">
+                        {tier.limits.map((l, i) => (
+                          <div key={i} className="flex items-center gap-1.5 text-foreground leading-snug">
+                            <Check className="h-3 w-3 text-primary shrink-0" />
+                            <span className="line-clamp-1">{l}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
-                    {/* Included Features */}
-                    <div className="space-y-1.5 pt-1">
-                      <div className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider mb-1">
+                    {/* 3. Key Features Box */}
+                    <div className="space-y-1.5 min-h-[148px]">
+                      <div className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider mb-1.5">
                         Key Features
                       </div>
-                      {tier.features.map((f, i) => (
-                        <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                          <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                          <span className="leading-tight">{f}</span>
-                        </div>
-                      ))}
+                      <div className="space-y-1.5">
+                        {tier.features.map((f, i) => (
+                          <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground leading-snug">
+                            <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                            <span className="line-clamp-2">{f}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
