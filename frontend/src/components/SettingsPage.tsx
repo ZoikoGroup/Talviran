@@ -1155,47 +1155,108 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
         </div>
       </Card>
 
-      {/* 3. Change Plan Tier */}
+      {/* 3. Change Plan Tier with Expanded Details */}
       <Card>
-        <div className="p-5 flex flex-col gap-4">
-          <div>
-            <h3 className="text-sm font-medium text-foreground">
-              Change Plan
-            </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Switch your plan tier to update quotas and features.
-            </p>
+        <div className="p-5 flex flex-col gap-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-4">
+            <div>
+              <h3 className="text-base font-semibold text-foreground tracking-tight">
+                Change Subscription Plan
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Explore expanded tier limits, features, and calculate capacity upgrades.
+              </p>
+            </div>
+            {onOpenPricing && (
+              <button
+                type="button"
+                onClick={onOpenPricing}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+              >
+                <span>View Modal Comparison</span>
+                <ExternalLink className="h-3 w-3 text-muted-foreground" />
+              </button>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               {
                 id: 'explorer' as api.PlanTier,
                 name: 'Explorer',
+                badge: 'Evaluation Tier',
                 price: '$0',
                 cadence: '/mo',
-                desc: 'Basic search and up to 2 watchlists.',
+                desc: 'Prove evidence-backed intelligence & verified calculation engine at zero risk.',
+                limits: [
+                  '2 saved watchlists',
+                  '3 monitoring rules',
+                  '10 verified runs / mo',
+                  '2 brief exports / mo',
+                ],
+                features: [
+                  'Sovereign Calculation Engine',
+                  'Point-in-Time Verification',
+                  'Statutory EDGAR Search',
+                ],
               },
               {
                 id: 'research' as api.PlanTier,
                 name: 'Research',
+                badge: 'Serious Private Investor',
                 price: '$29',
                 cadence: '/mo',
-                desc: '10 watchlists, 25 alert rules, 100 runs.',
+                desc: 'Deep sovereign forensic analysis, expanded filings, and continuous alert monitoring.',
+                limits: [
+                  '10 saved watchlists',
+                  '25 monitoring rules',
+                  '100 verified runs / mo',
+                  '25 dossier exports / mo',
+                ],
+                features: [
+                  'Real-time Alerting (Telegram/Email)',
+                  'Audit-Grade Evidence Dossier (PDF)',
+                  '5 years statutory filings',
+                ],
               },
               {
                 id: 'professional' as api.PlanTier,
                 name: 'Professional',
+                badge: 'Most Popular',
                 price: '$79',
                 cadence: '/mo',
-                desc: 'Unlimited watchlists, 125 alert rules.',
+                desc: 'High-frequency institutional research, sovereign audit trails, and priority queues.',
+                popular: true,
+                limits: [
+                  'Unlimited watchlists',
+                  '125 monitoring rules',
+                  '400 verified runs / mo',
+                  '125 dossier exports / mo',
+                ],
+                features: [
+                  'Unlimited Audit-Grade Dossiers',
+                  'Priority Research Queue',
+                  '15+ years full historical corpus',
+                ],
               },
               {
                 id: 'teams' as api.PlanTier,
                 name: 'Teams',
+                badge: 'Multi-Seat Pod',
                 price: '$249',
                 cadence: '/mo',
-                desc: 'Multi-seat access and 400 alert rules.',
+                desc: 'Shared institutional evidence archives, collaborative pods, and pooled quota capacity.',
+                limits: [
+                  'Unlimited pooled watchlists',
+                  '400 active rules (pooled)',
+                  '1,200 verified runs / mo',
+                  '350 dossier exports / mo',
+                ],
+                features: [
+                  '3 Team Seats with RBAC',
+                  'Shared Institutional Workspace',
+                  'Business-Hours Priority SLA',
+                ],
               },
             ].map((tier) => {
               const isCurrent = activePlanTier === tier.id
@@ -1204,50 +1265,104 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
                 <div
                   key={tier.id}
                   className={cn(
-                    'rounded-lg border p-4 flex flex-col justify-between gap-3 transition-colors',
+                    'relative rounded-2xl border p-5 flex flex-col justify-between gap-4 transition-all duration-200',
                     isCurrent
-                      ? 'border-primary/50 bg-primary/[0.04]'
-                      : 'border-border bg-secondary/20 hover:bg-secondary/40'
+                      ? 'border-emerald-500/50 bg-emerald-500/[0.03] ring-1 ring-emerald-500/30 shadow-sm'
+                      : tier.popular
+                      ? 'border-primary/50 bg-primary/[0.02] ring-1 ring-primary/20 shadow-sm'
+                      : 'border-border/80 bg-card hover:border-border hover:bg-accent/20'
                   )}
                 >
-                  <div className="space-y-1.5">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-xs font-semibold text-foreground">{tier.name}</span>
-                      <div className="flex items-baseline gap-0.5">
-                        <span className="text-sm font-bold text-foreground font-mono">{tier.price}</span>
-                        <span className="text-[11px] text-muted-foreground">{tier.cadence}</span>
-                      </div>
+                  {/* Top Popular or Current Pill */}
+                  {tier.popular && !isCurrent && (
+                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary-foreground shadow-sm">
+                      Most Popular
                     </div>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  )}
+
+                  <div className="space-y-3">
+                    {/* Header: Name + Badge */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="text-base font-bold text-foreground">{tier.name}</h4>
+                        <span className="text-[11px] font-medium text-muted-foreground">{tier.badge}</span>
+                      </div>
+                      {isCurrent && (
+                        <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                          CURRENT
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Price */}
+                    <div className="flex items-baseline gap-1 border-b border-border/50 pb-3">
+                      <span className="text-2xl font-extrabold text-foreground tracking-tight font-mono">
+                        {tier.price}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{tier.cadence}</span>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground leading-relaxed min-h-[36px]">
                       {tier.desc}
                     </p>
+
+                    {/* Capacity Limits Pill Box */}
+                    <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 space-y-1.5 text-[11px]">
+                      <div className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider mb-1">
+                        Capacity Limits
+                      </div>
+                      {tier.limits.map((l, i) => (
+                        <div key={i} className="flex items-center gap-1.5 text-foreground">
+                          <Check className="h-3 w-3 text-primary shrink-0" />
+                          <span>{l}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Included Features */}
+                    <div className="space-y-1.5 pt-1">
+                      <div className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider mb-1">
+                        Key Features
+                      </div>
+                      {tier.features.map((f, i) => (
+                        <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                          <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                          <span className="leading-tight">{f}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
-                  <button
-                    type="button"
-                    disabled={isCurrent || isUpdating}
-                    onClick={() => void handleDirectPlanSwitch(tier.id)}
-                    className={cn(
-                      'w-full rounded-md py-1.5 px-3 text-xs font-medium transition-colors flex items-center justify-center gap-1.5',
-                      isCurrent
-                        ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 cursor-default font-semibold'
-                        : 'border border-border bg-secondary hover:bg-accent text-foreground'
-                    )}
-                  >
-                    {isUpdating ? (
-                      <>
-                        <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />
-                        <span>Updating...</span>
-                      </>
-                    ) : isCurrent ? (
-                      <>
-                        <Check className="h-3.5 w-3.5 text-emerald-400" />
-                        <span>Current Plan</span>
-                      </>
-                    ) : (
-                      <span>Select {tier.name}</span>
-                    )}
-                  </button>
+                  {/* CTA Switch Button */}
+                  <div className="pt-3 border-t border-border/50">
+                    <button
+                      type="button"
+                      disabled={isCurrent || isUpdating}
+                      onClick={() => void handleDirectPlanSwitch(tier.id)}
+                      className={cn(
+                        'w-full rounded-xl py-2 px-3 text-xs font-semibold transition-all flex items-center justify-center gap-1.5',
+                        isCurrent
+                          ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 cursor-default'
+                          : tier.popular
+                          ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm'
+                          : 'border border-border/80 bg-background text-foreground hover:bg-accent'
+                      )}
+                    >
+                      {isUpdating ? (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                          <span>Updating...</span>
+                        </>
+                      ) : isCurrent ? (
+                        <>
+                          <Check className="h-3.5 w-3.5 text-emerald-400" />
+                          <span>Current Plan</span>
+                        </>
+                      ) : (
+                        <span>Select {tier.name}</span>
+                      )}
+                    </button>
+                  </div>
                 </div>
               )
             })}
