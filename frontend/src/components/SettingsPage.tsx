@@ -1155,30 +1155,31 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
         </div>
       </Card>
 
-      {/* 3. Change Plan Tier with Expanded Details */}
+      {/* 3. Change Plan Tier with Expanded Details & Comparative View */}
       <Card>
         <div className="p-5 flex flex-col gap-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-4">
             <div>
               <h3 className="text-base font-semibold text-foreground tracking-tight">
-                Change Subscription Plan
+                Subscription Plans & Capacity Comparison
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Explore expanded tier limits, features, and calculate capacity upgrades.
+                Side-by-side comparative matrix of quotas, sovereign verification engine capabilities, and support SLAs.
               </p>
             </div>
             {onOpenPricing && (
               <button
                 type="button"
                 onClick={onOpenPricing}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors self-start sm:self-auto shrink-0 shadow-sm"
               >
-                <span>View Modal Comparison</span>
+                <span>Full Pricing Modal</span>
                 <ExternalLink className="h-3 w-3 text-muted-foreground" />
               </button>
             )}
           </div>
 
+          {/* Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               {
@@ -1342,7 +1343,7 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
                       className={cn(
                         'w-full rounded-xl py-2 px-3 text-xs font-semibold transition-all flex items-center justify-center gap-1.5',
                         isCurrent
-                          ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 cursor-default'
+                          ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 cursor-default font-medium'
                           : tier.popular
                           ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm'
                           : 'border border-border/80 bg-background text-foreground hover:bg-accent'
@@ -1366,6 +1367,108 @@ function BillingSection({ onOpenPricing }: { onOpenPricing?: () => void }) {
                 </div>
               )
             })}
+          </div>
+
+          {/* Comparative Matrix Table */}
+          <div className="mt-4 pt-4 border-t border-border/60">
+            <h4 className="text-sm font-semibold text-foreground mb-3">
+              Side-by-Side Entitlements Comparison
+            </h4>
+            <div className="overflow-x-auto rounded-xl border border-border/70 scrollbar-slim">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-border/70 bg-muted/40">
+                    <th className="p-3.5 font-semibold text-muted-foreground min-w-[200px]">
+                      Capability / Specification
+                    </th>
+                    <th className="p-3.5 font-semibold text-foreground text-center min-w-[130px]">
+                      Explorer ($0)
+                    </th>
+                    <th className="p-3.5 font-semibold text-foreground text-center min-w-[130px]">
+                      Research ($29)
+                    </th>
+                    <th className="p-3.5 font-semibold text-primary text-center min-w-[140px] bg-primary/5">
+                      Professional ($79)
+                    </th>
+                    <th className="p-3.5 font-semibold text-indigo-400 text-center min-w-[130px]">
+                      Teams ($249)
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50 bg-background/50">
+                  <tr>
+                    <td className="p-3.5 font-medium text-foreground">Saved Watchlists</td>
+                    <td className="p-3.5 text-center text-muted-foreground">2</td>
+                    <td className="p-3.5 text-center text-muted-foreground">10</td>
+                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">Unlimited</td>
+                    <td className="p-3.5 text-center text-indigo-400 font-semibold">Unlimited (Pooled)</td>
+                  </tr>
+                  <tr>
+                    <td className="p-3.5 font-medium text-foreground">Active Alert Rules</td>
+                    <td className="p-3.5 text-center text-muted-foreground">3</td>
+                    <td className="p-3.5 text-center text-muted-foreground">25</td>
+                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">125</td>
+                    <td className="p-3.5 text-center text-indigo-400 font-semibold">400 (Pooled)</td>
+                  </tr>
+                  <tr>
+                    <td className="p-3.5 font-medium text-foreground">Verified Research Runs</td>
+                    <td className="p-3.5 text-center text-muted-foreground">10 / mo</td>
+                    <td className="p-3.5 text-center text-muted-foreground">100 / mo</td>
+                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">400 / mo</td>
+                    <td className="p-3.5 text-center text-indigo-400 font-semibold">1,200 / mo</td>
+                  </tr>
+                  <tr>
+                    <td className="p-3.5 font-medium text-foreground">Evidence Exports (PDF/MD)</td>
+                    <td className="p-3.5 text-center text-muted-foreground">2 brief / mo</td>
+                    <td className="p-3.5 text-center text-muted-foreground">25 dossier / mo</td>
+                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">125 dossier / mo</td>
+                    <td className="p-3.5 text-center text-indigo-400 font-semibold">350 dossier / mo</td>
+                  </tr>
+                  <tr>
+                    <td className="p-3.5 font-medium text-foreground">Statutory Filing Corpus</td>
+                    <td className="p-3.5 text-center text-muted-foreground">1 Year</td>
+                    <td className="p-3.5 text-center text-muted-foreground">5 Years</td>
+                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">15+ Years Historical</td>
+                    <td className="p-3.5 text-center text-indigo-400 font-semibold">Full Global Corpus</td>
+                  </tr>
+                  <tr>
+                    <td className="p-3.5 font-medium text-foreground">Data Feed Latency</td>
+                    <td className="p-3.5 text-center text-muted-foreground">15-min Delayed</td>
+                    <td className="p-3.5 text-center text-muted-foreground">Near Real-Time</td>
+                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">Real-Time Tick Feeds</td>
+                    <td className="p-3.5 text-center text-indigo-400 font-semibold">Institutional Bridge</td>
+                  </tr>
+                  <tr>
+                    <td className="p-3.5 font-medium text-foreground">Multi-Seat Collaboration</td>
+                    <td className="p-3.5 text-center text-muted-foreground">1 User</td>
+                    <td className="p-3.5 text-center text-muted-foreground">1 User</td>
+                    <td className="p-3.5 text-center text-primary bg-primary/5">1 Named Seat</td>
+                    <td className="p-3.5 text-center font-semibold text-indigo-400">3 Seats Included</td>
+                  </tr>
+                  <tr>
+                    <td className="p-3.5 font-medium text-foreground">Sovereign Point-in-Time Engine</td>
+                    <td className="p-3.5 text-center"><Check className="h-4 w-4 text-emerald-400 mx-auto" /></td>
+                    <td className="p-3.5 text-center"><Check className="h-4 w-4 text-emerald-400 mx-auto" /></td>
+                    <td className="p-3.5 text-center bg-primary/5"><Check className="h-4 w-4 text-emerald-400 mx-auto" /></td>
+                    <td className="p-3.5 text-center"><Check className="h-4 w-4 text-emerald-400 mx-auto" /></td>
+                  </tr>
+                  <tr>
+                    <td className="p-3.5 font-medium text-foreground">Priority Execution Queue</td>
+                    <td className="p-3.5 text-center text-muted-foreground">—</td>
+                    <td className="p-3.5 text-center text-muted-foreground">—</td>
+                    <td className="p-3.5 text-center bg-primary/5"><Check className="h-4 w-4 text-primary mx-auto" /></td>
+                    <td className="p-3.5 text-center"><Check className="h-4 w-4 text-indigo-400 mx-auto" /></td>
+                  </tr>
+                  <tr>
+                    <td className="p-3.5 font-medium text-foreground">Support & SLA</td>
+                    <td className="p-3.5 text-center text-muted-foreground">Community</td>
+                    <td className="p-3.5 text-center text-muted-foreground">Standard Email</td>
+                    <td className="p-3.5 text-center font-semibold text-primary bg-primary/5">Priority Queue</td>
+                    <td className="p-3.5 text-center font-semibold text-indigo-400">Business-Hours SLA</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </Card>
