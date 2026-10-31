@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -629,8 +630,8 @@ function SecuritySection() {
       </Card>
 
       {/* Setup 2FA Modal */}
-      {showSetupModal && setupData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      {showSetupModal && setupData && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-150">
           <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-border">
               <div className="flex items-center gap-2">
@@ -729,12 +730,13 @@ function SecuritySection() {
               </form>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Disable 2FA Modal */}
-      {showDisableModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      {showDisableModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-150">
           <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl">
             <h3 className="text-base font-semibold text-foreground">
               Disable Two-Factor Authentication
@@ -783,7 +785,8 @@ function SecuritySection() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <Card>
@@ -1043,8 +1046,8 @@ function BillingSection() {
       </Card>
 
       {/* Self-Serve Cancellation & Autopay Modal */}
-      {showCancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
+      {showCancelModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md animate-in fade-in duration-150">
           <div className="relative w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <button
               type="button"
@@ -1104,7 +1107,8 @@ function BillingSection() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 2. Real Quotas & Usage */}
