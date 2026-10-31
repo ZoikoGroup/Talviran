@@ -244,7 +244,7 @@ async def resolve_account_entitlement(
         await db.execute(
             text(
                 "SELECT name, plan_tier, billing_cadence, seat_count, current_period_end, "
-                "stripe_customer_id, stripe_subscription_id "
+                "cancel_at_period_end, stripe_customer_id, stripe_subscription_id "
                 "FROM identity.account WHERE id = :acc"
             ),
             {"acc": account_id},
@@ -294,6 +294,11 @@ async def resolve_account_entitlement(
         billing_cadence=cadence,
         is_active=True,
         current_period_end=period_end,
+        cancel_at_period_end=(
+            bool(acc_row.cancel_at_period_end)
+            if acc_row and hasattr(acc_row, "cancel_at_period_end")
+            else False
+        ),
         seat_count=seat_count,
         stripe_customer_id=acc_row.stripe_customer_id if acc_row else None,
         stripe_subscription_id=acc_row.stripe_subscription_id if acc_row else None,
@@ -694,8 +699,8 @@ async def cancel_subscription_self_serve(
 ) -> CancelSubscriptionResponse:
     """Self-serve cancellation path per Commercial Architecture Chapter 10 (§81 & §170).
 
-    Immediately stops recurring Stripe autopay, preserves past invoice access,
-    and returns account to Explorer Free Tier with explicit local effective date.
+    Stops automatic renewal while preserving full paid plan benefits until the
+    active billing cycle ends (cancel_at_period_end).
     """
     import stripe
 
@@ -712,39 +717,58 @@ async def cancel_subscription_self_serve(
         )
     ).first()
 
-    effective_date_str = (
-        acc_row.current_period_end.isoformat()
-        if acc_row and acc_row.current_period_end
-        else dt.datetime.now(dt.UTC).isoformat()
-    )
+    current_tier_str = acc_row.plan_tier if acc_row and acc_row.plan_tier else "professional"
+    try:
+        active_plan = PlanTier(current_tier_str)
+    except ValueError:
+        active_plan = PlanTier.PROFESSIONAL
 
-    # Cancel subscription in Stripe to stop recurring charges
+    # Determine renewal/end date
+    now = dt.datetime.now(dt.UTC)
+    if acc_row and acc_row.current_period_end:
+        effective_dt = acc_row.current_period_end
+    else:
+        # Default active cycle to next renewal (1 year for annual, 1 month for monthly)
+        cadence_days = 365 if acc_row and acc_row.billing_cadence == "annual" else 30
+        effective_dt = now + dt.timedelta(days=cadence_days)
+
+    effective_date_str = effective_dt.isoformat()
+
+    # Instruct Stripe to stop renewal at period end without immediately revoking access
     if settings.stripe_secret_key and acc_row and acc_row.stripe_subscription_id:
         stripe.api_key = settings.stripe_secret_key
         try:
-            stripe.Subscription.cancel(acc_row.stripe_subscription_id)
+            stripe.Subscription.modify(
+                acc_row.stripe_subscription_id,
+                cancel_at_period_end=True,
+            )
         except Exception:
+            # If sub cannot be modified (e.g. already ended or test dummy), proceed gracefully
             pass
 
-    # Downgrade account to Explorer tier and revoke future charge authorization
+    # Mark cancellation scheduled for period end; preserve current paid plan and features
     await db.execute(
         text(
             "UPDATE identity.account "
-            "SET plan_tier = 'explorer', billing_cadence = 'monthly', seat_count = 1, "
-            "stripe_subscription_id = NULL "
+            "SET cancel_at_period_end = true, current_period_end = :cpe "
             "WHERE id = :aid"
         ),
-        {"aid": account_id},
+        {"cpe": effective_dt, "aid": account_id},
     )
     await db.commit()
 
     return CancelSubscriptionResponse(
         success=True,
-        message="Subscription and automatic renewal have been cancelled.",
-        plan_tier=PlanTier.EXPLORER,
+        message=(
+            f"Automatic renewal cancelled. Your {active_plan.value.capitalize()} "
+            f"benefits remain active until {effective_dt.strftime('%b %d, %Y')}."
+        ),
+        plan_tier=active_plan,
         effective_date=effective_date_str,
+        cancel_at_period_end=True,
         retained_access=(
-            "All saved watchlists, evidence packs, and invoice receipts "
-            "remain fully accessible under the Explorer tier."
+            f"You retain full {active_plan.value.capitalize()} access and higher quotas until "
+            f"{effective_dt.strftime('%b %d, %Y')}. After this date, your account transitions to "
+            "the Explorer free tier."
         ),
     )

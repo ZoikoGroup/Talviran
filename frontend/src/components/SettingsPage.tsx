@@ -942,11 +942,10 @@ function BillingSection() {
     try {
       setCancelling(true)
       setErrorMessage(null)
-      // Downgrade to Explorer free tier and cancel autopay
-      await api.cancelSubscriptionApi()
+      const res = await api.cancelSubscriptionApi()
       await refreshEntitlement()
       setShowCancelModal(false)
-      setSuccessMessage('Subscription and automatic renewal have been cancelled. Your account has returned to the Explorer free tier.')
+      setSuccessMessage(res.message || 'Automatic renewal cancelled. Your benefits remain active until the end of your billing cycle.')
       setTimeout(() => setSuccessMessage(null), 6000)
     } catch (err: unknown) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to cancel subscription')
@@ -993,10 +992,21 @@ function BillingSection() {
               <span className="rounded-full bg-secondary border border-border px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
                 {isAnnual ? 'Annual' : 'Monthly'}
               </span>
+              {entitlement?.cancel_at_period_end && (
+                <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 text-[11px] font-semibold text-amber-400">
+                  Cancels at period end
+                </span>
+              )}
             </div>
-            <p className="text-xs text-muted-foreground">
-              Renews on <strong className="font-medium text-foreground">{renewalDate}</strong>
-            </p>
+            {entitlement?.cancel_at_period_end ? (
+              <p className="text-xs text-amber-400/90 font-medium">
+                Cancellation scheduled. Active benefits & quotas retained until <strong className="font-semibold text-foreground">{renewalDate}</strong>. Autopay is terminated.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Renews on <strong className="font-medium text-foreground">{renewalDate}</strong>
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -1031,12 +1041,12 @@ function BillingSection() {
               )}
             </button>
 
-            {activePlanTier !== 'explorer' && (
+            {activePlanTier !== 'explorer' && !entitlement?.cancel_at_period_end && (
               <button
                 type="button"
                 onClick={() => setShowCancelModal(true)}
                 className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs font-medium text-destructive transition-colors hover:bg-destructive/15"
-                title="Cancel automatic renewal and revert to Explorer free plan"
+                title="Cancel automatic renewal and schedule downgrade at period end"
               >
                 <span>Cancel Subscription</span>
               </button>
@@ -1069,15 +1079,16 @@ function BillingSection() {
 
             <div className="space-y-3 text-xs text-muted-foreground leading-relaxed border-y border-border/60 py-3.5 my-3">
               <p>
-                Cancelling will disable <strong>automatic recurring billing</strong>. Your account will transition to the <strong>Explorer Free Tier</strong>.
+                Cancelling disables <strong>automatic renewal</strong>. You will retain full <strong>{activePlanName}</strong> benefits and quotas until your current billing period ends on <strong>{renewalDate}</strong>.
               </p>
               <ul className="space-y-1.5 text-foreground list-disc list-inside">
-                <li>Your saved evidence and research history remain intact.</li>
-                <li>Monitors exceeding Explorer limits (3 active rules) will pause.</li>
-                <li>You will never be charged again unless you re-subscribe.</li>
+                <li>No further charges or recurring fees will occur.</li>
+                <li>Full access to all watchlists, alerts, and research runs continues until {renewalDate}.</li>
+                <li>On {renewalDate}, your account will gracefully step down to the Explorer Free Tier.</li>
+                <li>Your saved evidence and research archive remain permanently intact.</li>
               </ul>
               <p className="text-[11px] text-muted-foreground">
-                All previous VAT/tax receipts and paid invoice PDFs remain available under <em>Manage Billing & Invoices</em>.
+                All historical VAT/tax receipts and paid invoice PDFs remain accessible anytime under <em>Invoices & Payment History</em>.
               </p>
             </div>
 

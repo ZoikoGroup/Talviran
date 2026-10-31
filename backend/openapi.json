@@ -21,6 +21,11 @@
           "billing_cadence": {
             "$ref": "#/components/schemas/BillingCadence"
           },
+          "cancel_at_period_end": {
+            "default": false,
+            "title": "Cancel At Period End",
+            "type": "boolean"
+          },
           "current_period_end": {
             "title": "Current Period End",
             "type": "string"
@@ -354,6 +359,10 @@
       },
       "CancelSubscriptionResponse": {
         "properties": {
+          "cancel_at_period_end": {
+            "title": "Cancel At Period End",
+            "type": "boolean"
+          },
           "effective_date": {
             "title": "Effective Date",
             "type": "string"
@@ -379,6 +388,7 @@
           "message",
           "plan_tier",
           "effective_date",
+          "cancel_at_period_end",
           "retained_access"
         ],
         "title": "CancelSubscriptionResponse",

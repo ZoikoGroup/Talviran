@@ -68,6 +68,7 @@ class AccountEntitlement(BaseModel):
     billing_cadence: BillingCadence
     is_active: bool
     current_period_end: str
+    cancel_at_period_end: bool = False
     seat_count: int
     stripe_customer_id: str | None = None
     stripe_subscription_id: str | None = None
@@ -117,4 +118,5 @@ class CancelSubscriptionResponse(BaseModel):
     message: str
     plan_tier: PlanTier
     effective_date: str
+    cancel_at_period_end: bool
     retained_access: str

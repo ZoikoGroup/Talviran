@@ -899,6 +899,7 @@ export interface AccountEntitlement {
   billing_cadence: BillingCadence
   is_active: boolean
   current_period_end: string
+  cancel_at_period_end?: boolean
   seat_count: number
   stripe_customer_id?: string | null
   stripe_subscription_id?: string | null
@@ -986,6 +987,7 @@ export interface CancelSubscriptionResult {
   message: string
   plan_tier: PlanTier
   effective_date: string
+  cancel_at_period_end: boolean
   retained_access: string
 }
 
