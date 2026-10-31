@@ -251,13 +251,36 @@ async def resolve_account_entitlement(
         )
     ).first()
 
-    plan_tier_val = (
-        acc_row.plan_tier if acc_row and acc_row.plan_tier else PlanTier.PROFESSIONAL
+    # Check if period has naturally expired on an account scheduled for cancellation
+    now_utc = dt.datetime.now(dt.UTC)
+    is_cancelled_and_expired = (
+        acc_row is not None
+        and getattr(acc_row, "cancel_at_period_end", False)
+        and getattr(acc_row, "current_period_end", None) is not None
+        and acc_row.current_period_end <= now_utc
     )
-    try:
-        plan_tier = PlanTier(plan_tier_val)
-    except ValueError:
-        plan_tier = PlanTier.PROFESSIONAL
+
+    if is_cancelled_and_expired:
+        # Grace period ended: demote to explorer and clear cancellation flag
+        await db.execute(
+            text(
+                "UPDATE identity.account "
+                "SET plan_tier = 'explorer', cancel_at_period_end = false, "
+                "billing_cadence = 'monthly', seat_count = 1 "
+                "WHERE id = :acc"
+            ),
+            {"acc": account_id},
+        )
+        await db.commit()
+        plan_tier = PlanTier.EXPLORER
+    else:
+        plan_tier_val = (
+            acc_row.plan_tier if acc_row and acc_row.plan_tier else PlanTier.PROFESSIONAL
+        )
+        try:
+            plan_tier = PlanTier(plan_tier_val)
+        except ValueError:
+            plan_tier = PlanTier.PROFESSIONAL
 
     cadence_val = (
         acc_row.billing_cadence
