@@ -4072,7 +4072,7 @@
     },
     "/api/v1/commercial/plan": {
       "patch": {
-        "description": "Updates active tier and billing cadence directly in the account record.",
+        "description": "Updates active tier and billing cadence directly in the account record.\n\nProtected: Only allowed in development environments or when downgrading\nto Explorer free tier. Paid upgrades in production must proceed through\nverified Stripe Checkout sessions to guarantee fraud prevention and payment capture.",
         "operationId": "change_plan_api_v1_commercial_plan_patch",
         "requestBody": {
           "content": {
