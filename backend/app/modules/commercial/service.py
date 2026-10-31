@@ -551,6 +551,25 @@ async def handle_stripe_webhook_event(db: AsyncSession, event_data: dict[str, An
                 await db.rollback()
             return True
 
+    elif event_type == "customer.subscription.deleted":
+        # Subscription was cancelled in Stripe Customer Portal -> downgrade to Explorer free tier
+        sub_id = obj.get("id")
+        if sub_id:
+            try:
+                await db.execute(
+                    text(
+                        "UPDATE identity.account "
+                        "SET plan_tier = 'explorer', billing_cadence = 'monthly', "
+                        "stripe_subscription_id = NULL "
+                        "WHERE stripe_subscription_id = :sub"
+                    ),
+                    {"sub": str(sub_id)},
+                )
+                await db.commit()
+                return True
+            except Exception:
+                await db.rollback()
+
     return False
 
 
@@ -562,18 +581,40 @@ async def update_account_plan(
     additional_seats: int = 0,
 ) -> AccountEntitlement:
     """Updates account plan_tier, cadence, and seat count directly in database."""
+    import stripe
+
+    from app.core.config import get_settings
+
+    settings = get_settings()
     plan_def = PRICE_BOOK.get(plan_tier, PRICE_BOOK[PlanTier.PROFESSIONAL])
     total_seats = plan_def.seats_included + max(0, additional_seats)
     now = dt.datetime.now(dt.UTC)
     period_days = 365 if billing_cadence == BillingCadence.ANNUAL else 30
     period_end = now + dt.timedelta(days=period_days)
 
+    # If cancelling / reverting to explorer free tier, also cancel active Stripe subscription
+    if plan_tier == PlanTier.EXPLORER and settings.stripe_secret_key:
+        stripe.api_key = settings.stripe_secret_key
+        acc_row = (
+            await db.execute(
+                text("SELECT stripe_subscription_id FROM identity.account WHERE id = :aid"),
+                {"aid": account_id},
+            )
+        ).first()
+        if acc_row and acc_row.stripe_subscription_id:
+            try:
+                stripe.Subscription.cancel(acc_row.stripe_subscription_id)
+            except Exception:
+                pass  # Ignore if already cancelled in Stripe
+
+    sub_id_clause = ", stripe_subscription_id = NULL" if plan_tier == PlanTier.EXPLORER else ""
+
     await db.execute(
         text(
-            "UPDATE identity.account "
-            "SET plan_tier = :pt, billing_cadence = :bc, seat_count = :sc, "
-            "current_period_end = :cpe "
-            "WHERE id = :aid"
+            f"UPDATE identity.account "
+            f"SET plan_tier = :pt, billing_cadence = :bc, seat_count = :sc, "
+            f"current_period_end = :cpe{sub_id_clause} "
+            f"WHERE id = :aid"
         ),
         {
             "pt": plan_tier.value,
