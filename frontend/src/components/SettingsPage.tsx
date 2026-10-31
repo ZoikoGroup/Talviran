@@ -831,13 +831,19 @@ function SecuritySection() {
             </p>
           )}
 
-          <div className="pt-2 flex justify-start">
+          <div className="pt-2 flex flex-wrap items-center gap-3">
             <button
               type="submit"
               className="inline-flex h-10 items-center justify-center rounded-xl bg-primary px-5 text-[13.5px] font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             >
               Update password
             </button>
+            <Link
+              to="/forgot-password"
+              className="text-xs text-muted-foreground hover:text-primary transition-colors underline-offset-4 hover:underline"
+            >
+              Send password reset email instead →
+            </Link>
           </div>
         </form>
       </Card>
