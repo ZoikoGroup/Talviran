@@ -14,6 +14,7 @@ import {
   HelpCircle,
   Home,
   LineChart,
+  LogOut,
   MessageSquare,
   PanelLeft,
   Pencil,
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCurrentUser } from '@/data/user'
+import { useAuth } from '@/auth/AuthContext'
 import { useIsDesktop } from '@/hooks/use-media-query'
 import PopoverMenu from '@/components/ui/popover-menu'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
@@ -128,7 +130,7 @@ export default function Sidebar({
   onOpenWatchlists,
   onOpenMarkets,
   onOpenCompare,
-  onOpenPricing,
+  onOpenPricing: _onOpenPricing,
   onOpenGuides,
   activeNav = 'home',
   mobileOpen,
@@ -136,6 +138,7 @@ export default function Sidebar({
 }: SidebarProps) {
   const navigate = useNavigate()
   const currentUser = useCurrentUser()
+  const { signOut } = useAuth()
   const isDesktop = useIsDesktop()
 
   // A chat only enters the history once it has actually been asked something,
@@ -1056,19 +1059,19 @@ export default function Sidebar({
               </div>
             </div>
 
-            {onOpenPricing && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onOpenPricing()
-                  onMobileClose()
-                }}
-                className="shrink-0 rounded-lg border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary hover:text-primary-foreground transition-all shadow-sm"
-              >
-                Upgrade
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={async (e) => {
+                e.stopPropagation()
+                onMobileClose()
+                await signOut()
+              }}
+              title="Sign out of this session"
+              className="inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-border/80 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:bg-destructive/10 hover:border-destructive/30 hover:text-destructive transition-all shadow-sm"
+            >
+              <LogOut className="h-3 w-3" />
+              <span>Sign out</span>
+            </button>
           </div>
         </div>
       </div>
