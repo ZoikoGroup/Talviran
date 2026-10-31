@@ -850,6 +850,24 @@ function BillingSection() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  const [invoices, setInvoices] = useState<api.InvoiceRecord[]>([])
+  const [invoicesLoading, setInvoicesLoading] = useState(false)
+
+  const loadInvoices = async () => {
+    try {
+      setInvoicesLoading(true)
+      const data = await api.getAccountInvoices()
+      setInvoices(data)
+    } catch {
+      // ignore
+    } finally {
+      setInvoicesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadInvoices()
+  }, [])
 
   const activePlanTier = entitlement?.plan_tier || 'professional'
   const isTeamOrEnterprise = activePlanTier === 'teams' || activePlanTier === 'enterprise'
@@ -922,10 +940,7 @@ function BillingSection() {
       setCancelling(true)
       setErrorMessage(null)
       // Downgrade to Explorer free tier and cancel autopay
-      await api.updateAccountPlan({
-        plan_tier: 'explorer',
-        billing_cadence: 'monthly',
-      })
+      await api.cancelSubscriptionApi()
       await refreshEntitlement()
       setShowCancelModal(false)
       setSuccessMessage('Subscription and automatic renewal have been cancelled. Your account has returned to the Explorer free tier.')
@@ -1664,6 +1679,116 @@ function BillingSection() {
         </div>
       </Card>
       </div>
+
+      {/* 4. Official Invoices & Payment Receipts (Chapter 15 §109 & Chapter 17 §121) */}
+      <Card>
+        <div className="p-5 flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground tracking-tight">
+                Invoices & Payment History
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Downloadable PDF tax receipts and billing transaction records with immutable event numbers.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void loadInvoices()}
+                disabled={invoicesLoading}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors shadow-sm"
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', invoicesLoading && 'animate-spin')} />
+                <span>Refresh Invoices</span>
+              </button>
+            </div>
+          </div>
+
+          {invoices.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border/80 bg-muted/10 p-6 text-center">
+              <CreditCard className="h-8 w-8 text-muted-foreground/60 mx-auto mb-2" />
+              <p className="text-xs font-medium text-foreground">No issued invoices found for this account</p>
+              <p className="text-[11px] text-muted-foreground mt-1 max-w-sm mx-auto">
+                Once a paid plan subscription or seat addition is completed, your itemized VAT/sales tax invoices and PDF receipts will automatically appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-border/70 scrollbar-slim">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-border/70 bg-muted/40">
+                    <th className="p-3 font-semibold text-muted-foreground">Invoice #</th>
+                    <th className="p-3 font-semibold text-muted-foreground">Date Issued</th>
+                    <th className="p-3 font-semibold text-muted-foreground">Description</th>
+                    <th className="p-3 font-semibold text-muted-foreground">Amount</th>
+                    <th className="p-3 font-semibold text-muted-foreground text-center">Status</th>
+                    <th className="p-3 font-semibold text-muted-foreground text-right">Receipt / PDF</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50 bg-background/50">
+                  {invoices.map((inv) => (
+                    <tr key={inv.id} className="hover:bg-muted/20 transition-colors">
+                      <td className="p-3 font-mono font-medium text-foreground">
+                        {inv.invoice_number || inv.id}
+                      </td>
+                      <td className="p-3 text-muted-foreground">
+                        {new Date(inv.created_at).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </td>
+                      <td className="p-3 text-foreground/90">
+                        {inv.description || 'Subscription Renewal'}
+                      </td>
+                      <td className="p-3 font-mono font-semibold text-foreground">
+                        ${inv.amount_paid_usd.toFixed(2)} <span className="text-[10px] text-muted-foreground">{inv.currency}</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className={cn(
+                          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider',
+                          inv.status === 'PAID'
+                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                            : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                        )}>
+                          {inv.status}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {inv.invoice_pdf && (
+                            <a
+                              href={inv.invoice_pdf}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                            >
+                              <span>PDF</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
+                          {inv.hosted_invoice_url && (
+                            <a
+                              href={inv.hosted_invoice_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                            >
+                              <span>Receipt</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </Card>
     </Panel>
   )
 }

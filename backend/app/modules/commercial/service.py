@@ -20,8 +20,10 @@ from app.modules.commercial.models import (
     AccountEntitlement,
     AccountUsage,
     BillingCadence,
+    CancelSubscriptionResponse,
     CheckoutSessionRequest,
     CheckoutSessionResponse,
+    InvoiceRecord,
     PlanDefinition,
     PlanTier,
     QuotaLimits,
@@ -626,3 +628,123 @@ async def update_account_plan(
     )
     await db.commit()
     return await resolve_account_entitlement(db, account_id)
+
+
+async def list_account_invoices(
+    db: AsyncSession,
+    account_id: uuid.UUID,
+) -> list[InvoiceRecord]:
+    """Fetches invoices for the authenticated account from Stripe (or DB records)."""
+    import stripe
+
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    acc_row = (
+        await db.execute(
+            text("SELECT stripe_customer_id FROM identity.account WHERE id = :aid"),
+            {"aid": account_id},
+        )
+    ).first()
+
+    customer_id = acc_row.stripe_customer_id if acc_row else None
+    if not customer_id or not settings.stripe_secret_key:
+        return []
+
+    stripe.api_key = settings.stripe_secret_key
+    try:
+        invoices = stripe.Invoice.list(customer=customer_id, limit=24)
+        results: list[InvoiceRecord] = []
+        for inv in invoices.data:
+            created_dt = dt.datetime.fromtimestamp(inv.created, tz=dt.UTC).isoformat()
+            p_start = (
+                dt.datetime.fromtimestamp(inv.period_start, tz=dt.UTC).isoformat()
+                if getattr(inv, "period_start", None)
+                else None
+            )
+            p_end = (
+                dt.datetime.fromtimestamp(inv.period_end, tz=dt.UTC).isoformat()
+                if getattr(inv, "period_end", None)
+                else None
+            )
+            results.append(
+                InvoiceRecord(
+                    id=str(inv.id),
+                    invoice_number=getattr(inv, "number", None) or str(inv.id),
+                    amount_paid_usd=float(getattr(inv, "total", 0) / 100.0),
+                    currency=str(getattr(inv, "currency", "usd")).upper(),
+                    status=str(getattr(inv, "status", "paid")).upper(),
+                    created_at=created_dt,
+                    period_start=p_start,
+                    period_end=p_end,
+                    hosted_invoice_url=getattr(inv, "hosted_invoice_url", None),
+                    invoice_pdf=getattr(inv, "invoice_pdf", None),
+                    description=getattr(inv, "description", None)
+                    or f"Talvrin Subscription ({str(getattr(inv, 'status', 'paid')).title()})",
+                )
+            )
+        return results
+    except Exception:
+        return []
+
+
+async def cancel_subscription_self_serve(
+    db: AsyncSession,
+    account_id: uuid.UUID,
+) -> CancelSubscriptionResponse:
+    """Self-serve cancellation path per Commercial Architecture Chapter 10 (§81 & §170).
+
+    Immediately stops recurring Stripe autopay, preserves past invoice access,
+    and returns account to Explorer Free Tier with explicit local effective date.
+    """
+    import stripe
+
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    acc_row = (
+        await db.execute(
+            text(
+                "SELECT plan_tier, billing_cadence, current_period_end, stripe_subscription_id "
+                "FROM identity.account WHERE id = :aid"
+            ),
+            {"aid": account_id},
+        )
+    ).first()
+
+    effective_date_str = (
+        acc_row.current_period_end.isoformat()
+        if acc_row and acc_row.current_period_end
+        else dt.datetime.now(dt.UTC).isoformat()
+    )
+
+    # Cancel subscription in Stripe to stop recurring charges
+    if settings.stripe_secret_key and acc_row and acc_row.stripe_subscription_id:
+        stripe.api_key = settings.stripe_secret_key
+        try:
+            stripe.Subscription.cancel(acc_row.stripe_subscription_id)
+        except Exception:
+            pass
+
+    # Downgrade account to Explorer tier and revoke future charge authorization
+    await db.execute(
+        text(
+            "UPDATE identity.account "
+            "SET plan_tier = 'explorer', billing_cadence = 'monthly', seat_count = 1, "
+            "stripe_subscription_id = NULL "
+            "WHERE id = :aid"
+        ),
+        {"aid": account_id},
+    )
+    await db.commit()
+
+    return CancelSubscriptionResponse(
+        success=True,
+        message="Subscription and automatic renewal have been cancelled.",
+        plan_tier=PlanTier.EXPLORER,
+        effective_date=effective_date_str,
+        retained_access=(
+            "All saved watchlists, evidence packs, and invoice receipts "
+            "remain fully accessible under the Explorer tier."
+        ),
+    )

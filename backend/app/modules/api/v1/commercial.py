@@ -6,16 +6,20 @@ from pydantic import BaseModel
 from app.modules.api.v1.deps import IdentityDep, SessionDep
 from app.modules.commercial.models import (
     AccountEntitlement,
+    CancelSubscriptionResponse,
     CheckoutSessionRequest,
     CheckoutSessionResponse,
+    InvoiceRecord,
     PlanDefinition,
     UpdatePlanRequest,
 )
 from app.modules.commercial.service import (
+    cancel_subscription_self_serve,
     create_billing_portal_session,
     create_checkout_session,
     get_catalog,
     handle_stripe_webhook_event,
+    list_account_invoices,
     resolve_account_entitlement,
     update_account_plan,
 )
@@ -83,6 +87,27 @@ async def get_billing_portal(
     except Exception as err:
         from fastapi import HTTPException
         raise HTTPException(status_code=502, detail=f"Stripe Gateway Error: {err}") from err
+
+
+@router.get("/invoices", response_model=list[InvoiceRecord])
+async def get_invoices(
+    db: SessionDep,
+    identity: IdentityDep,
+) -> list[InvoiceRecord]:
+    """Retrieve authenticated account's issued invoice receipts and downloadable PDFs."""
+    return await list_account_invoices(db, account_id=identity.account_id)
+
+
+@router.post("/cancel", response_model=CancelSubscriptionResponse)
+async def cancel_subscription(
+    db: SessionDep,
+    identity: IdentityDep,
+) -> CancelSubscriptionResponse:
+    """Self-serve subscription cancellation.
+
+    Immediately terminates automatic recurring billing and returns account to Explorer.
+    """
+    return await cancel_subscription_self_serve(db, account_id=identity.account_id)
 
 
 @router.post("/webhook", status_code=status.HTTP_200_OK)

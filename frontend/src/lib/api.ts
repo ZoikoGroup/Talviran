@@ -966,3 +966,33 @@ export const updateAccountPlan = (payload: {
     method: 'PATCH',
     body: JSON.stringify(payload),
   })
+
+export interface InvoiceRecord {
+  id: string
+  invoice_number?: string
+  amount_paid_usd: number
+  currency: string
+  status: string
+  created_at: string
+  period_start?: string
+  period_end?: string
+  hosted_invoice_url?: string
+  invoice_pdf?: string
+  description?: string
+}
+
+export interface CancelSubscriptionResult {
+  success: boolean
+  message: string
+  plan_tier: PlanTier
+  effective_date: string
+  retained_access: string
+}
+
+export const getAccountInvoices = (): Promise<InvoiceRecord[]> =>
+  apiFetch<InvoiceRecord[]>('/api/v1/commercial/invoices')
+
+export const cancelSubscriptionApi = (): Promise<CancelSubscriptionResult> =>
+  apiFetch<CancelSubscriptionResult>('/api/v1/commercial/cancel', {
+    method: 'POST',
+  })

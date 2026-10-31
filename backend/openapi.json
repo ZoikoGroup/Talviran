@@ -352,6 +352,38 @@
         "title": "CalculationResultOut",
         "type": "object"
       },
+      "CancelSubscriptionResponse": {
+        "properties": {
+          "effective_date": {
+            "title": "Effective Date",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "plan_tier": {
+            "$ref": "#/components/schemas/PlanTier"
+          },
+          "retained_access": {
+            "title": "Retained Access",
+            "type": "string"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "message",
+          "plan_tier",
+          "effective_date",
+          "retained_access"
+        ],
+        "title": "CancelSubscriptionResponse",
+        "type": "object"
+      },
       "CheckoutSessionRequest": {
         "properties": {
           "additional_seats": {
@@ -1302,6 +1334,105 @@
           "status"
         ],
         "title": "InstrumentOut",
+        "type": "object"
+      },
+      "InvoiceRecord": {
+        "properties": {
+          "amount_paid_usd": {
+            "title": "Amount Paid Usd",
+            "type": "number"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "currency": {
+            "default": "usd",
+            "title": "Currency",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "hosted_invoice_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hosted Invoice Url"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "invoice_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoice Number"
+          },
+          "invoice_pdf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoice Pdf"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "amount_paid_usd",
+          "status",
+          "created_at"
+        ],
+        "title": "InvoiceRecord",
         "type": "object"
       },
       "IssuerOut": {
@@ -3817,6 +3948,28 @@
         ]
       }
     },
+    "/api/v1/commercial/cancel": {
+      "post": {
+        "description": "Self-serve subscription cancellation.\n\nImmediately terminates automatic recurring billing and returns account to Explorer.",
+        "operationId": "cancel_subscription_api_v1_commercial_cancel_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelSubscriptionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Cancel Subscription",
+        "tags": [
+          "commercial"
+        ]
+      }
+    },
     "/api/v1/commercial/checkout": {
       "post": {
         "description": "Initialize a verified Stripe checkout session for upgrades or seat additions.",
@@ -3876,6 +4029,32 @@
           }
         },
         "summary": "Get Entitlement",
+        "tags": [
+          "commercial"
+        ]
+      }
+    },
+    "/api/v1/commercial/invoices": {
+      "get": {
+        "description": "Retrieve authenticated account's issued invoice receipts and downloadable PDFs.",
+        "operationId": "get_invoices_api_v1_commercial_invoices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InvoiceRecord"
+                  },
+                  "title": "Response Get Invoices Api V1 Commercial Invoices Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Invoices",
         "tags": [
           "commercial"
         ]

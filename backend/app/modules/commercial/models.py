@@ -4,6 +4,7 @@ Faithful implementation of 'Talvrin Commercial Estate Architecture 2026-10-23':
 - Chapter 5: Price Book & Billing Cadence
 - Chapter 7: Entitlement Engine & Feature Gating
 - Chapter 8: Usage Metering Architecture
+- Chapter 15: Canonical data model & engineering contracts
 """
 
 from __future__ import annotations
@@ -95,3 +96,25 @@ class UpdatePlanRequest(BaseModel):
     plan_tier: PlanTier
     billing_cadence: BillingCadence = BillingCadence.ANNUAL
     additional_seats: int = Field(default=0, ge=0)
+
+
+class InvoiceRecord(BaseModel):
+    id: str
+    invoice_number: str | None = None
+    amount_paid_usd: float
+    currency: str = "usd"
+    status: str
+    created_at: str
+    period_start: str | None = None
+    period_end: str | None = None
+    hosted_invoice_url: str | None = None
+    invoice_pdf: str | None = None
+    description: str | None = None
+
+
+class CancelSubscriptionResponse(BaseModel):
+    success: bool
+    message: str
+    plan_tier: PlanTier
+    effective_date: str
+    retained_access: str
