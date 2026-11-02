@@ -516,7 +516,7 @@ async def accept_invitation(
             auth_res = await supabase_auth.sign_in_with_password(
                 http, email=inv.email, password=req.password, settings=cfg
             )
-            sb_user = auth_res.user
+            sb_user = auth_res
         except Exception as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

@@ -40,7 +40,7 @@ def _send_resend_email(
     html_content: str,
     api_key: str,
     from_email: str,
-    attachments: list[dict] | None = None,
+    attachments: list[dict[str, str]] | None = None,
 ) -> bool:
     """Dispatches transactional email via Resend API."""
     try:
@@ -50,7 +50,7 @@ def _send_resend_email(
             "Content-Type": "application/json",
             "User-Agent": "Talvrin-Alert-Engine/1.0",
         }
-        payload: dict = {
+        payload: dict[str, object] = {
             "from": from_email,
             "to": [to_email],
             "subject": subject,
