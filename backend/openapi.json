@@ -1,6 +1,24 @@
 {
   "components": {
     "schemas": {
+      "AcceptInvitationRequest": {
+        "properties": {
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "password"
+        ],
+        "title": "AcceptInvitationRequest",
+        "type": "object"
+      },
       "AccountEntitlement": {
         "properties": {
           "account_id": {
@@ -711,6 +729,30 @@
         "title": "ConversationPatch",
         "type": "object"
       },
+      "CreateInvitationRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "default": "analyst",
+            "enum": [
+              "admin",
+              "analyst",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "CreateInvitationRequest",
+        "type": "object"
+      },
       "CreateSupportTicketRequest": {
         "properties": {
           "category": {
@@ -1346,6 +1388,91 @@
         "title": "InstrumentOut",
         "type": "object"
       },
+      "InvitationDetailsResponse": {
+        "properties": {
+          "account_name": {
+            "title": "Account Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "is_valid": {
+            "title": "Is Valid",
+            "type": "boolean"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_name",
+          "email",
+          "role",
+          "status",
+          "is_valid"
+        ],
+        "title": "InvitationDetailsResponse",
+        "type": "object"
+      },
+      "InvitationResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "invite_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invite Url"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "status",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "InvitationResponse",
+        "type": "object"
+      },
       "InvoiceRecord": {
         "properties": {
           "amount_paid_usd": {
@@ -1481,6 +1608,46 @@
         "title": "IssuerOut",
         "type": "object"
       },
+      "MemberResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_current_user": {
+            "default": false,
+            "title": "Is Current User",
+            "type": "boolean"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "status",
+          "created_at"
+        ],
+        "title": "MemberResponse",
+        "type": "object"
+      },
       "MessageIn": {
         "description": "A message from the person typing.\n\nThere is deliberately no `role` field. A client that could post an\nASSISTANT message could fabricate something Talvrin never said \u2014 and then\nshare the link, where it would read as the platform's own output. For a\nproduct whose whole claim is sourced research and no recommendations, that\nis the forgery worth designing out rather than policing later. Assistant\nand system turns are written by the server, through the service layer.",
         "properties": {
@@ -1530,6 +1697,66 @@
           "created_at"
         ],
         "title": "MessageOut",
+        "type": "object"
+      },
+      "OrganizationOverviewResponse": {
+        "properties": {
+          "account_id": {
+            "format": "uuid",
+            "title": "Account Id",
+            "type": "string"
+          },
+          "account_name": {
+            "title": "Account Name",
+            "type": "string"
+          },
+          "available_seats": {
+            "title": "Available Seats",
+            "type": "integer"
+          },
+          "can_invite": {
+            "title": "Can Invite",
+            "type": "boolean"
+          },
+          "invitations": {
+            "items": {
+              "$ref": "#/components/schemas/InvitationResponse"
+            },
+            "title": "Invitations",
+            "type": "array"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/MemberResponse"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "plan_tier": {
+            "title": "Plan Tier",
+            "type": "string"
+          },
+          "seat_count": {
+            "title": "Seat Count",
+            "type": "integer"
+          },
+          "used_seats": {
+            "title": "Used Seats",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "account_id",
+          "account_name",
+          "plan_tier",
+          "seat_count",
+          "used_seats",
+          "available_seats",
+          "can_invite",
+          "members",
+          "invitations"
+        ],
+        "title": "OrganizationOverviewResponse",
         "type": "object"
       },
       "PageOut_AlertOut_": {
@@ -2707,6 +2934,24 @@
           "observed_value"
         ],
         "title": "TriggerAlertIn",
+        "type": "object"
+      },
+      "UpdateMemberRoleRequest": {
+        "properties": {
+          "role": {
+            "enum": [
+              "admin",
+              "analyst",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "UpdateMemberRoleRequest",
         "type": "object"
       },
       "UpdatePlanRequest": {
@@ -4530,6 +4775,283 @@
         "summary": "Get Rule",
         "tags": [
           "monitoring"
+        ]
+      }
+    },
+    "/api/v1/organization": {
+      "get": {
+        "description": "Retrieve organization profile, all active members, invitations, and seat quotas.",
+        "operationId": "get_organization_api_v1_organization_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationOverviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Organization",
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/v1/organization/invitations": {
+      "post": {
+        "description": "Issue a new team member invitation.",
+        "operationId": "create_invitation_api_v1_organization_invitations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvitationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Invitation",
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/v1/organization/invitations/{invitation_id}": {
+      "delete": {
+        "description": "Revoke a pending team invitation.",
+        "operationId": "revoke_invitation_api_v1_organization_invitations__invitation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invitation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Invitation",
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/v1/organization/join/accept": {
+      "post": {
+        "description": "Accept invitation by setting password and joining the tenant organization.",
+        "operationId": "accept_invitation_api_v1_organization_join_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptInvitationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Invitation",
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/v1/organization/join/{token}/details": {
+      "get": {
+        "description": "Public check for an invitation token without authentication.",
+        "operationId": "get_invitation_details_api_v1_organization_join__token__details_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationDetailsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Invitation Details",
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/v1/organization/members/{member_id}": {
+      "delete": {
+        "description": "Remove a member from the organization, revoking active sessions.",
+        "operationId": "remove_member_api_v1_organization_members__member_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Member",
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/v1/organization/members/{member_id}/role": {
+      "patch": {
+        "description": "Modify a member's role (admin, analyst, viewer).",
+        "operationId": "update_member_role_api_v1_organization_members__member_id__role_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Member Role",
+        "tags": [
+          "organization"
         ]
       }
     },

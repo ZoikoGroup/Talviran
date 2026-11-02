@@ -54,8 +54,29 @@ class Principal(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     # those (see migration 0009's docstring) it is mapped here rather than
     # only ever touched via raw SQL.
     supabase_user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), unique=True)
+    role: Mapped[str] = mapped_column(String(32), default="admin", server_default="admin")
     totp_secret: Mapped[str | None] = mapped_column(String(128), default=None, nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+
+
+class OrganizationInvitation(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "organization_invitation"
+    __table_args__ = {"schema": "identity"}
+
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("identity.account.id", ondelete="CASCADE"), index=True
+    )
+    invited_by_principal_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("identity.principal.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    email: Mapped[str] = mapped_column(String(320))
+    role: Mapped[str] = mapped_column(String(32), default="analyst", server_default="analyst")
+    token_hash: Mapped[str] = mapped_column(String(128), unique=True)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", server_default="PENDING")
+    expires_at: Mapped[dt.datetime]
+    accepted_at: Mapped[dt.datetime | None] = mapped_column(default=None, nullable=True)
 
 
 class Session(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

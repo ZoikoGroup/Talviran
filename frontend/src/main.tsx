@@ -17,6 +17,7 @@ import Terms from '@/pages/Terms'
 import Contact from '@/pages/Contact'
 import Help from '@/pages/Help'
 import Guides from '@/pages/Guides'
+import Join from '@/pages/Join'
 import { AuthProvider, useAuth } from '@/auth/AuthContext'
 import { ThemeProvider } from '@/theme/ThemeContext'
 import { LiveMarketProvider } from '@/hooks/useLiveMarket'
@@ -93,6 +94,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 <Route path="/contact" element={<Contact />} />
                 <Route path="/help" element={<Help />} />
                 <Route path="/guides" element={<Guides />} />
+                <Route path="/join" element={<Join />} />
 
                 {/* Explicit deep-link routes wrapped with RequireAuth */}
                 {['/', '/settings', '/markets', '/watchlists', '/monitoring', '/compare', '/research'].map((p) => (

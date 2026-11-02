@@ -998,3 +998,89 @@ export const cancelSubscriptionApi = (): Promise<CancelSubscriptionResult> =>
   apiFetch<CancelSubscriptionResult>('/api/v1/commercial/cancel', {
     method: 'POST',
   })
+
+// ------------------------------------------------------------------- organization & team
+
+export interface MemberRecord {
+  id: string
+  email: string
+  role: 'admin' | 'analyst' | 'viewer'
+  status: string
+  created_at: string
+  is_current_user: boolean
+}
+
+export interface InvitationRecord {
+  id: string
+  email: string
+  role: 'admin' | 'analyst' | 'viewer'
+  status: string
+  created_at: string
+  expires_at: string
+  invite_url?: string
+}
+
+export interface OrganizationOverview {
+  account_id: string
+  account_name: string
+  plan_tier: string
+  seat_count: number
+  used_seats: number
+  available_seats: number
+  can_invite: boolean
+  members: MemberRecord[]
+  invitations: InvitationRecord[]
+}
+
+export const getOrganizationOverview = (): Promise<OrganizationOverview> =>
+  apiFetch<OrganizationOverview>('/api/v1/organization')
+
+export const createInvitation = (payload: {
+  email: string
+  role: 'admin' | 'analyst' | 'viewer'
+}): Promise<InvitationRecord> =>
+  apiFetch<InvitationRecord>('/api/v1/organization/invitations', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+
+export const revokeInvitation = (invitationId: string): Promise<void> =>
+  apiFetch<void>(`/api/v1/organization/invitations/${invitationId}`, {
+    method: 'DELETE',
+  })
+
+export const updateMemberRole = (
+  memberId: string,
+  role: 'admin' | 'analyst' | 'viewer'
+): Promise<MemberRecord> =>
+  apiFetch<MemberRecord>(`/api/v1/organization/members/${memberId}/role`, {
+    method: 'PATCH',
+    body: JSON.stringify({ role }),
+  })
+
+export const removeMember = (memberId: string): Promise<void> =>
+  apiFetch<void>(`/api/v1/organization/members/${memberId}`, {
+    method: 'DELETE',
+  })
+
+export interface InvitationDetails {
+  account_name: string
+  email: string
+  role: string
+  status: string
+  is_valid: boolean
+}
+
+export const getInvitationDetails = (token: string): Promise<InvitationDetails> =>
+  apiFetch<InvitationDetails>(`/api/v1/organization/join/${token}/details`)
+
+export const acceptInvitation = (payload: {
+  token: string
+  password: string
+}): Promise<MemberRecord> =>
+  apiFetch<MemberRecord>('/api/v1/organization/join/accept', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+
+

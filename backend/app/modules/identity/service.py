@@ -84,6 +84,7 @@ class Identity:
     principal_id: uuid.UUID
     account_id: uuid.UUID
     email: str
+    role: str = "admin"
     totp_enabled: bool = False
 
 
@@ -126,7 +127,7 @@ async def _find_local_principal(
     row = (
         await session.execute(
             text(
-                "SELECT principal_id, account_id, email, status, totp_enabled "
+                "SELECT principal_id, account_id, email, status, totp_enabled, role "
                 "FROM identity.lookup_principal_by_supabase_id(:s)"
             ),
             {"s": supabase_user_id},
@@ -138,6 +139,7 @@ async def _find_local_principal(
         principal_id=row.principal_id,
         account_id=row.account_id,
         email=row.email,
+        role=getattr(row, "role", "admin") or "admin",
         totp_enabled=bool(getattr(row, "totp_enabled", False)),
     )
 
@@ -360,7 +362,7 @@ async def resolve_session(
         await session.execute(
             text(
                 "SELECT session_id, principal_id, account_id, email, "
-                "principal_status, expires_at, idle_expires_at, revoked_at, totp_enabled "
+                "principal_status, expires_at, idle_expires_at, revoked_at, totp_enabled, role "
                 "FROM identity.lookup_session_by_token(:h)"
             ),
             {"h": tokens.hash_token(token)},
@@ -383,6 +385,7 @@ async def resolve_session(
         principal_id=row.principal_id,
         account_id=row.account_id,
         email=row.email,
+        role=getattr(row, "role", "admin") or "admin",
         totp_enabled=bool(getattr(row, "totp_enabled", False)),
     )
     await apply_rls_context(

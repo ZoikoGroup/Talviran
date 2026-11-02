@@ -108,23 +108,23 @@ def render_talvrin_email_html(
 
   <div style="max-width: 600px; margin: 0 auto; background-color: #0f1623; border: 1px solid #1e293b; border-radius: 14px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.65);">
     <!-- Header with Talvrin Branding & Logo -->
-    <div style="padding: 24px 32px; border-bottom: 1px solid #1e293b; background: linear-gradient(180deg, #162032 0%, #0f1623 100%);">
+    <div style="padding: 20px 24px; border-bottom: 1px solid #1e293b; background: linear-gradient(180deg, #162032 0%, #0f1623 100%);">
       <table style="width: 100%; border-collapse: collapse;">
         <tr>
           <td style="vertical-align: middle; width: 44px; padding-right: 12px;">
-            <img src="data:image/png;base64,{TALVRIN_LOGO_PNG_B64}" width="38" height="38"
+            <img src="cid:talvrin_brand_logo" width="38" height="38"
                  alt="Talvrin Logo"
                  style="display: block; width: 38px; height: 38px; border-radius: 8px; border: 1px solid rgba(129, 140, 248, 0.4); box-shadow: 0 2px 8px rgba(0,0,0,0.4);" />
           </td>
           <td style="vertical-align: middle;">
-            <span style="font-size: 20px; font-weight: 800; letter-spacing: -0.02em; color: #ffffff; line-height: 1;">TALVRIN</span>
-            <p style="margin: 4px 0 0; font-size: 11.5px; color: #94a3b8; letter-spacing: 0.02em; line-height: 1.2;">
+            <span style="font-size: 19px; font-weight: 800; letter-spacing: -0.02em; color: #ffffff; line-height: 1;">TALVRIN</span>
+            <p style="margin: 3px 0 0; font-size: 11px; color: #94a3b8; letter-spacing: 0.02em; line-height: 1.2;">
               Evidence. Precision. Clarity. Vigilance.
             </p>
           </td>
-          <td style="text-align: right; vertical-align: middle;">
-            <span style="display: inline-block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; background: rgba(99, 102, 241, 0.15); color: #818cf8; padding: 4px 10px; border-radius: 9999px; border: 1px solid rgba(99, 102, 241, 0.3);">
-              {html.escape(badge_label)}
+          <td style="text-align: right; vertical-align: middle; white-space: nowrap; padding-left: 10px;">
+            <span style="display: inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; background: rgba(99, 102, 241, 0.15); color: #818cf8; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(99, 102, 241, 0.3); white-space: nowrap;">
+              {badge_label}
             </span>
           </td>
         </tr>
@@ -222,10 +222,19 @@ def send_talvrin_template_email(
         notice_reference=str(vars_dict.get("notice_reference") or template_id),
     )
 
+    attachments = [
+        {
+            "filename": "talvrin_logo.png",
+            "content": TALVRIN_LOGO_PNG_B64,
+            "content_id": "talvrin_brand_logo",
+        }
+    ]
+
     return _send_resend_email(
         to_email=recipient_email,
         subject=subject,
         html_content=html_content,
         api_key=settings.resend_api_key,
         from_email=settings.alerts_from_email,
+        attachments=attachments,
     )

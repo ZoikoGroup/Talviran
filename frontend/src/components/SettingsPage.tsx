@@ -21,6 +21,11 @@ import {
   Radio,
   Activity,
   X,
+  Users,
+  UserPlus,
+  Mail,
+  Copy,
+  Clock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/auth/AuthContext'
@@ -41,6 +46,7 @@ interface SettingsPageProps {
 
 const SECTIONS = [
   { id: 'account', label: 'Account' },
+  { id: 'team', label: 'Team & Organization' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'security', label: 'Security' },
   { id: 'billing', label: 'Billing' },
@@ -56,6 +62,13 @@ const SETTING_SEARCH_INDEX: Record<SectionId, { keywords: string[] }> = {
       'name', 'display name', 'email', 'profile', 'user', 'sign out', 'logout',
       'plan', 'account', 'identity', 'username', 'edit name', 'device session',
       'who you are', 'credentials', 'switch account', 'exit session',
+    ],
+  },
+  team: {
+    keywords: [
+      'team', 'organization', 'members', 'invite', 'seats', 'analyst', 'admin',
+      'viewer', 'roles', 'colleagues', 'permissions', 'access', 'invitations',
+      'collaborate', 'seat count', 'pooled quotas', 'add member',
     ],
   },
   appearance: {
@@ -456,6 +469,409 @@ function AppearanceSection({
           />
         </button>
       </Row>
+    </Panel>
+  )
+}
+
+function TeamSection({ onNavigateToBilling }: { onNavigateToBilling: () => void }) {
+  const [data, setData] = useState<api.OrganizationOverview | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [_error, setError] = useState<string | null>(null)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<'admin' | 'analyst' | 'viewer'>('analyst')
+  const [inviting, setInviting] = useState(false)
+  const [inviteFeedback, setInviteFeedback] = useState<{ message: string; url?: string; isError?: boolean } | null>(null)
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
+
+  const fetchOverview = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const res = await api.getOrganizationOverview()
+      setData(res)
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load organization details.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchOverview()
+  }, [])
+
+  const handleSendInvite = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!inviteEmail.trim()) return
+    try {
+      setInviting(true)
+      setInviteFeedback(null)
+      const newInv = await api.createInvitation({
+        email: inviteEmail.trim(),
+        role: inviteRole,
+      })
+      setInviteEmail('')
+      const fullUrl = newInv.invite_url ? `${window.location.origin}${newInv.invite_url}` : undefined
+      setInviteFeedback({
+        message: `Invitation generated for ${newInv.email}!`,
+        url: fullUrl,
+      })
+      await fetchOverview()
+    } catch (err: any) {
+      setInviteFeedback({
+        message: err?.message || 'Failed to issue invitation.',
+        isError: true,
+      })
+    } finally {
+      setInviting(false)
+    }
+  }
+
+  const handleRevokeInvite = async (id: string) => {
+    try {
+      setActionLoadingId(id)
+      await api.revokeInvitation(id)
+      await fetchOverview()
+    } catch (err: any) {
+      alert(err?.message || 'Failed to revoke invitation.')
+    } finally {
+      setActionLoadingId(null)
+    }
+  }
+
+  const handleUpdateRole = async (memberId: string, newRole: 'admin' | 'analyst' | 'viewer') => {
+    try {
+      setActionLoadingId(memberId)
+      await api.updateMemberRole(memberId, newRole)
+      await fetchOverview()
+    } catch (err: any) {
+      alert(err?.message || 'Failed to update member role.')
+    } finally {
+      setActionLoadingId(null)
+    }
+  }
+
+  const handleRemoveMember = async (memberId: string, email: string) => {
+    if (!window.confirm(`Are you sure you want to remove ${email} from this organization? Their active session will be revoked immediately.`)) {
+      return
+    }
+    try {
+      setActionLoadingId(memberId)
+      await api.removeMember(memberId)
+      await fetchOverview()
+    } catch (err: any) {
+      alert(err?.message || 'Failed to remove member.')
+    } finally {
+      setActionLoadingId(null)
+    }
+  }
+
+  const copyToClipboard = (textToCopy: string) => {
+    navigator.clipboard.writeText(textToCopy)
+    alert('Invitation link copied to clipboard!')
+  }
+
+  if (loading) {
+    return (
+      <Panel title="Team & Organization" description="Manage multi-seat seats, member permissions, and teammate invitations.">
+        <div className="flex items-center justify-center p-12 text-sm text-muted-foreground">
+          <RefreshCw className="mr-2 h-4 w-4 animate-spin text-primary" />
+          Loading organization details...
+        </div>
+      </Panel>
+    )
+  }
+
+  const isMultiSeatTier = data?.plan_tier === 'teams' || data?.plan_tier === 'enterprise'
+
+  return (
+    <Panel
+      title="Team & Organization"
+      description="Manage organization members, assign role-based access control, and invite colleagues to share pooled research quotas."
+    >
+      {/* 1. Seats & Tier Status Banner */}
+      <div className="py-6 border-b border-border/60">
+        <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2.5 mb-1.5">
+                <Users className="h-5 w-5 text-primary" />
+                <h3 className="text-base font-semibold text-foreground">
+                  {data?.account_name || 'Organization Workspace'}
+                </h3>
+                <span className="rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-xs font-semibold text-primary capitalize">
+                  {data?.plan_tier} Plan
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Pooled quotas, deterministic audit logs, and shared workspaces across all authorized members.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-6">
+              <div className="text-right">
+                <div className="text-xs font-medium text-muted-foreground">Allocated Seats</div>
+                <div className="text-lg font-bold text-foreground">
+                  {data?.used_seats} <span className="text-xs font-normal text-muted-foreground">/ {data?.seat_count}</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs font-medium text-muted-foreground">Available</div>
+                <div className="text-lg font-bold text-emerald-400">
+                  {data?.available_seats}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onNavigateToBilling}
+                className="rounded-xl border border-border bg-secondary/80 hover:bg-secondary px-3.5 py-2 text-xs font-medium text-foreground transition-all shadow-sm"
+              >
+                Add Seats / Upgrade
+              </button>
+            </div>
+          </div>
+
+          {!isMultiSeatTier && (
+            <div className="mt-4 rounded-xl bg-amber-500/10 border border-amber-500/20 p-3.5 flex items-start gap-3">
+              <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-amber-200/90 leading-relaxed">
+                You are currently on the <strong className="font-semibold text-amber-300 capitalize">{data?.plan_tier}</strong> plan (1 seat). Upgrade to <strong className="font-semibold text-amber-300">Teams ($249/mo)</strong> or <strong className="font-semibold text-amber-300">Enterprise ($899/mo)</strong> to invite multiple analysts, share policy frameworks, and pool monthly research limits.
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 2. Invite Colleague Form */}
+      <Row
+        label="Invite team member"
+        hint="Send an invitation link with designated access privileges (Administrator, Analyst, or Viewer)."
+      >
+        <div className="w-full space-y-4">
+          <form onSubmit={handleSendInvite} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="relative flex-1">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                type="email"
+                required
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="colleague@institution.com"
+                className="w-full rounded-xl border border-border/80 bg-background pl-9 pr-3.5 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+
+            <select
+              value={inviteRole}
+              onChange={(e) => setInviteRole(e.target.value as any)}
+              className="rounded-xl border border-border/80 bg-background px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="analyst">Analyst (Full Research & Alerts)</option>
+              <option value="viewer">Viewer (Read-Only Evidence)</option>
+              <option value="admin">Admin (Manage Billing & Team)</option>
+            </select>
+
+            <button
+              type="submit"
+              disabled={inviting || !data?.can_invite}
+              title={
+                !data?.can_invite
+                  ? data?.available_seats === 0
+                    ? 'All allocated seats are filled. Upgrade tier or add seats in Billing to send more invites.'
+                    : 'Only organization administrators can invite members.'
+                  : undefined
+              }
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-all hover:bg-primary/90 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+            >
+              {inviting ? (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  <span>Issuing...</span>
+                </>
+              ) : (
+                <>
+                  <UserPlus className="h-3.5 w-3.5" />
+                  <span>Send Invite</span>
+                </>
+              )}
+            </button>
+          </form>
+
+          {inviteFeedback && (
+            <div
+              className={cn(
+                'rounded-xl p-3.5 border text-xs flex flex-col gap-2',
+                inviteFeedback.isError
+                  ? 'bg-rose-500/10 border-rose-500/20 text-rose-300'
+                  : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+              )}
+            >
+              <div className="flex items-center gap-2 font-medium">
+                {inviteFeedback.isError ? <AlertCircle className="h-4 w-4 shrink-0" /> : <CheckCircle2 className="h-4 w-4 shrink-0" />}
+                <span>{inviteFeedback.message}</span>
+              </div>
+              {inviteFeedback.url && (
+                <div className="flex items-center gap-2 mt-1 bg-background/80 p-2 rounded-lg border border-border/60">
+                  <span className="font-mono text-[11px] truncate flex-1 text-muted-foreground select-all">
+                    {inviteFeedback.url}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(inviteFeedback.url!)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-secondary hover:bg-secondary/80 text-foreground text-[11px] font-medium transition-colors shrink-0"
+                  >
+                    <Copy className="h-3 w-3" />
+                    Copy
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Row>
+
+      {/* 3. Active Members Table */}
+      <Row
+        label="Organization members"
+        hint="All principals currently authenticated to this tenant account."
+      >
+        <div className="w-full rounded-2xl border border-border/80 bg-card overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-border/70 bg-muted/40 text-muted-foreground">
+                  <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[11px]">User</th>
+                  <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[11px]">Role</th>
+                  <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[11px]">Status</th>
+                  <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[11px]">Joined</th>
+                  <th className="py-3 px-4 text-right font-semibold uppercase tracking-wider text-[11px]">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {data?.members.map((m) => (
+                  <tr key={m.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="py-3.5 px-4 font-medium text-foreground">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-primary/20 text-primary font-bold flex items-center justify-center text-xs">
+                          {m.email.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-foreground">{m.email}</span>
+                            {m.is_current_user && (
+                              <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground font-semibold">
+                                You
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="py-3.5 px-4">
+                      {m.is_current_user ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-primary/10 text-primary border border-primary/20 capitalize">
+                          {m.role}
+                        </span>
+                      ) : (
+                        <select
+                          value={m.role}
+                          disabled={actionLoadingId === m.id}
+                          onChange={(e) => handleUpdateRole(m.id, e.target.value as any)}
+                          className="rounded-lg border border-border/70 bg-background px-2.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary capitalize"
+                        >
+                          <option value="admin">Admin</option>
+                          <option value="analyst">Analyst</option>
+                          <option value="viewer">Viewer</option>
+                        </select>
+                      )}
+                    </td>
+
+                    <td className="py-3.5 px-4">
+                      <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        Active
+                      </span>
+                    </td>
+
+                    <td className="py-3.5 px-4 text-muted-foreground font-mono text-[11px]">
+                      {new Date(m.created_at).toLocaleDateString('en-GB')}
+                    </td>
+
+                    <td className="py-3.5 px-4 text-right">
+                      {!m.is_current_user && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMember(m.id, m.email)}
+                          disabled={actionLoadingId === m.id}
+                          className="text-xs text-rose-400 hover:text-rose-300 font-medium hover:underline p-1"
+                        >
+                          {actionLoadingId === m.id ? 'Processing...' : 'Remove'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Row>
+
+      {/* 4. Pending Invitations */}
+      {data?.invitations && data.invitations.length > 0 && (
+        <Row
+          label="Pending invitations"
+          hint="Outstanding invitations awaiting acceptance by colleagues."
+        >
+          <div className="w-full rounded-2xl border border-border/80 bg-card overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-border/70 bg-muted/40 text-muted-foreground">
+                    <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[11px]">Email</th>
+                    <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[11px]">Role</th>
+                    <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[11px]">Sent</th>
+                    <th className="py-3 px-4 font-semibold uppercase tracking-wider text-[11px]">Expires</th>
+                    <th className="py-3 px-4 text-right font-semibold uppercase tracking-wider text-[11px]">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {data.invitations.map((inv) => (
+                    <tr key={inv.id} className="hover:bg-muted/20 transition-colors">
+                      <td className="py-3.5 px-4 font-medium text-foreground">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-amber-400 shrink-0" />
+                          <span>{inv.email}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 capitalize text-muted-foreground">
+                        {inv.role}
+                      </td>
+                      <td className="py-3.5 px-4 text-muted-foreground font-mono text-[11px]">
+                        {new Date(inv.created_at).toLocaleDateString('en-GB')}
+                      </td>
+                      <td className="py-3.5 px-4 text-muted-foreground font-mono text-[11px]">
+                        {new Date(inv.expires_at).toLocaleDateString('en-GB')}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleRevokeInvite(inv.id)}
+                          disabled={actionLoadingId === inv.id}
+                          className="text-xs text-rose-400 hover:text-rose-300 font-medium hover:underline p-1"
+                        >
+                          {actionLoadingId === inv.id ? 'Revoking...' : 'Revoke'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </Row>
+      )}
     </Panel>
   )
 }
@@ -2147,6 +2563,9 @@ export default function SettingsPage({
         <div className="w-full">
           {active === 'account' && (
             <AccountSection onNavigateToBilling={() => setActive('billing')} />
+          )}
+          {active === 'team' && (
+            <TeamSection onNavigateToBilling={() => setActive('billing')} />
           )}
           {active === 'appearance' && (
             <AppearanceSection theme={theme} onThemeChange={onThemeChange} />

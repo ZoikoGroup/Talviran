@@ -326,15 +326,15 @@ export function ComparisonPage({
   onOpenMonitoringForRule,
   onOpenGuides,
   onOpenPricing,
-  initialSymbols = ['AAPL', 'MSFT', 'NVDA'],
+  initialSymbols = [],
 }: ComparisonPageProps) {
-  // Persist comparison universe and base across reloads
+  // Persist comparison universe and base across reloads in current tab session
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('talvrin_comparison_symbols')
+      const saved = sessionStorage.getItem('talvrin_comparison_symbols')
       if (saved) {
         const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed.slice(0, 6)
+        if (Array.isArray(parsed)) return parsed.slice(0, 6)
       }
     } catch {
       // fallback
@@ -344,18 +344,28 @@ export function ComparisonPage({
 
   const [activeChartSymbol, setActiveChartSymbol] = useState<string>(() => {
     try {
-      const saved = localStorage.getItem('talvrin_comparison_base')
+      const saved = sessionStorage.getItem('talvrin_comparison_base')
       if (saved) return saved
     } catch {
       // fallback
     }
-    return initialSymbols[0] || 'AAPL'
+    return initialSymbols[0] || ''
   })
 
-  // Save changes to localStorage
+  // Clean up legacy localStorage keys if present
   useEffect(() => {
     try {
-      localStorage.setItem('talvrin_comparison_symbols', JSON.stringify(selectedSymbols))
+      localStorage.removeItem('talvrin_comparison_symbols')
+      localStorage.removeItem('talvrin_comparison_base')
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  // Save changes to sessionStorage
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('talvrin_comparison_symbols', JSON.stringify(selectedSymbols))
     } catch {
       // ignore
     }
@@ -363,7 +373,7 @@ export function ComparisonPage({
 
   useEffect(() => {
     try {
-      localStorage.setItem('talvrin_comparison_base', activeChartSymbol)
+      sessionStorage.setItem('talvrin_comparison_base', activeChartSymbol)
     } catch {
       // ignore
     }
@@ -384,8 +394,10 @@ export function ComparisonPage({
 
   // Keep activeChartSymbol in sync if symbol removed
   useEffect(() => {
-    if (!selectedSymbols.includes(activeChartSymbol)) {
-      setActiveChartSymbol(selectedSymbols[0] || 'AAPL')
+    if (selectedSymbols.length === 0) {
+      setActiveChartSymbol('')
+    } else if (!selectedSymbols.includes(activeChartSymbol)) {
+      setActiveChartSymbol(selectedSymbols[0])
     }
   }, [selectedSymbols, activeChartSymbol])
 
@@ -395,6 +407,11 @@ export function ComparisonPage({
   useEffect(() => {
     const container = tvContainerRef.current
     if (!container) return
+
+    if (!activeChartSymbol || selectedSymbols.length === 0) {
+      container.innerHTML = ''
+      return
+    }
 
     container.innerHTML = '<div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div>'
 
@@ -454,13 +471,15 @@ export function ComparisonPage({
     if (selectedSymbols.length >= 6) return
     if (!selectedSymbols.includes(sym)) {
       setSelectedSymbols([...selectedSymbols, sym])
+      if (!activeChartSymbol) {
+        setActiveChartSymbol(sym)
+      }
     }
     setSearchQuery('')
     setIsSearchOpen(false)
   }
 
   const removeSymbol = (sym: string) => {
-    if (selectedSymbols.length <= 1) return
     setSelectedSymbols(selectedSymbols.filter((s) => s !== sym))
   }
 
@@ -724,8 +743,19 @@ export function ComparisonPage({
 
           <div className="relative">
             <button
-              onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm border border-indigo-500/50 transition-colors"
+              onClick={() => {
+                if (loadedAssets.length === 0) {
+                  toast.error('Select at least one asset to export comparison.')
+                  return
+                }
+                setIsExportMenuOpen(!isExportMenuOpen)
+              }}
+              disabled={loadedAssets.length === 0}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                loadedAssets.length === 0
+                  ? 'bg-slate-800/60 text-slate-500 border-slate-700/50 cursor-not-allowed opacity-50'
+                  : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm border-indigo-500/50'
+              }`}
             >
               <Download className="w-3.5 h-3.5" />
               Export
@@ -786,19 +816,21 @@ export function ComparisonPage({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl bg-[#0f172a]/90 border border-slate-800 shadow-lg">
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="text-xs text-slate-400 font-medium">Active Instruments ({loadedAssets.length}/6):</span>
-            {loadedAssets.map((asset, idx) => (
-              <div
-                key={asset.symbol}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/90 border text-xs font-semibold text-white shadow-sm"
-                style={{ borderColor: `${ASSET_COLORS[idx % ASSET_COLORS.length]}80` }}
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full inline-block"
-                  style={{ backgroundColor: ASSET_COLORS[idx % ASSET_COLORS.length] }}
-                />
-                <span className="font-bold text-white">{asset.symbol}</span>
-                <span className="text-slate-300 hidden sm:inline">{asset.name}</span>
-                {loadedAssets.length > 1 && (
+            {loadedAssets.length === 0 ? (
+              <span className="text-xs text-slate-500 italic">No instruments selected</span>
+            ) : (
+              loadedAssets.map((asset, idx) => (
+                <div
+                  key={asset.symbol}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/90 border text-xs font-semibold text-white shadow-sm"
+                  style={{ borderColor: `${ASSET_COLORS[idx % ASSET_COLORS.length]}80` }}
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full inline-block"
+                    style={{ backgroundColor: ASSET_COLORS[idx % ASSET_COLORS.length] }}
+                  />
+                  <span className="font-bold text-white">{asset.symbol}</span>
+                  <span className="text-slate-300 hidden sm:inline">{asset.name}</span>
                   <button
                     onClick={() => removeSymbol(asset.symbol)}
                     className="p-0.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors ml-1"
@@ -806,9 +838,9 @@ export function ComparisonPage({
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
-                )}
-              </div>
-            ))}
+                </div>
+              ))
+            )}
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -884,6 +916,34 @@ export function ComparisonPage({
           </div>
         </div>
 
+        {/* Empty State Banner when no instruments selected */}
+        {loadedAssets.length === 0 ? (
+          <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl bg-[#0f172a]/70 border border-slate-800 shadow-xl space-y-4 my-8">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+              <LineChart className="w-8 h-8" />
+            </div>
+            <div className="max-w-md space-y-1.5">
+              <h3 className="text-lg font-bold text-white tracking-tight">No Assets Selected</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Add instruments to start comparing live price movements, SEC filings, statutory balance sheets, and cross-sectional valuation multiples.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-2 flex-wrap justify-center">
+              <span className="text-xs text-slate-400 font-medium mr-1">Popular:</span>
+              {['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'US 10Y'].map((sym) => (
+                <button
+                  key={sym}
+                  onClick={() => addSymbol(sym)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all hover:border-indigo-500/50"
+                >
+                  <Plus className="w-3 h-3 text-indigo-400" />
+                  {sym}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <>
         {/* Live Institutional TradingView Chart Embed with Instrument Switcher */}
         <div className="p-4 rounded-xl bg-[#0f172a]/80 border border-slate-800 shadow-xl space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1380,6 +1440,8 @@ export function ComparisonPage({
             </tbody>
           </table>
         </div>
+          </>
+        )}
 
         {/* Evidence Drawer Modal */}
         {evidenceDrawerAsset && (
