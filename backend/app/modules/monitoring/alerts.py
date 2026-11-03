@@ -65,6 +65,7 @@ from app.modules.rights.models import RightsProfile
 # action, matching how vendor/licensed market data is gated elsewhere.
 _METRIC_RIGHTS_PROFILE_CODE: dict[str, str] = {
     "UK_GILT_NOMINAL_SPOT_CURVE": "boe.yield-curve",
+    "EQUITY_EOD_PRICE": "twelve-data.equity",
 }
 
 # calculation_result-backed metrics all share the one platform-owned

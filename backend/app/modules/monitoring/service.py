@@ -41,6 +41,7 @@ from app.modules.market.pipeline.curve_ingest import (
     SUBJECT_TYPE_YIELD_CURVE_POINT,
     curve_point_subject_id,
 )
+from app.modules.market.pipeline.equity_ingest import METRIC_EQUITY_EOD_PRICE
 from app.modules.monitoring.models import (
     PREDICATE_CROSSES_ABOVE,
     PREDICATE_CROSSES_BELOW,
@@ -129,9 +130,10 @@ async def create_rule(
     predicate: str,
     threshold_value: Decimal,
     instrument_isin: str | None,
-    tenor_years: Decimal | None,
-    rearm_threshold: Decimal | None,
-    debounce_seconds: int,
+    instrument_ticker: str | None = None,
+    tenor_years: Decimal | None = None,
+    rearm_threshold: Decimal | None = None,
+    debounce_seconds: int = 0,
 ) -> MonitoringRuleVersion | RuleRejected:
     """Creates a rule, already ARMED (MON-001 §4) - this slice has no
     separate draft/activate flow, so a rule stuck in DRAFT would just be a
@@ -161,7 +163,27 @@ async def create_rule(
     if debounce_seconds < 0:
         return RuleRejected(reason="debounce_seconds must be >= 0")
 
-    if metric_id in SCALAR_VALUE_KEYS:
+    if metric_id == METRIC_EQUITY_EOD_PRICE:
+        lookup_target = instrument_ticker or instrument_isin
+        if not lookup_target:
+            return RuleRejected(
+                reason=f"metric {metric_id!r} requires instrument_ticker or instrument_isin"
+            )
+        stmt = (
+            select(Instrument)
+            .join(InstrumentAlias, InstrumentAlias.instrument_id == Instrument.id)
+            .where(
+                (InstrumentAlias.alias_value == lookup_target)
+                | (InstrumentAlias.alias_value == f"NSE:{lookup_target}")
+                | (InstrumentAlias.alias_value.ilike(f"%:{lookup_target}"))
+            )
+        )
+        instrument = (await session.execute(stmt)).scalars().first()
+        if instrument is None:
+            return RuleRejected(reason=f"no instrument found for ticker/ISIN {lookup_target!r}")
+        subject_type = SUBJECT_TYPE_INSTRUMENT
+        subject_id = instrument.id
+    elif metric_id in SCALAR_VALUE_KEYS:
         if tenor_years is None:
             return RuleRejected(reason=f"metric {metric_id!r} requires tenor_years")
         subject_type = SUBJECT_TYPE_YIELD_CURVE_POINT

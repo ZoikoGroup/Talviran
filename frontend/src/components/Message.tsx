@@ -369,6 +369,107 @@ export default function Message({
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const generateDossierHtml = () => {
+    const timestamp = new Date().toISOString()
+    const assetLabel = effectiveTaggedAsset ? `${effectiveTaggedAsset.name} (${effectiveTaggedAsset.symbol})` : 'Multi-Asset Sovereign Universe'
+    const docId = 'TAL-DOS-' + Math.random().toString(36).substring(2, 10).toUpperCase()
+    const shaFingerprint = Array.from(new TextEncoder().encode(displayContent + timestamp))
+      .reduce((acc, b) => ((acc << 5) - acc + b) | 0, 0)
+      .toString(16)
+      .toUpperCase()
+      .padStart(8, '0')
+
+    const citationsRows = parsedCitations.map(c => `
+      <tr>
+        <td><strong>${c.label}</strong></td>
+        <td><span class="badge">${c.pill}</span></td>
+        <td>${c.meta || 'Cryptographic Canonical Match'}</td>
+        <td>${c.url ? `<a href="${c.url}" target="_blank">Direct Link</a>` : 'Bitemporal SEC/DMO Archive'}</td>
+      </tr>
+    `).join('')
+
+    const citationsHtml = parsedCitations.length > 0
+      ? `
+        <div class="section-title">Statutory Citations & Verification Trail</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Primary Source Authority</th>
+              <th>Classification</th>
+              <th>Verification State</th>
+              <th>Registry URL / Access</th>
+            </tr>
+          </thead>
+          <tbody>${citationsRows}</tbody>
+        </table>
+      `
+      : ''
+
+    const safeContent = displayContent.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Talvrin Research Dossier - ${assetLabel}</title>
+        <style>
+          @page { size: A4; margin: 18mm; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #090d16; margin: 0; padding: 24px; font-size: 11pt; line-height: 1.5; }
+          .header { border-bottom: 2.5px solid #090d16; padding-bottom: 14px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end; }
+          .brand { font-size: 22pt; font-weight: 900; letter-spacing: -0.5px; color: #090d16; }
+          .subtitle { font-size: 9pt; color: #4b5563; text-transform: uppercase; letter-spacing: 1px; margin-top: 3px; font-weight: 600; }
+          .meta { font-size: 8.5pt; color: #6b7280; text-align: right; font-family: monospace; }
+          .badge-bar { display: flex; gap: 8px; margin-bottom: 20px; }
+          .badge { display: inline-block; padding: 3px 8px; font-size: 8.5pt; font-weight: 700; border-radius: 4px; background: #f3f4f6; color: #1f2937; border: 1px solid #e5e7eb; text-transform: uppercase; }
+          .badge-primary { background: #e0e7ff; color: #3730a3; border-color: #c7d2fe; }
+          .section-title { font-size: 12pt; font-weight: 800; border-bottom: 1.5px solid #d1d5db; padding-bottom: 4px; margin-top: 24px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #111827; }
+          .prose { white-space: pre-wrap; font-size: 10.5pt; line-height: 1.6; color: #1f2937; }
+          table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 8.5pt; }
+          th, td { border: 1px solid #d1d5db; padding: 7px 10px; text-align: left; }
+          th { background-color: #f9fafb; font-weight: 700; text-transform: uppercase; font-size: 8pt; color: #374151; }
+          .footer { margin-top: 40px; border-top: 1px solid #e5e7eb; padding-top: 14px; display: flex; justify-content: space-between; font-size: 8pt; color: #9ca3af; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <div class="brand">TALVRIN<span style="font-size: 12pt; vertical-align: super; font-weight: 400;">™</span></div>
+            <div class="subtitle">Public Markets Evidence Layer & Sovereign Research Dossier</div>
+          </div>
+          <div class="meta">
+            <div><strong>DOSSIER ID:</strong> ${docId}</div>
+            <div><strong>TIMESTAMP (UTC):</strong> ${timestamp}</div>
+            <div><strong>SHA-256 HASH:</strong> ${shaFingerprint}...CANONICAL</div>
+          </div>
+        </div>
+
+        <div class="badge-bar">
+          <span class="badge badge-primary">EVIDENCE DOSSIER</span>
+          <span class="badge">SUBJECT: ${assetLabel}</span>
+          <span class="badge">MODEL: ${model || 'TALVRIN-CANONICAL-V1'}</span>
+          <span class="badge">STATUS: AUDITED</span>
+        </div>
+
+        <div class="section-title">Institutional Findings & Valuation Memorandum</div>
+        <div class="prose">${safeContent}</div>
+
+        ${citationsHtml}
+
+        <div class="footer">
+          <div>CONFIDENTIAL STATUTORY MEMORANDUM &bull; ISSUED BY TALVRIN PUBLIC MARKETS INTELLIGENCE</div>
+          <div>VERIFIED ZERO-IDOR &bull; CRYPTOGRAPHIC BITEMPORAL PROOF</div>
+        </div>
+
+        <script>
+          window.onload = function() {
+            window.print();
+          };
+        </script>
+      </body>
+      </html>
+    `
+  }
+
   const handleExportPDF = () => {
     const quota = checkLimit('evidence_dossier_exports_per_month')
     if (quota.isExceeded) {
@@ -378,115 +479,42 @@ export default function Message({
 
     setIsExporting(true)
     try {
+      const html = generateDossierHtml()
       const printWindow = window.open('', '_blank')
-      if (!printWindow) {
-        toast.error('Pop-up blocked. Please allow pop-ups to print/export the institutional PDF dossier.')
-        setIsExporting(false)
-        return
+
+      if (printWindow) {
+        printWindow.document.open()
+        printWindow.document.write(html)
+        printWindow.document.close()
+        toast.success('Institutional PDF dossier formatted and sent to print queue')
+      } else {
+        // Fallback: If popup was blocked by browser policy (Safari/Firefox/iOS), use hidden sandboxed iframe
+        const iframe = document.createElement('iframe')
+        iframe.style.position = 'fixed'
+        iframe.style.right = '0'
+        iframe.style.bottom = '0'
+        iframe.style.width = '0'
+        iframe.style.height = '0'
+        iframe.style.border = '0'
+        document.body.appendChild(iframe)
+
+        const doc = iframe.contentWindow?.document || iframe.contentDocument
+        if (doc && iframe.contentWindow) {
+          doc.open()
+          doc.write(html)
+          doc.close()
+          setTimeout(() => {
+            iframe.contentWindow?.focus()
+            iframe.contentWindow?.print()
+            setTimeout(() => {
+              document.body.removeChild(iframe)
+            }, 1000)
+          }, 300)
+          toast.success('Institutional PDF dossier launched via direct print stream')
+        } else {
+          toast.error('Pop-up blocked. Please allow pop-ups for Talvrin to export PDF dossiers.')
+        }
       }
-
-      const timestamp = new Date().toISOString()
-      const assetLabel = effectiveTaggedAsset ? `${effectiveTaggedAsset.name} (${effectiveTaggedAsset.symbol})` : 'Multi-Asset Sovereign Universe'
-      const docId = 'TAL-DOS-' + Math.random().toString(36).substring(2, 10).toUpperCase()
-      const shaFingerprint = Array.from(new TextEncoder().encode(displayContent + timestamp))
-        .reduce((acc, b) => ((acc << 5) - acc + b) | 0, 0)
-        .toString(16)
-        .toUpperCase()
-        .padStart(8, '0')
-
-      const citationsRows = parsedCitations.map(c => `
-        <tr>
-          <td><strong>${c.label}</strong></td>
-          <td><span class="badge">${c.pill}</span></td>
-          <td>${c.meta || 'Cryptographic Canonical Match'}</td>
-          <td>${c.url ? `<a href="${c.url}" target="_blank">Direct Link</a>` : 'Bitemporal SEC/DMO Archive'}</td>
-        </tr>
-      `).join('')
-
-      const citationsHtml = parsedCitations.length > 0
-        ? `
-          <div class="section-title">Statutory Citations & Verification Trail</div>
-          <table>
-            <thead>
-              <tr>
-                <th>Primary Source Authority</th>
-                <th>Classification</th>
-                <th>Verification State</th>
-                <th>Registry URL / Access</th>
-              </tr>
-            </thead>
-            <tbody>${citationsRows}</tbody>
-          </table>
-        `
-        : ''
-
-      const safeContent = displayContent.replace(/</g, '&lt;').replace(/>/g, '&gt;')
-
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Talvrin Research Dossier - ${assetLabel}</title>
-          <style>
-            @page { size: A4; margin: 18mm; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #090d16; margin: 0; padding: 24px; font-size: 11pt; line-height: 1.5; }
-            .header { border-bottom: 2.5px solid #090d16; padding-bottom: 14px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end; }
-            .brand { font-size: 22pt; font-weight: 900; letter-spacing: -0.5px; color: #090d16; }
-            .subtitle { font-size: 9pt; color: #4b5563; text-transform: uppercase; letter-spacing: 1px; margin-top: 3px; font-weight: 600; }
-            .meta { font-size: 8.5pt; color: #6b7280; text-align: right; font-family: monospace; }
-            .badge-bar { display: flex; gap: 8px; margin-bottom: 20px; }
-            .badge { display: inline-block; padding: 3px 8px; font-size: 8.5pt; font-weight: 700; border-radius: 4px; background: #f3f4f6; color: #1f2937; border: 1px solid #e5e7eb; text-transform: uppercase; }
-            .badge-primary { background: #e0e7ff; color: #3730a3; border-color: #c7d2fe; }
-            .section-title { font-size: 12pt; font-weight: 800; border-bottom: 1.5px solid #d1d5db; padding-bottom: 4px; margin-top: 24px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #111827; }
-            .prose { white-space: pre-wrap; font-size: 10.5pt; line-height: 1.6; color: #1f2937; }
-            table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 8.5pt; }
-            th, td { border: 1px solid #d1d5db; padding: 7px 10px; text-align: left; }
-            th { background-color: #f9fafb; font-weight: 700; text-transform: uppercase; font-size: 8pt; color: #374151; }
-            .footer { margin-top: 40px; border-top: 1px solid #e5e7eb; padding-top: 14px; display: flex; justify-content: space-between; font-size: 8pt; color: #9ca3af; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div>
-              <div class="brand">TALVRIN<span style="font-size: 12pt; vertical-align: super; font-weight: 400;">™</span></div>
-              <div class="subtitle">Public Markets Evidence Layer & Sovereign Research Dossier</div>
-            </div>
-            <div class="meta">
-              <div><strong>DOSSIER ID:</strong> ${docId}</div>
-              <div><strong>TIMESTAMP (UTC):</strong> ${timestamp}</div>
-              <div><strong>SHA-256 HASH:</strong> ${shaFingerprint}...CANONICAL</div>
-            </div>
-          </div>
-
-          <div class="badge-bar">
-            <span class="badge badge-primary">EVIDENCE DOSSIER</span>
-            <span class="badge">SUBJECT: ${assetLabel}</span>
-            <span class="badge">MODEL: ${model || 'TALVRIN-CANONICAL-V1'}</span>
-            <span class="badge">STATUS: AUDITED</span>
-          </div>
-
-          <div class="section-title">Institutional Findings & Valuation Memorandum</div>
-          <div class="prose">${safeContent}</div>
-
-          ${citationsHtml}
-
-          <div class="footer">
-            <div>CONFIDENTIAL STATUTORY MEMORANDUM &bull; ISSUED BY TALVRIN PUBLIC MARKETS INTELLIGENCE</div>
-            <div>VERIFIED ZERO-IDOR &bull; CRYPTOGRAPHIC BITEMPORAL PROOF</div>
-          </div>
-
-          <script>
-            window.onload = function() {
-              window.print();
-            };
-          </script>
-        </body>
-        </html>
-      `
-      printWindow.document.open()
-      printWindow.document.write(html)
-      printWindow.document.close()
-      toast.success('Institutional PDF dossier formatted and sent to print queue')
     } catch (e) {
       console.error('Failed to export PDF dossier', e)
       toast.error('Failed to generate PDF dossier')

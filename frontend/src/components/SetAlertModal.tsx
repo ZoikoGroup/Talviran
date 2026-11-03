@@ -159,12 +159,21 @@ export default function SetAlertModal({
 
         // Register continuous rule in the backend monitoring engine (MON-001)
         try {
-          const input: CreateRuleInput = {
-            metricId: 'UK_GILT_NOMINAL_SPOT_CURVE',
-            predicate,
-            thresholdValue: threshold.replace(/[^0-9.]/g, ''),
-            tenorYears: '10',
-          }
+          const isGilt = symbol.toUpperCase().includes('GILT') || symbol.toUpperCase().includes('TREASURY') || symbol.includes('10Y')
+          const cleanThreshold = threshold.replace(/[^0-9.]/g, '')
+          const input: CreateRuleInput = isGilt
+            ? {
+                metricId: 'UK_GILT_NOMINAL_SPOT_CURVE',
+                predicate,
+                thresholdValue: cleanThreshold,
+                tenorYears: '10',
+              }
+            : {
+                metricId: 'EQUITY_EOD_PRICE',
+                predicate,
+                thresholdValue: cleanThreshold,
+                instrumentTicker: symbol,
+              }
           const rule = await createRule(input)
           if (rule && rule.id) {
             newAlert.ruleId = rule.id

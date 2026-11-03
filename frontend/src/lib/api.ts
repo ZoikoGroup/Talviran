@@ -435,6 +435,11 @@ export const WATCHABLE_METRICS = [
     needs: 'tenor' as const,
   },
   {
+    id: 'EQUITY_EOD_PRICE',
+    label: 'Equity EOD / Realtime price (by ticker or ISIN)',
+    needs: 'ticker' as const,
+  },
+  {
     id: 'MODEL_IMPLIED_CLEAN_PRICE',
     label: 'Model-implied clean price (an instrument, by ISIN)',
     needs: 'isin' as const,
@@ -502,6 +507,7 @@ export interface CreateRuleInput {
   predicate: 'CROSSES_ABOVE' | 'CROSSES_BELOW'
   thresholdValue: string
   instrumentIsin?: string
+  instrumentTicker?: string
   tenorYears?: string
   rearmThreshold?: string
   debounceSeconds?: number
@@ -515,6 +521,7 @@ export const createRule = (input: CreateRuleInput): Promise<Rule> =>
       predicate: input.predicate,
       threshold_value: input.thresholdValue,
       instrument_isin: input.instrumentIsin ?? null,
+      instrument_ticker: input.instrumentTicker ?? null,
       tenor_years: input.tenorYears ?? null,
       rearm_threshold: input.rearmThreshold ?? null,
       debounce_seconds: input.debounceSeconds ?? 0,

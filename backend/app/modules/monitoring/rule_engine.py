@@ -55,6 +55,7 @@ from app.modules.calculation.pipeline.curve_pricing import METRIC_MODEL_IMPLIED_
 from app.modules.calculation.queries import latest_calculation_result
 from app.modules.market.models import AcceptedFact
 from app.modules.market.pipeline.curve_ingest import METRIC_UK_GILT_NOMINAL_SPOT_CURVE
+from app.modules.market.pipeline.equity_ingest import METRIC_EQUITY_EOD_PRICE
 from app.modules.market.queries import latest_accepted_fact
 from app.modules.monitoring.models import (
     DISARMED_OUTCOMES,
@@ -78,6 +79,7 @@ EVALUATOR_VERSION = "crossing_v1"
 # accepted_fact-backed metrics: a real, directly-published/reconciled value.
 SCALAR_VALUE_KEYS: dict[str, str] = {
     METRIC_UK_GILT_NOMINAL_SPOT_CURVE: "spot_rate_pct",
+    METRIC_EQUITY_EOD_PRICE: "close_price",
 }
 
 # calculation_result-backed metrics: a computed value. A metric must never
