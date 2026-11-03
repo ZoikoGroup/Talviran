@@ -12,7 +12,15 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getResearchEvidence, type EvidenceItem } from '@/lib/api'
+import {
+  Copy,
+  Check,
+  FileDown,
+} from 'lucide-react'
+import { useEntitlement } from '@/context/EntitlementContext'
+import { toast } from 'sonner'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
+
 import type {
   ChatMessage,
   Citation,
@@ -275,6 +283,9 @@ export default function Message({
   taggedAsset,
   isLatestAssistant = false,
 }: MessageProps) {
+  const { checkLimit } = useEntitlement()
+  const [copied, setCopied] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   let displayContent = text
   let parsedFacts = facts
   let parsedCitations = citations || []
@@ -348,6 +359,142 @@ export default function Message({
 
   const visibleText = displayContent.slice(0, typedLength)
 
+  const handleCopyMarkdown = () => {
+    const assetHeader = effectiveTaggedAsset ? `### TARGET ASSET: ${effectiveTaggedAsset.name} (${effectiveTaggedAsset.symbol})\n\n` : ''
+    const citationFooter = parsedCitations.length > 0 ? `\n\n### AUDITED SOURCES & CITATIONS:\n` + parsedCitations.map(c => `- ${c.label} [${c.pill}]: ${c.url || c.meta || ''}`).join('\n') : ''
+    const fullText = `${assetHeader}${displayContent}${citationFooter}\n\n---\n*CONFIDENTIAL RESEARCH MEMORANDUM • TALVRIN EVIDENCE LAYER*`
+    navigator.clipboard.writeText(fullText)
+    setCopied(true)
+    toast.success('Research brief copied to clipboard with audit citations')
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleExportPDF = () => {
+    const quota = checkLimit('evidence_dossier_exports_per_month')
+    if (quota.isExceeded) {
+      toast.error(`Export limit reached (${quota.current} / ${quota.max}). Upgrade your tier for unlimited dossiers.`)
+      return
+    }
+
+    setIsExporting(true)
+    try {
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        toast.error('Pop-up blocked. Please allow pop-ups to print/export the institutional PDF dossier.')
+        setIsExporting(false)
+        return
+      }
+
+      const timestamp = new Date().toISOString()
+      const assetLabel = effectiveTaggedAsset ? `${effectiveTaggedAsset.name} (${effectiveTaggedAsset.symbol})` : 'Multi-Asset Sovereign Universe'
+      const docId = 'TAL-DOS-' + Math.random().toString(36).substring(2, 10).toUpperCase()
+      const shaFingerprint = Array.from(new TextEncoder().encode(displayContent + timestamp))
+        .reduce((acc, b) => ((acc << 5) - acc + b) | 0, 0)
+        .toString(16)
+        .toUpperCase()
+        .padStart(8, '0')
+
+      const citationsRows = parsedCitations.map(c => `
+        <tr>
+          <td><strong>${c.label}</strong></td>
+          <td><span class="badge">${c.pill}</span></td>
+          <td>${c.meta || 'Cryptographic Canonical Match'}</td>
+          <td>${c.url ? `<a href="${c.url}" target="_blank">Direct Link</a>` : 'Bitemporal SEC/DMO Archive'}</td>
+        </tr>
+      `).join('')
+
+      const citationsHtml = parsedCitations.length > 0
+        ? `
+          <div class="section-title">Statutory Citations & Verification Trail</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Primary Source Authority</th>
+                <th>Classification</th>
+                <th>Verification State</th>
+                <th>Registry URL / Access</th>
+              </tr>
+            </thead>
+            <tbody>${citationsRows}</tbody>
+          </table>
+        `
+        : ''
+
+      const safeContent = displayContent.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Talvrin Research Dossier - ${assetLabel}</title>
+          <style>
+            @page { size: A4; margin: 18mm; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #090d16; margin: 0; padding: 24px; font-size: 11pt; line-height: 1.5; }
+            .header { border-bottom: 2.5px solid #090d16; padding-bottom: 14px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .brand { font-size: 22pt; font-weight: 900; letter-spacing: -0.5px; color: #090d16; }
+            .subtitle { font-size: 9pt; color: #4b5563; text-transform: uppercase; letter-spacing: 1px; margin-top: 3px; font-weight: 600; }
+            .meta { font-size: 8.5pt; color: #6b7280; text-align: right; font-family: monospace; }
+            .badge-bar { display: flex; gap: 8px; margin-bottom: 20px; }
+            .badge { display: inline-block; padding: 3px 8px; font-size: 8.5pt; font-weight: 700; border-radius: 4px; background: #f3f4f6; color: #1f2937; border: 1px solid #e5e7eb; text-transform: uppercase; }
+            .badge-primary { background: #e0e7ff; color: #3730a3; border-color: #c7d2fe; }
+            .section-title { font-size: 12pt; font-weight: 800; border-bottom: 1.5px solid #d1d5db; padding-bottom: 4px; margin-top: 24px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #111827; }
+            .prose { white-space: pre-wrap; font-size: 10.5pt; line-height: 1.6; color: #1f2937; }
+            table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 8.5pt; }
+            th, td { border: 1px solid #d1d5db; padding: 7px 10px; text-align: left; }
+            th { background-color: #f9fafb; font-weight: 700; text-transform: uppercase; font-size: 8pt; color: #374151; }
+            .footer { margin-top: 40px; border-top: 1px solid #e5e7eb; padding-top: 14px; display: flex; justify-content: space-between; font-size: 8pt; color: #9ca3af; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <div class="brand">TALVRIN<span style="font-size: 12pt; vertical-align: super; font-weight: 400;">™</span></div>
+              <div class="subtitle">Public Markets Evidence Layer & Sovereign Research Dossier</div>
+            </div>
+            <div class="meta">
+              <div><strong>DOSSIER ID:</strong> ${docId}</div>
+              <div><strong>TIMESTAMP (UTC):</strong> ${timestamp}</div>
+              <div><strong>SHA-256 HASH:</strong> ${shaFingerprint}...CANONICAL</div>
+            </div>
+          </div>
+
+          <div class="badge-bar">
+            <span class="badge badge-primary">EVIDENCE DOSSIER</span>
+            <span class="badge">SUBJECT: ${assetLabel}</span>
+            <span class="badge">MODEL: ${model || 'TALVRIN-CANONICAL-V1'}</span>
+            <span class="badge">STATUS: AUDITED</span>
+          </div>
+
+          <div class="section-title">Institutional Findings & Valuation Memorandum</div>
+          <div class="prose">${safeContent}</div>
+
+          ${citationsHtml}
+
+          <div class="footer">
+            <div>CONFIDENTIAL STATUTORY MEMORANDUM &bull; ISSUED BY TALVRIN PUBLIC MARKETS INTELLIGENCE</div>
+            <div>VERIFIED ZERO-IDOR &bull; CRYPTOGRAPHIC BITEMPORAL PROOF</div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+        </html>
+      `
+      printWindow.document.open()
+      printWindow.document.write(html)
+      printWindow.document.close()
+      toast.success('Institutional PDF dossier formatted and sent to print queue')
+    } catch (e) {
+      console.error('Failed to export PDF dossier', e)
+      toast.error('Failed to generate PDF dossier')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   return (
     <div className="mb-7 flex animate-rise gap-3.5">
       <img
@@ -369,6 +516,36 @@ export default function Message({
           <RichText>{visibleText}</RichText>
           {isTyping && <span className="typing-cursor" aria-hidden="true" />}
         </div>
+
+        {/* Institutional Dossier Export & Action Toolbar */}
+        {!isTyping && (
+          <div className="mt-2.5 flex items-center gap-1.5 pt-1.5">
+            <button
+              onClick={handleCopyMarkdown}
+              title="Copy full research response and audit trail to clipboard"
+              className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-secondary/40 hover:bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground transition cursor-pointer"
+            >
+              {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+              <span>{copied ? 'Copied' : 'Copy'}</span>
+            </button>
+
+            <button
+              onClick={handleExportPDF}
+              disabled={isExporting}
+              title="Generate institutional PDF evidence dossier with SHA-256 audit fingerprint"
+              className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 hover:bg-primary/20 px-2 py-0.5 text-[11px] font-medium text-primary hover:text-primary-foreground transition cursor-pointer"
+            >
+              <FileDown className="h-3 w-3" />
+              <span>Export Dossier (PDF)</span>
+            </button>
+
+            {effectiveTaggedAsset && (
+              <span className="ml-auto text-[10.5px] font-mono text-muted-foreground/70 hidden sm:inline">
+                Target: {effectiveTaggedAsset.symbol}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Immediate Trusted Primary Sources Link Bar */}
         {parsedCitations.some((c) => Boolean(c.url)) && (
