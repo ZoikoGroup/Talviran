@@ -537,6 +537,41 @@ export function ComparisonPage({
 
   const { checkLimit } = useEntitlement()
 
+  // Helper to format date with selected user timezone
+  const getBriefFormattedTime = () => {
+    let zone = 'UTC'
+    let zoneLabel = 'UTC'
+    try {
+      const saved = localStorage.getItem('talvrin_user_clocks')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].timeZone) {
+          zone = parsed[0].timeZone
+          zoneLabel = parsed[0].label ? `${parsed[0].label} (${zone})` : zone
+        }
+      }
+    } catch {
+      // fallback
+    }
+
+    const now = new Date()
+    try {
+      const formatted = new Intl.DateTimeFormat('en-GB', {
+        timeZone: zone,
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZoneName: 'short',
+      }).format(now)
+      return { formatted, zoneLabel, isoUtc: now.toISOString() }
+    } catch {
+      return { formatted: now.toISOString(), zoneLabel: 'UTC', isoUtc: now.toISOString() }
+    }
+  }
+
   // Generate clean Markdown brief
   const exportBriefMarkdown = () => {
     const quota = checkLimit('evidence_dossier_exports_per_month')
@@ -549,10 +584,11 @@ export function ComparisonPage({
       return
     }
 
-    const timestamp = new Date().toISOString()
+    const timeInfo = getBriefFormattedTime()
 
     let md = `# TALVRIN™ INSTITUTIONAL ASSET & EVIDENCE COMPARISON BRIEF\n\n`
-    md += `- **Date & Time (UTC):** ${timestamp}\n`
+    md += `- **Date & Time:** ${timeInfo.formatted} (${timeInfo.zoneLabel})\n`
+    md += `- **Timestamp (UTC ISO):** \`${timeInfo.isoUtc}\`\n`
     md += `- **Universe:** ${loadedAssets.map(a => a.symbol).join(', ')}\n`
     md += `- **Anchor Base Asset:** ${activeChartSymbol}\n`
     md += `- **Audit Authority:** SEC EDGAR & UK DMO Benchmark Primary Registries\n\n`
@@ -639,7 +675,7 @@ export function ComparisonPage({
             <div class="subtitle">Comparative Financial Analysis</div>
           </div>
           <div class="meta">
-            <div><strong>Date:</strong> ${new Date().toLocaleDateString('en-GB')}</div>
+            <div><strong>Date & Time:</strong> ${getBriefFormattedTime().formatted} (${getBriefFormattedTime().zoneLabel})</div>
             <div><strong>Universe:</strong> ${loadedAssets.map(a => a.symbol).join(', ')}</div>
             <div><strong>Audit:</strong> SEC Form 10-K / DMO</div>
           </div>

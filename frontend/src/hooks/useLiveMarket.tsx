@@ -31,6 +31,22 @@ export function LiveMarketProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let active = true
+    let attempt = 0
+    const BASE_BACKOFF_MS = 1500
+    const MAX_BACKOFF_MS = 30000
+
+    const scheduleReconnect = () => {
+      if (!active) return
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+
+      // Exponential backoff: BASE * 2^attempt capped at 30s, plus 25% random jitter
+      const expDelay = Math.min(BASE_BACKOFF_MS * Math.pow(1.5, attempt), MAX_BACKOFF_MS)
+      const jitter = expDelay * 0.25 * (Math.random() * 2 - 1)
+      const delay = Math.max(1000, Math.round(expDelay + jitter))
+
+      attempt++
+      reconnectTimer = setTimeout(connect, delay)
+    }
 
     const connect = () => {
       if (!active) return
@@ -48,6 +64,7 @@ export function LiveMarketProvider({ children }: { children: React.ReactNode }) 
         ws.onopen = () => {
           if (!active) return
           setIsConnected(true)
+          attempt = 0 // Reset backoff counter on successful connection
         }
 
         ws.onmessage = (event) => {
@@ -72,14 +89,14 @@ export function LiveMarketProvider({ children }: { children: React.ReactNode }) 
         ws.onclose = () => {
           if (!active) return
           setIsConnected(false)
-          reconnectTimer = setTimeout(connect, 3000)
+          scheduleReconnect()
         }
 
         ws.onerror = () => {
           ws.close()
         }
       } catch {
-        reconnectTimer = setTimeout(connect, 4000)
+        scheduleReconnect()
       }
     }
 

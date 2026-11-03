@@ -39,6 +39,8 @@ class RuleIn(BaseModel):
     threshold_value: Decimal
     #: Required for instrument-scoped metrics (e.g. MODEL_IMPLIED_CLEAN_PRICE).
     instrument_isin: str | None = None
+    #: Optional ticker for instrument metrics (e.g. NSE:TATAMOTORS, INFY)
+    instrument_ticker: str | None = None
     #: Required for curve-point metrics (e.g. UK_GILT_NOMINAL_SPOT_CURVE).
     tenor_years: Decimal | None = None
     #: MON-001 §8 hysteresis. Unset means no hysteresis - every raw crossing fires.

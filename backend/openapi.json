@@ -2323,6 +2323,17 @@
             ],
             "title": "Instrument Isin"
           },
+          "instrument_ticker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument Ticker"
+          },
           "metric_id": {
             "title": "Metric Id",
             "type": "string"

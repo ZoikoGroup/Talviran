@@ -61,6 +61,7 @@ async def create_rule(body: RuleIn, session: SessionDep, identity: IdentityDep) 
         predicate=body.predicate,
         threshold_value=body.threshold_value,
         instrument_isin=body.instrument_isin,
+        instrument_ticker=body.instrument_ticker,
         tenor_years=body.tenor_years,
         rearm_threshold=body.rearm_threshold,
         debounce_seconds=body.debounce_seconds,

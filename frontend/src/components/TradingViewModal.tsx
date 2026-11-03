@@ -103,20 +103,20 @@ export default function TradingViewModal({
         )}
       >
         {/* Top Titlebar */}
-        <div className="flex shrink-0 items-center justify-between border-b border-border/80 bg-[#12151a] px-3 py-2.5 sm:px-5 sm:py-3 gap-3">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <span className="text-[15px] sm:text-[17px] font-bold tracking-tight text-white truncate">{symbol}</span>
-                <span className="rounded-md bg-white/10 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] font-medium text-muted-foreground border border-white/5 shrink-0">
+        <div className="flex shrink-0 items-center justify-between border-b border-border/80 bg-[#12151a] px-3 py-2.5 sm:px-5 sm:py-3 gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+            <div className="flex flex-col min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                <span className="text-[14px] sm:text-[17px] font-bold tracking-tight text-white truncate min-w-0 max-w-[120px] xs:max-w-[200px] sm:max-w-none">{symbol}</span>
+                <span className="rounded-md bg-white/10 px-1.5 sm:px-2 py-0.5 text-[9.5px] sm:text-[11px] font-medium text-muted-foreground border border-white/5 shrink-0">
                   {assetClass}
                 </span>
                 <span className="hidden xs:flex items-center gap-1 text-[10px] sm:text-[11px] text-emerald-400 font-medium shrink-0">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live Market
                 </span>
               </div>
-              <span className="text-[11px] sm:text-[12px] text-muted-foreground truncate">
-                {name} • <span className="font-mono text-[10.5px] sm:text-[11px] text-primary">{tvSymbol}</span>
+              <span className="text-[10.5px] sm:text-[12px] text-muted-foreground truncate min-w-0">
+                {name} • <span className="font-mono text-[10px] sm:text-[11px] text-primary">{tvSymbol}</span>
               </span>
             </div>
 
