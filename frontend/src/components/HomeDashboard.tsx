@@ -29,6 +29,8 @@ import { useLiveMarket } from '@/hooks/useLiveMarket'
 import { GLOBAL_MARKET_ASSETS, type MarketAsset } from '@/data/globalAssets'
 import { matchAssetSearch } from '@/lib/searchSynonyms'
 import TradingViewModal from '@/components/TradingViewModal'
+import SetAlertModal from '@/components/SetAlertModal'
+import { toast } from 'sonner'
 import type { TaggedAsset } from '@/data/mockReply'
 
 interface HomeDashboardProps {
@@ -40,6 +42,7 @@ interface HomeDashboardProps {
   onOpenGuides?: (topicId?: string) => void
   chats?: Chat[]
   onSelectChat?: (chatId: string) => void
+  onOpenPricing?: () => void
 }
 
 function MiniSparkline({ data, direction }: { data: number[]; direction: 'up' | 'down' | 'flat' }) {
@@ -81,6 +84,7 @@ export default function HomeDashboard({
   onOpenWatchlists,
   onOpenMarkets,
   onOpenGuides,
+  onOpenPricing,
   chats = [],
   onSelectChat,
 }: HomeDashboardProps) {
@@ -89,6 +93,7 @@ export default function HomeDashboard({
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1)
   const [selectedAssetForChart, setSelectedAssetForChart] = useState<MarketAsset | null>(null)
+  const [selectedAssetForAlert, setSelectedAssetForAlert] = useState<MarketAsset | null>(null)
   const searchContainerRef = useRef<HTMLDivElement>(null)
 
   // Live filter matching assets based on search query and optional selected source
@@ -922,6 +927,19 @@ const AVAILABLE_TIMEZONES = [
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
+                              setSelectedAssetForAlert(asset)
+                            }}
+                            title="Arm price breach alert"
+                            className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-border/80 bg-background/80 hover:bg-accent px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer shadow-2xs"
+                          >
+                            <Bell className="h-3 w-3 text-primary" />
+                            <span>Alert</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
                               handleResearchAsset(asset)
                             }}
                             title="Start AI deep research for this asset"
@@ -1345,6 +1363,21 @@ const AVAILABLE_TIMEZONES = [
           </div>
         </div>
       </div>
+
+      {/* 1-Click Set Alert Modal from Search Screener */}
+      {selectedAssetForAlert && (
+        <SetAlertModal
+          symbol={selectedAssetForAlert.symbol}
+          name={selectedAssetForAlert.name}
+          currentPrice={selectedAssetForAlert.price}
+          onClose={() => setSelectedAssetForAlert(null)}
+          onAlertCreated={(created) => {
+            toast.success(`Alert armed for ${created.assetSymbol} at ${created.threshold}`)
+            setSelectedAssetForAlert(null)
+          }}
+          onOpenPricing={onOpenPricing}
+        />
+      )}
 
       {/* Interactive Asset TradingView Modal on Click */}
       {selectedAssetForChart && (

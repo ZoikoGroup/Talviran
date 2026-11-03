@@ -20,6 +20,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Field, SubmitButton } from '@/components/ui/field'
 import TradingViewModal from '@/components/TradingViewModal'
+import SetAlertModal from '@/components/SetAlertModal'
 import { matchAssetSearch } from '@/lib/searchSynonyms'
 import {
   type Watchlist,
@@ -210,6 +211,12 @@ export default function WatchlistsPage({
   const [tableSearch, setTableSearch] = useState('')
 
   // TradingView modal active item
+  const [alertTargetItem, setAlertTargetItem] = useState<{
+    symbol: string
+    name: string
+    currentPrice: string
+  } | null>(null)
+
   const [selectedTradeViewItem, setSelectedTradeViewItem] = useState<{
     symbol: string
     name: string
@@ -775,11 +782,16 @@ export default function WatchlistsPage({
                             </button>
 
                             <button
-                              onClick={() => onOpenMonitoringForRule && onOpenMonitoringForRule(item.symbol)}
-                              title="Set Alert Rule"
-                              className="rounded-lg border border-border p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition"
+                              onClick={() => setAlertTargetItem({
+                                symbol: item.symbol,
+                                name: item.name,
+                                currentPrice: quote.last,
+                              })}
+                              title="Arm Real-Time Price Breach Alert"
+                              className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2 py-1 text-[11.5px] font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer"
                             >
-                              <Bell className="h-3.5 w-3.5" />
+                              <Bell className="h-3 w-3 text-primary" />
+                              <span>Alert</span>
                             </button>
 
                             <button
@@ -903,6 +915,21 @@ export default function WatchlistsPage({
           </div>,
           document.body
         )}
+
+      {/* 1-Click Set Alert Modal from Watchlist */}
+      {alertTargetItem && (
+        <SetAlertModal
+          symbol={alertTargetItem.symbol}
+          name={alertTargetItem.name}
+          currentPrice={alertTargetItem.currentPrice}
+          onClose={() => setAlertTargetItem(null)}
+          onAlertCreated={(created) => {
+            toast.success(`Alert armed for ${created.assetSymbol} at ${created.threshold}`)
+            setAlertTargetItem(null)
+          }}
+          onOpenPricing={onOpenPricing}
+        />
+      )}
 
       {/* TradingView Interactive Chart Modal */}
       {selectedTradeViewItem && (() => {
