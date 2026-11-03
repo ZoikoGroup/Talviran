@@ -1,26 +1,48 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useLiveMarket } from './useLiveMarket'
 import { useAuth } from '@/auth/AuthContext'
 import { dispatchTriggeredAlert } from '@/lib/api'
 import { toast } from 'sonner'
 import type { CustomAlertTrigger } from '@/components/SetAlertModal'
 
+const STORAGE_ALERTS_KEY = 'talvrin_custom_alerts'
+const STORAGE_HISTORY_KEY = 'talvrin_custom_alerts_history'
+
 /**
  * Global Real-Time Alert Surveillance Hook.
  * 
- * Runs continuously at the root application level so alerts are evaluated
- * and dispatched immediately as market ticks arrive, regardless of which
- * tab or screen the user is currently viewing.
+ * Runs continuously at the root application level across all views.
+ * Listens for window 'storage' events so alerts added, updated, or removed
+ * in any browser tab are instantly synchronized across all open tabs
+ * without requiring page reloads.
  */
 export function useAlertSurveillance() {
   const { livePrices } = useLiveMarket()
   const { session } = useAuth()
   const firedAlertIdsRef = useRef<Set<string>>(new Set())
 
-  // Load fired alert history on mount to prevent re-firing previously triggered alerts
-  useEffect(() => {
+  // Active alerts state synchronized across tabs
+  const [activeAlerts, setActiveAlerts] = useState<CustomAlertTrigger[]>(() => {
     try {
-      const historyRaw = localStorage.getItem('talvrin_custom_alerts_history')
+      const saved = localStorage.getItem(STORAGE_ALERTS_KEY)
+      if (saved) return JSON.parse(saved)
+    } catch {
+      // ignore
+    }
+    return []
+  })
+
+  // Synchronize alerts from localStorage
+  const syncAlertsFromStorage = useCallback(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_ALERTS_KEY)
+      if (saved) {
+        setActiveAlerts(JSON.parse(saved))
+      } else {
+        setActiveAlerts([])
+      }
+
+      const historyRaw = localStorage.getItem(STORAGE_HISTORY_KEY)
       if (historyRaw) {
         const history: CustomAlertTrigger[] = JSON.parse(historyRaw)
         history.forEach((h) => firedAlertIdsRef.current.add(h.id))
@@ -30,18 +52,27 @@ export function useAlertSurveillance() {
     }
   }, [])
 
+  // 1. Initial load & multi-tab StorageEvent listener
   useEffect(() => {
-    if (!livePrices || Object.keys(livePrices).length === 0) return
+    syncAlertsFromStorage()
 
-    let activeAlerts: CustomAlertTrigger[] = []
-    try {
-      const saved = localStorage.getItem('talvrin_custom_alerts')
-      if (saved) activeAlerts = JSON.parse(saved)
-    } catch {
-      return
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === STORAGE_ALERTS_KEY || e.key === STORAGE_HISTORY_KEY) {
+        syncAlertsFromStorage()
+      }
     }
 
-    if (activeAlerts.length === 0) return
+    window.addEventListener('storage', handleStorageChange)
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+    }
+  }, [syncAlertsFromStorage])
+
+  // 2. Continuous real-time tick evaluation loop
+  useEffect(() => {
+    if (!livePrices || Object.keys(livePrices).length === 0 || activeAlerts.length === 0) {
+      return
+    }
 
     let alertsModified = false
     const remainingActive: CustomAlertTrigger[] = []
@@ -53,7 +84,7 @@ export function useAlertSurveillance() {
         return
       }
 
-      // Check if this alert has a matching live quote feed
+      // Match alert against live ticks
       const quoteKey = Object.keys(livePrices).find((k) =>
         k.toUpperCase() === alert.assetSymbol.toUpperCase() ||
         alert.assetSymbol.toUpperCase().includes(k.toUpperCase()) ||
@@ -87,17 +118,17 @@ export function useAlertSurveillance() {
           currentPrice: live.price,
         }
 
-        // Archive into history storage immediately
+        // 1. Archive into history storage immediately
         try {
-          const historyRaw = localStorage.getItem('talvrin_custom_alerts_history')
+          const historyRaw = localStorage.getItem(STORAGE_HISTORY_KEY)
           const history: CustomAlertTrigger[] = historyRaw ? JSON.parse(historyRaw) : []
           const nextHistory = [triggeredAlert, ...history.filter((h) => h.id !== alert.id)]
-          localStorage.setItem('talvrin_custom_alerts_history', JSON.stringify(nextHistory))
+          localStorage.setItem(STORAGE_HISTORY_KEY, JSON.stringify(nextHistory))
         } catch {
           // ignore
         }
 
-        // 1. Dispatch Email immediately via Resend API
+        // 2. Dispatch Email immediately via Resend API
         const targetEmail = alert.emailAddress || session?.email
         if (alert.channels.email && targetEmail) {
           dispatchTriggeredAlert({
@@ -116,11 +147,11 @@ export function useAlertSurveillance() {
               }
             })
             .catch(() => {
-              // fallback
+              // fallback gracefully
             })
         }
 
-        // 2. Native Browser Desktop Notification
+        // 3. Native Browser Desktop Notification
         if (
           alert.channels.browserNotification &&
           typeof window !== 'undefined' &&
@@ -133,7 +164,7 @@ export function useAlertSurveillance() {
           })
         }
 
-        // 3. In-App Toast Alert with dismissible close button
+        // 4. In-App Toast Alert with dismissible close button
         if (alert.channels.inApp) {
           toast.error(`Target Reached: ${alert.assetSymbol} touched ${alert.threshold}!`, {
             description: `Live quote: ${live.price} (${live.change}). Moved to alert history.`,
@@ -147,10 +178,11 @@ export function useAlertSurveillance() {
 
     if (alertsModified) {
       try {
-        localStorage.setItem('talvrin_custom_alerts', JSON.stringify(remainingActive))
+        localStorage.setItem(STORAGE_ALERTS_KEY, JSON.stringify(remainingActive))
+        setActiveAlerts(remainingActive)
       } catch {
         // ignore
       }
     }
-  }, [livePrices, session?.email])
+  }, [livePrices, activeAlerts, session?.email])
 }
