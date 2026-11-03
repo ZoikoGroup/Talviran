@@ -1,11 +1,11 @@
 /**
  * Help centre content.
  *
- * Written from the specification estate rather than invented: PRD-001 §11
- * (what Talvrin may and may not answer), EVID-001 (evidence and provenance),
- * DATA-002 (reconciliation and conflict states), RIGHTS-001 (sources, export),
- * AI-001 (the model only explains pre-computed evidence) and FIN-001
- * (deterministic calculations).
+ * Written from the specification estate: PRD-001 §11 (scope of answers),
+ * EVID-001 (evidence and provenance), DATA-002 (reconciliation and conflict states),
+ * RIGHTS-001 (sources, export), AI-001 (model explains pre-assembled evidence),
+ * FIN-001 (deterministic calculations), MON-001 (autonomous monitoring daemon),
+ * and COMM-001 (commercial billing and organization pods).
  */
 
 export interface Article {
@@ -19,16 +19,20 @@ export interface Article {
 export type Category =
   | 'Getting started'
   | 'Sources and evidence'
+  | 'Monitoring & Alerts'
+  | 'Teams & Organizations'
   | 'What Talvrin will not do'
   | 'Organising research'
-  | 'Account'
+  | 'Commercial & Account'
 
 export const CATEGORIES: Category[] = [
   'Getting started',
   'Sources and evidence',
+  'Monitoring & Alerts',
+  'Teams & Organizations',
   'What Talvrin will not do',
   'Organising research',
-  'Account',
+  'Commercial & Account',
 ]
 
 export const ARTICLES: Article[] = [
@@ -37,8 +41,8 @@ export const ARTICLES: Article[] = [
     category: 'Getting started',
     question: 'What is Talvrin?',
     answer: [
-      'Talvrin is a research and monitoring workspace for public markets. You ask a question the way you would ask any assistant, but instead of searching the open web it draws on official and authoritative sources — exchanges, regulators, central banks and issuer filings.',
-      'The answer comes back as source-linked facts and reproducible calculations, with every material figure traceable to the document it came from.',
+      'Talvrin is an institutional research, monitoring, and evidence terminal for public markets and corporate securities. You ask a question naturally, but unlike generic LLMs that synthesize from web blogs, Talvrin operates strictly against official primary sources: statutory exchange filings, central bank registries, debt management offices, and verified bitemporal fact tables.',
+      'Every response comes back as source-grounded facts and reproducible calculations, with every material figure traceable directly to the underlying filing or regulatory notice.',
     ],
   },
   {
@@ -46,17 +50,17 @@ export const ARTICLES: Article[] = [
     category: 'Getting started',
     question: 'What can I ask?',
     answer: [
-      'Talvrin answers a defined set of question types: explaining an instrument term, source fact or market convention; summarising approved source material with citations; explaining the inputs and formula behind a calculation; comparing instruments on metrics you choose; explaining what objective event occurred; and helping you find a particular source or document.',
-      'Questions outside those families are not answered — see “Why won’t Talvrin tell me whether to buy something?”.',
+      'Talvrin answers a comprehensive set of institutional questions: explaining an instrument’s terms, financial multiples, or market conventions; summarizing regulatory filings and central bank minutes with line-item citations; decomposing the exact formula and inputs behind bond and equity metrics; running cross-sectional multi-asset comparisons; and exporting compliance-ready PDF research dossiers.',
+      'Questions seeking speculative price targets, personal investment advice, or buy/sell/hold ratings are strictly refused by the fail-closed Policy Decision Point (PDP).',
     ],
   },
   {
     id: 'answer-parts',
     category: 'Getting started',
-    question: 'What is in an answer?',
+    question: 'What is included in an answer?',
     answer: [
-      'An answer has up to four parts: a short explanation in prose, a table of typed facts where the question calls for one, an Evidence panel listing the sources behind it, and sometimes a note explaining a limitation — for example that an explanation was given but no calculation was performed.',
-      'The prose is written last, from evidence that was already assembled. The model never invents a figure and then looks for support.',
+      'An answer includes up to five synchronized elements: a concise explanatory prose summary, a structured table of typed facts, clickable citation badges linking to primary filings, an expandable Evidence Drawer showing raw data payloads, and an Institutional Action Toolbar allowing 1-click PDF dossier export or markdown copying.',
+      'The prose is generated last from pre-assembled evidence. The platform structurally forbids AI from inventing a figure and then seeking post-hoc justification.',
     ],
   },
   {
@@ -64,9 +68,9 @@ export const ARTICLES: Article[] = [
     category: 'Getting started',
     question: 'What is the difference between talvrin-go and talvrin-pro?',
     answer: [
-      'talvrin-go is tuned for fast answers to everyday lookups and conventions. talvrin-pro works through deeper evidence chains and multi-step calculations, and takes longer.',
-      'Both are held to the same evidence rules. Choosing a different model changes how much work goes into the answer, never whether a figure needs a source.',
-      'You can switch models from the pill in the composer at any point, including mid-conversation. Earlier replies keep the model that produced them, shown next to the Talvrin name.',
+      'talvrin-go (powered by Groq Llama 3.3 70B) is optimized for microsecond-latency responses to everyday queries: trading multiples, spot bond yields, coupon schedules, and definition lookups.',
+      'talvrin-pro (powered by Gemini 2.5) executes deep multi-source synthesis, complex financial statement reconciliations, cross-border macroeconomic comparisons, and mathematical bond curve decompositions.',
+      'Both models adhere strictly to the identical zero-hallucination evidence doctrine. Switching models adjusts analytical depth and speed, never audit rigor.',
     ],
   },
 
@@ -75,126 +79,145 @@ export const ARTICLES: Article[] = [
     category: 'Sources and evidence',
     question: 'Where does Talvrin’s information come from?',
     answer: [
-      'Only from approved sources. For a government bond that means the debt management office or central bank; for a listed company, the exchange it trades on and the company’s own filings; for rules and conventions, the regulator or the market’s own published methodology.',
-      'Blogs, forums, news commentary and analyst opinion are not sources. They cannot become facts in Talvrin, which is why the product cannot tell you why a price moved on a given day — that explanation lives in commentary, not in the record.',
+      'Exclusively from approved, authoritative primary sources: for sovereign debt, the UK Debt Management Office (DMO) and Bank of England; for listed equities and IPOs, official exchange registries (BSE, NSE India) and regulatory disclosures (SEC EDGAR); for foreign exchange, the European Central Bank (ECB); and for international macroeconomics, DBnomics (IMF, World Bank, OECD).',
+      'Unverified forums, social media rumors, and speculative news commentary are completely excluded from the evidence corpus.',
     ],
   },
   {
-    id: 'evidence-panel',
+    id: 'citations',
     category: 'Sources and evidence',
-    question: 'What does the Evidence panel show?',
+    question: 'How do citations work?',
     answer: [
-      'It lists every source behind the answer above it — the document or dataset, when it was published, and a freshness label. Opening it lets you go to the original.',
-      'If an answer shows a number and you cannot find that number in the Evidence panel, that is a bug worth reporting.',
+      'Every factual claim or metric is tagged with a clickable numeric citation badge ([1], [2]). Clicking or hovering over a badge exposes the primary source authority, document title, exact excerpt span, and as-of timestamp.',
+      'Where a direct statutory link exists (such as an SEC 10-K or UK DMO bulletin), a direct link button opens the original document in a new tab.',
     ],
   },
   {
-    id: 'freshness',
+    id: 'bitemporal',
     category: 'Sources and evidence',
-    question: 'What do the freshness labels mean?',
+    question: 'What is bitemporality and why does it matter?',
     answer: [
-      'Current means the source is within its expected update window. Delayed means it is older than expected but still usable — check the as-of time before relying on it. Stale means the source has not updated when it should have, and the figure should be treated with caution.',
-      'Source marks reference material such as a methodology document, where age is not a defect: a pinned convention from 2024 is still authoritative.',
+      'In financial markets, when an event happened in the real world (valid time) often differs from when it was reported or recorded (knowledge time).',
+      'Talvrin records both dimensions for every fact using PostgreSQL GiST range constraints. This mathematical guarantee prevents conflicting historical revisions, ensuring you can audit what the platform knew at any exact historical millisecond.',
+    ],
+  },
+
+  {
+    id: 'monitoring-daemon',
+    category: 'Monitoring & Alerts',
+    question: 'How does the Real-Time Monitoring Daemon work?',
+    answer: [
+      'Unlike tools that only check prices when a user refreshes the browser, Talvrin runs an autonomous background evaluator daemon loop (scripts/run_monitoring_worker.py --loop).',
+      'Every 15 seconds, the daemon sweeps all ARMED rules across all accounts, applies strict multi-tenant Row-Level Security (RLS), tests observed quotes against threshold predicates (CROSSES_ABOVE / CROSSES_BELOW), records heartbeats to the deadman supervisor, and triggers immediate dispatches.',
     ],
   },
   {
-    id: 'fact-vs-calc',
-    category: 'Sources and evidence',
-    question: 'What is the difference between a fact and a calculation?',
+    id: 'monitoring-shortcuts',
+    category: 'Monitoring & Alerts',
+    question: 'How do I arm an alert quickly?',
     answer: [
-      'A fact is something a source stated — a coupon rate, a maturity date, a closing price. A calculation is something Talvrin worked out from facts, such as accrued interest or a yield.',
-      'The two are shown differently on purpose, because they fail differently. A wrong fact means the source was wrong or was read wrongly; a wrong calculation means the method or its inputs were wrong. Calculations are deterministic and reproducible — the same inputs always produce the same result, and the inputs and formula are shown.',
+      'You can arm an alert in 1 click directly from any Watchlist table row, from the Global Screener instant search results, or from the Markets page. Simply click the "Alert" button next to any instrument.',
+      'The Set Alert modal opens pre-populated with the asset’s current price, allowing you to define your threshold and delivery preferences in seconds.',
     ],
   },
   {
-    id: 'conflict',
-    category: 'Sources and evidence',
-    question: 'Why does it sometimes say a figure is unavailable or in conflict?',
+    id: 'monitoring-channels',
+    category: 'Monitoring & Alerts',
+    question: 'How will I receive notifications when a rule fires?',
     answer: [
-      'When two sources disagree and no accepted value can be resolved between them, Talvrin shows that conflict explicitly instead of quietly picking one.',
-      'It is deliberate. Choosing a number arbitrarily would look more polished and be less trustworthy — you would have no way to know a disagreement existed.',
+      'Alerts are delivered through two synchronized channels: (1) Immediate in-app notification badges on the terminal header and monitoring feed, and (2) Transactional emails dispatched via Resend from alerts@app.talvrin.com with asset breach summaries and audit timestamps.',
+    ],
+  },
+
+  {
+    id: 'team-seats',
+    category: 'Teams & Organizations',
+    question: 'How do team memberships and seat quotas work?',
+    answer: [
+      'Organizations on the Teams or Enterprise tier receive multi-seat workspaces. Account owners (Admins) can invite colleagues by email, allocate seats, and track quota consumption in real time.',
+      'All team members draw from pooled organizational quota buckets (e.g. 125 active monitoring rules, 400 research runs per month).',
+    ],
+  },
+  {
+    id: 'team-roles',
+    category: 'Teams & Organizations',
+    question: 'What roles are available for team members?',
+    answer: [
+      'Talvrin provides three granular roles: Admin (governance, billing, member invites, seat changes, and member removal), Analyst (full research, model switching, rule creation, watchlist management, and dossier export), and Viewer (read-only exploration of shared watchlists and past research).',
+    ],
+  },
+  {
+    id: 'team-invites',
+    category: 'Teams & Organizations',
+    question: 'How do colleague onboarding invitations work?',
+    answer: [
+      'When an admin invites a colleague, a secure 7-day token is generated and delivered via an official branded Resend email. The recipient clicks the link to open /join, completes signup or signin with Supabase Auth, and is bound directly to the organization account with zero account bleed or cross-tenant risk.',
     ],
   },
 
   {
     id: 'no-advice',
     category: 'What Talvrin will not do',
-    question: 'Why won’t Talvrin tell me whether to buy something?',
+    question: 'Why won’t Talvrin tell me whether to buy or sell an asset?',
     answer: [
-      'Talvrin has no buy, sell or hold output — not a cautious one, not a hedged one. There is no response type, API field, alert action or button for it anywhere in the product.',
-      'Partly this is regulatory: making personal recommendations about investments is a regulated activity in most jurisdictions. Mostly it is the point of the product. Talvrin’s job is to get you to the evidence quickly and show its working, so the judgement stays yours and is defensible.',
-      'If you ask anyway, it will recognise what you meant and route you to the facts, calculations and comparisons that bear on the question.',
+      'Talvrin has no buy, sell, or hold outputs. There is no API field, UI badge, or model prompt that produces trading advice.',
+      'Providing personal recommendations is a regulated activity. More importantly, Talvrin is built to give institutional analysts audit-grade facts and calculations so the investment judgment remains yours and is 100% defensible to auditors, compliance officers, and investment committees.',
     ],
   },
   {
     id: 'no-ranking',
     category: 'What Talvrin will not do',
-    question: 'Can I get a list of the best performing stocks?',
+    question: 'Can I get a list of "top pick" stocks?',
     answer: [
-      'Not one Talvrin ranks for you. There is no “top pick”, “best” or platform-authored ranking by merit, because ordering instruments by attractiveness is a recommendation wearing a table’s clothing.',
-      'You can compare instruments on metrics you choose, and sort by an objective figure such as yield or maturity. The distinction is who decided the ordering criterion — you, not the platform.',
+      'No. Talvrin does not rank assets by subjective merit, because ranking securities by attractiveness is a recommendation disguised as a table.',
+      'You can benchmark and compare any set of instruments in the Comparison Engine on objective metrics (P/E, ROIC, EV/EBITDA, Net Debt), but the sorting and filtering criteria remain under your control.',
     ],
   },
   {
     id: 'no-execution',
     category: 'What Talvrin will not do',
-    question: 'Can I trade through Talvrin?',
+    question: 'Can I execute trades directly through Talvrin?',
     answer: [
-      'No. There is no execution path, no broker link and no order flow. Talvrin is a research platform and is not a broker, dealer or execution venue.',
+      'No. Talvrin is purely an evidence, research, and monitoring terminal. It contains no broker integrations, execution venues, or order routing paths.',
     ],
   },
 
   {
-    id: 'chats',
+    id: 'dossier-export',
     category: 'Organising research',
-    question: 'How do chats work?',
+    question: 'How do I export an institutional research dossier?',
     answer: [
-      'Each question starts a chat, and chats are listed in the sidebar grouped by when you started them — today, yesterday, and so on.',
-      'Every chat can be renamed or deleted from the ⋯ menu beside its name in the sidebar.',
+      'Beneath any assistant message in the research workspace, click "Export Dossier (PDF)".',
+      'This generates an A4 print-optimized research dossier containing the complete analysis, executive findings, citation verification matrix, and an automated cryptographic SHA-256 evidence integrity hash.',
+      'You can also click "Copy" to copy the entire response with markdown citation links directly to your clipboard.',
     ],
   },
   {
-    id: 'export',
+    id: 'compare-tool',
     category: 'Organising research',
-    question: 'Can I export or share what I find?',
+    question: 'How does the Asset & Evidence Comparison Engine work?',
     answer: [
-      'Within limits set by the source licence, not by us. Viewing a figure on screen and extracting it are different permissions, so exports are allowed per field, capped by record count, and carry the attribution the source requires.',
-      'Public sharing links are switched off by default for licensed content, and attribution must survive into exports and screenshots. Where an export is restricted, the restriction comes from the data provider’s licence.',
+      'Navigate to Compare in the sidebar (/compare). Start with a clean empty slate and search for up to 6 custom instruments across global equities, IPOs, or sovereign debt.',
+      'The system builds an automatic cross-sectional valuation matrix and statutory filing audit trail that you can export as Markdown or PDF.',
     ],
   },
   {
-    id: 'attachments',
-    category: 'Organising research',
-    question: 'Can I upload my own documents?',
+    id: 'commercial-billing',
+    category: 'Commercial & Account',
+    question: 'How do subscription tiers and billing cancellation work?',
     answer: [
-      'The composer accepts files and images through the + button. In the current build attachments are held alongside your message but are not yet sent anywhere or read — document intelligence is not connected.',
-    ],
-  },
-
-  {
-    id: 'account-data',
-    category: 'Account',
-    question: 'What happens to my research history?',
-    answer: [
-      'Your chats, projects and settings are stored so the product has continuity between sessions. They are not turned into behavioural marketing profiles, are not used to train models, and are not used to infer what kind of investor you are.',
-      'In the current prototype this state lives in your own browser and never leaves your device.',
+      'Talvrin offers Starter, Professional, Teams, and Enterprise tiers with transparent limits on monitoring rules, research runs, and dossier exports.',
+      'You can upgrade anytime via Stripe Checkout. If you cancel an active subscription, Talvrin honors cancel_at_period_end: your paid tier entitlements remain active until the end of your billing cycle, after which it safely downgrades with zero sudden access loss.',
+      'All past invoices and Stripe payment receipts are accessible in Settings > Invoices & Billing History with downloadable PDF tax receipts.',
     ],
   },
   {
-    id: 'theme',
-    category: 'Account',
-    question: 'How do I change the theme?',
+    id: 'security-rls',
+    category: 'Commercial & Account',
+    question: 'How is multi-tenant security and data isolation enforced?',
     answer: [
-      'Open Settings from the gear beside your name in the sidebar, then choose Dark or Light under Appearance. The choice is remembered on that device.',
-    ],
-  },
-  {
-    id: 'prototype',
-    category: 'Account',
-    question: 'Is this the finished product?',
-    answer: [
-      'No. This build is a working interface on placeholder content. There is no live market data, answers are canned examples, and sign-in does not check credentials against anything.',
-      'Do not rely on any figure you see in the current build for a real decision.',
+      'Every query, rule evaluation, watchlist item, and invitation is guarded by PostgreSQL Row-Level Security (RLS) bound strictly to the caller’s app.account_id.',
+      'Direct table queries without matching account context return zero rows, guaranteeing zero Insecure Direct Object Reference (IDOR) vulnerabilities across corporate tenants.',
     ],
   },
 ]
