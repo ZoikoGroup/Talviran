@@ -111,7 +111,9 @@ export function mapToTradingViewSymbol(symbol: string): string {
   if (s.includes('HYUNDAI')) return 'NSE:HYUNDAI'
   if (s.includes('SWIGGY')) return 'NSE:SWIGGY'
   if (s.includes('NTPCGREEN')) return 'NSE:NTPCGREEN'
+  if (s === 'JPL' || s.includes('JPL')) return 'NSE:JPL'
   if (s.includes('JIO')) return 'NSE:RELIANCE' // Parent holding entity on NSE
+  if (s.includes('NSE-IPO')) return 'BSE:BSE'
 
   // Institutional Mutual Funds & UCITS
   if (s === 'VFIAX') return 'MUTF:VFIAX'
