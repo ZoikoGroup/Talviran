@@ -739,7 +739,7 @@ export default function App() {
       {/* Painted first so the sidebar's backdrop-filter samples it. */}
       <div aria-hidden className="app-ambient" />
       
-      <Toaster position="top-center" theme={theme === 'dark' ? 'dark' : 'light'} />
+      <Toaster position="top-center" theme={theme === 'dark' ? 'dark' : 'light'} closeButton richColors />
 
       <Sidebar
         collapsed={collapsed}
