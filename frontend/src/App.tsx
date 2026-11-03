@@ -32,6 +32,7 @@ import {
   type ChatMessageWire,
 } from '@/lib/api'
 import { useEntitlement } from '@/context/EntitlementContext'
+import { useAlertSurveillance } from '@/hooks/useAlertSurveillance'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
 import wordmarkOnDark from '@/assets/brand/talvrin-wordmark-on-dark.svg'
 import wordmarkOnLight from '@/assets/brand/talvrin-wordmark-on-light.svg'
@@ -163,6 +164,7 @@ export default function App() {
   const [marketsInitialSymbol, setMarketsInitialSymbol] = useState<string | null>(null)
   const [taggedAsset, setTaggedAsset] = useState<TaggedAsset | null>(null)
   const { checkLimit } = useEntitlement()
+  useAlertSurveillance()
 
   // Internal view navigation helper that syncs with browser history, hash and storage
   const navigateToView = useCallback((nextView: NavView, replace = false) => {
