@@ -7,6 +7,7 @@ import urllib.request
 import uuid
 from dataclasses import dataclass
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -32,6 +33,21 @@ class DeliverySkipped:
 @dataclass(frozen=True)
 class Delivered:
     alert_id: uuid.UUID
+
+
+async def _next_attempt_number(
+    session: AsyncSession, *, alert_id: uuid.UUID, transport: str
+) -> int:
+    """Computes the sequential attempt number for (alert_id, transport)."""
+    current_max = (
+        await session.execute(
+            select(func.max(AlertDeliveryAttempt.attempt_number)).where(
+                AlertDeliveryAttempt.alert_id == alert_id,
+                AlertDeliveryAttempt.transport == transport,
+            )
+        )
+    ).scalar_one_or_none()
+    return (current_max or 0) + 1
 
 
 def _send_resend_email(
@@ -136,12 +152,15 @@ async def deliver_alert(
         return DeliverySkipped(reason=f"alert {alert_id} is suppressed, not deliverable")
 
     # 1. In-App delivery attempt
+    in_app_attempt = await _next_attempt_number(
+        session, alert_id=alert.id, transport=TRANSPORT_IN_APP
+    )
     session.add(
         AlertDeliveryAttempt(
             account_id=alert.account_id,
             alert_id=alert.id,
             transport=TRANSPORT_IN_APP,
-            attempt_number=1,
+            attempt_number=in_app_attempt,
             status=DELIVERY_ATTEMPT_DELIVERED,
         )
     )
@@ -184,12 +203,15 @@ async def deliver_alert(
             from_email=settings.alerts_from_email,
         )
 
+        email_attempt = await _next_attempt_number(
+            session, alert_id=alert.id, transport=TRANSPORT_EMAIL
+        )
         session.add(
             AlertDeliveryAttempt(
                 account_id=alert.account_id,
                 alert_id=alert.id,
                 transport=TRANSPORT_EMAIL,
-                attempt_number=1,
+                attempt_number=email_attempt,
                 status=DELIVERY_ATTEMPT_DELIVERED if success else DELIVERY_ATTEMPT_FAILED,
             )
         )

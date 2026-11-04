@@ -84,7 +84,19 @@ async def _sweep_account(
             session, rule_evaluation_id=evaluation.rule_evaluation_id
         )
         if isinstance(alert, AlertCreated):
-            await deliver_alert(session, alert_id=alert.alert_id)
+            # Resolve owner's email address to deliver offline alerts via Resend
+            recipient_email = None
+            owner_principal_id = rule_version.created_by_principal_id or principal_id
+            if owner_principal_id:
+                principal_row = await session.get(Principal, owner_principal_id)
+                if principal_row and principal_row.email:
+                    recipient_email = principal_row.email
+
+            await deliver_alert(
+                session,
+                alert_id=alert.alert_id,
+                recipient_email=recipient_email,
+            )
 
         await session.commit()
         await apply_rls_context(session, account_id=account_id, principal_id=principal_id)
