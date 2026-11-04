@@ -535,7 +535,7 @@ export function ComparisonPage({
     ).slice(0, 6)
   }, [searchQuery, selectedSymbols])
 
-  const { checkLimit } = useEntitlement()
+  const { checkLimit, filingHistoryYears } = useEntitlement()
 
   // Helper to format date with selected user timezone
   const getBriefFormattedTime = () => {
@@ -1509,6 +1509,26 @@ export function ComparisonPage({
                 <div>
                   <span className="text-slate-500 block text-[10px] uppercase">Knowledge & Valid Range</span>
                   <span className="text-slate-200">{evidenceDrawerAsset.bitemporalRange}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px] uppercase">Filing History Entitlement</span>
+                  <div className="flex items-center justify-between mt-0.5">
+                    <span className="text-slate-200">
+                      {typeof filingHistoryYears === 'number' ? `${filingHistoryYears} Year Archive Window` : 'Full Historical Corpus (15+ Years)'}
+                    </span>
+                    {typeof filingHistoryYears === 'number' && filingHistoryYears <= 5 && onOpenPricing && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEvidenceDrawerAsset(null)
+                          onOpenPricing()
+                        }}
+                        className="text-[11px] text-amber-300 font-semibold underline hover:text-amber-200"
+                      >
+                        Expand History
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <span className="text-slate-500 block text-[10px] uppercase">Reconciliation Status</span>

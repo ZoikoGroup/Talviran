@@ -506,6 +506,17 @@ export default function App() {
           messageId: answer.messageId,
         })
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          appendAssistantMessage(chatId, {
+            role: 'assistant',
+            model: effectiveModel,
+            text: '_Research generation stopped by user._',
+            facts: null,
+            citations: [],
+            note: null,
+          })
+          return
+        }
         if (err instanceof ApiError && err.code === 'UNAUTHENTICATED') {
           navigate('/login', { replace: true })
           return
@@ -837,12 +848,14 @@ export default function App() {
               handleGoBack()
             }}
             initialRuleSymbol={monitoringInitialSymbol}
+            onOpenPricing={handleOpenPricing}
           />
         ) : showMarkets ? (
           <MarketsPage
             initialSymbol={marketsInitialSymbol}
             onBack={handleGoBack}
             onStartResearch={handleStartResearch}
+            onOpenPricing={handleOpenPricing}
             onOpenMonitoringForRule={(symbol) => {
               setMarketsInitialSymbol(null)
               setMonitoringInitialSymbol(symbol)

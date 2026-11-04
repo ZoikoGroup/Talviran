@@ -31,6 +31,8 @@ import { toast } from 'sonner'
 import TradingViewScreener from '@/components/TradingViewScreener'
 import type { TaggedAsset } from '@/data/mockReply'
 import { useLiveMarket } from '@/hooks/useLiveMarket'
+import { useEntitlement } from '@/context/EntitlementContext'
+import { Clock } from 'lucide-react'
 
 interface MarketsPageProps {
   initialSymbol?: string | null
@@ -38,6 +40,7 @@ interface MarketsPageProps {
   onStartResearch: (assetOrQuery: string | TaggedAsset, prompt?: string) => void
   onOpenMonitoringForRule?: (symbol: string) => void
   onOpenWatchlists?: () => void
+  onOpenPricing?: () => void
 }
 
 export { GLOBAL_MARKET_ASSETS, type MarketAsset } from '@/data/globalAssets'
@@ -82,7 +85,9 @@ export default function MarketsPage({
   onStartResearch,
   onOpenMonitoringForRule,
   onOpenWatchlists,
+  onOpenPricing,
 }: MarketsPageProps) {
+  const { isRealtimePermitted } = useEntitlement()
   const [activeTab, setActiveTab] = useState<'ALL' | 'SOVEREIGN' | 'EQUITY' | 'ETF' | 'FX' | 'COMMODITIES' | 'CRYPTO' | 'MACRO' | 'IPO' | 'MUTUAL_FUND'>('ALL')
   const [activeRegion, setActiveRegion] = useState<'ALL' | 'UK' | 'US' | 'EU' | 'APAC'>('ALL')
   const [activeSource, setActiveSource] = useState<string>('ALL')
@@ -306,6 +311,30 @@ export default function MarketsPage({
             <BookOpen className="h-3.5 w-3.5 text-primary" />
             <span>Feeds & Sources Guide</span>
           </Link>
+
+          {/* Real-time vs Delayed Data Entitlement Pill */}
+          {!isRealtimePermitted ? (
+            <button
+              type="button"
+              onClick={onOpenPricing}
+              title="Explorer Plan: Quotes are 15-min delayed. Upgrade to unlock real-time WebSocket tick feeds."
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition-all shadow-xs cursor-pointer"
+            >
+              <Clock className="h-3.5 w-3.5 text-amber-400" />
+              <span>15m Delayed Quotes</span>
+              <span className="ml-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-200 font-bold uppercase tracking-wider">
+                Upgrade
+              </span>
+            </button>
+          ) : (
+            <div
+              title="Real-Time Market Data: Streaming tick updates active."
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-400 shadow-xs"
+            >
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Real-Time Feeds</span>
+            </div>
+          )}
 
           {/* View Switch: Curated Table vs Full World Screener */}
           <div className="inline-flex items-center rounded-xl border border-border/80 bg-muted/40 p-1 text-xs">
