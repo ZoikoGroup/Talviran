@@ -1,4 +1,5 @@
-import { ArrowUpIcon, Tag, X , Square } from 'lucide-react'
+import { ArrowUpIcon, Tag, X, Square, Zap } from 'lucide-react'
+import { useEntitlement } from '@/context/EntitlementContext'
 import { Link } from 'react-router-dom'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
@@ -49,6 +50,8 @@ export default function Composer({
   onRemoveTaggedAsset,
   onOpenSearch,
 }: ComposerProps) {
+  const { entitlement } = useEntitlement()
+  const isPriorityTier = entitlement?.plan_tier === 'professional' || entitlement?.plan_tier === 'teams' || entitlement?.plan_tier === 'enterprise' 
   const { textareaRef, adjustHeight } = useAutoResizeTextarea({
     minHeight: 36,
     maxHeight: 200,
@@ -144,9 +147,20 @@ export default function Composer({
           style={{ overflow: 'hidden' }}
         />
 
-        <span title={modelLocked ? "This chat's model is set for its whole conversation" : undefined}>
-          <ModelSwitcher value={model} onChange={onModelChange} disabled={disabled || modelLocked} />
-        </span>
+        <div className="flex items-center gap-1.5">
+          {isPriorityTier && (
+            <span
+              title="Priority Execution Queue: Queries from your account are routed with dedicated institutional queue precedence."
+              className="hidden sm:inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10.5px] font-semibold text-primary shadow-2xs"
+            >
+              <Zap className="h-3 w-3 fill-current text-primary" />
+              <span>Priority Queue</span>
+            </span>
+          )}
+          <span title={modelLocked ? "This chat's model is set for its whole conversation" : undefined}>
+            <ModelSwitcher value={model} onChange={onModelChange} disabled={disabled || modelLocked} />
+          </span>
+        </div>
 
         {isGenerating ? (
           <Button

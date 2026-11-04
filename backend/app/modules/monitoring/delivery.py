@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.modules.monitoring.models import (
+    ALERT_TYPE_CROSSING,
     DELIVERY_ATTEMPT_DELIVERED,
     DELIVERY_ATTEMPT_FAILED,
     STATUS_ALERT_DELIVERED,
@@ -151,23 +152,35 @@ async def deliver_alert(
     if alert.status == STATUS_ALERT_SUPPRESSED:
         return DeliverySkipped(reason=f"alert {alert_id} is suppressed, not deliverable")
 
-    # 1. In-App delivery attempt
-    in_app_attempt = await _next_attempt_number(
-        session, alert_id=alert.id, transport=TRANSPORT_IN_APP
-    )
-    session.add(
-        AlertDeliveryAttempt(
-            account_id=alert.account_id,
-            alert_id=alert.id,
-            transport=TRANSPORT_IN_APP,
-            attempt_number=in_app_attempt,
-            status=DELIVERY_ATTEMPT_DELIVERED,
+    # 1. In-App delivery attempt: only add if not already delivered
+    existing_in_app = (
+        await session.execute(
+            select(AlertDeliveryAttempt).where(
+                AlertDeliveryAttempt.alert_id == alert.id,
+                AlertDeliveryAttempt.transport == TRANSPORT_IN_APP,
+                AlertDeliveryAttempt.status == DELIVERY_ATTEMPT_DELIVERED,
+            )
         )
-    )
+    ).scalar_one_or_none()
 
-    # 2. Resend Email delivery if configured
+    if existing_in_app is None:
+        in_app_attempt = await _next_attempt_number(
+            session, alert_id=alert.id, transport=TRANSPORT_IN_APP
+        )
+        session.add(
+            AlertDeliveryAttempt(
+                account_id=alert.account_id,
+                alert_id=alert.id,
+                transport=TRANSPORT_IN_APP,
+                attempt_number=in_app_attempt,
+                status=DELIVERY_ATTEMPT_DELIVERED,
+            )
+        )
+
+    # 2. Resend Email delivery: only dispatch for actual threshold CROSSING alerts
+    # (INITIAL_STATE represents the benchmark baseline when rule was first evaluated, not a crossing)
     settings = get_settings()
-    if settings.resend_api_key and recipient_email:
+    if settings.resend_api_key and recipient_email and alert.alert_type == ALERT_TYPE_CROSSING:
         subject = f"[Talvrin Alert] {alert.metric_id} threshold crossed"
         metric_str = alert.metric_id
         thresh_str = str(alert.threshold_value)

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useLiveMarket } from './useLiveMarket'
 import { useAuth } from '@/auth/AuthContext'
-import { dispatchTriggeredAlert } from '@/lib/api'
+import { dispatchTriggeredAlert, deleteRule } from '@/lib/api'
 import { toast } from 'sonner'
 import type { CustomAlertTrigger } from '@/components/SetAlertModal'
 
@@ -97,7 +97,7 @@ export function useAlertSurveillance() {
       }
 
       const live = livePrices[quoteKey]
-      const targetNum = parseFloat(alert.threshold.replace(/[^0-9.]/g, ''))
+      const targetNum = parseFloat(alert.threshold.replace(/[^0-9.-]/g, ''))
       if (isNaN(targetNum)) {
         remainingActive.push(alert)
         return
@@ -116,6 +116,11 @@ export function useAlertSurveillance() {
           status: 'TRIGGERED',
           lastTriggered: timestamp,
           currentPrice: live.price,
+        }
+
+        // Retire backend monitoring rule so it is not evaluated offline later
+        if (alert.ruleId) {
+          deleteRule(alert.ruleId).catch(() => {})
         }
 
         // 1. Archive into history storage immediately

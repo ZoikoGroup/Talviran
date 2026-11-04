@@ -635,7 +635,7 @@ function TeamSection({ onNavigateToBilling }: { onNavigateToBilling: () => void 
             <div className="mt-4 rounded-xl bg-amber-500/10 border border-amber-500/20 p-3.5 flex items-start gap-3">
               <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
               <div className="text-xs text-amber-200/90 leading-relaxed">
-                You are currently on the <strong className="font-semibold text-amber-300 capitalize">{data?.plan_tier}</strong> plan (1 seat). Upgrade to <strong className="font-semibold text-amber-300">Teams ($249/mo)</strong> or <strong className="font-semibold text-amber-300">Enterprise ($899/mo)</strong> to invite multiple analysts, share policy frameworks, and pool monthly research limits.
+                You are currently on the <strong className="font-semibold text-amber-300 capitalize">{data?.plan_tier}</strong> plan (1 seat). Upgrade to <strong className="font-semibold text-amber-300">Teams ($249/mo)</strong> or <strong className="font-semibold text-amber-300">Enterprise (Custom quote)</strong> to invite multiple analysts, share policy frameworks, and pool monthly research limits.
               </div>
             </div>
           )}
@@ -814,6 +814,44 @@ function TeamSection({ onNavigateToBilling }: { onNavigateToBilling: () => void 
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      </Row>
+
+      {/* Enterprise SSO & SCIM Directory Sync Configuration */}
+      <Row
+        label="Single Sign-On (SSO) & SCIM"
+        hint="Federate authentication across Okta, Microsoft Entra ID, or Google Workspace with SCIM automated provisioning."
+      >
+        <div className="w-full rounded-2xl border border-border/80 bg-card p-4 shadow-sm">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-foreground text-sm">Enterprise SAML 2.0 / OIDC & SCIM</span>
+                <span className="rounded-full bg-indigo-500/15 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
+                  Enterprise SKU
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed max-w-xl">
+                Enforce company-wide identity governance, automated role provisioning, and centralized session revocation through your enterprise IdP.
+              </p>
+            </div>
+            {data?.plan_tier === 'enterprise' ? (
+              <button
+                type="button"
+                onClick={() => alert('Enterprise SSO configuration console is active. Contact your dedicated enterprise account engineer for tenant metadata mapping.')}
+                className="rounded-xl bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition shrink-0"
+              >
+                Configure SAML / SCIM
+              </button>
+            ) : (
+              <a
+                href="mailto:institutional@talvrin.com?subject=Enterprise%20SSO%20and%20SCIM%20Inquiry"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3.5 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 transition shrink-0"
+              >
+                Inquire Enterprise SSO
+              </a>
+            )}
           </div>
         </div>
       </Row>

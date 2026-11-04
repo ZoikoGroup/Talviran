@@ -25,12 +25,15 @@ import {
 import SetAlertModal from '@/components/SetAlertModal'
 import { toast } from 'sonner'
 import { useLiveMarket } from '@/hooks/useLiveMarket'
+import { useEntitlement } from '@/context/EntitlementContext'
+import { Clock } from 'lucide-react'
 import { useAuth } from '@/auth/AuthContext'
 
 
 interface MonitoringPageProps {
   onBack: () => void
   initialRuleSymbol?: string | null
+  onOpenPricing?: () => void
 }
 
 type Tab = 'active_alerts' | 'history'
@@ -115,7 +118,8 @@ function DirectionBadge({ predicate }: { predicate: string }) {
   )
 }
 
-export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRuleSymbol }: MonitoringPageProps) {
+export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRuleSymbol, onOpenPricing }: MonitoringPageProps) {
+  const { isRealtimePermitted } = useEntitlement()
   const navigate = useNavigate()
   const { session } = useAuth()
   const [tab, setTab] = useState<Tab>('active_alerts')
@@ -180,6 +184,31 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
 
   const [modifyingAlert, setModifyingAlert] = useState<CustomAlertTrigger | null>(null)
 
+  // Multi-tab synchronization for active and history alerts
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'talvrin_custom_alerts') {
+        try {
+          if (e.newValue) {
+            setCustomAlerts(JSON.parse(e.newValue))
+          }
+        } catch {
+          // ignore
+        }
+      } else if (e.key === 'talvrin_custom_alerts_history') {
+        try {
+          if (e.newValue) {
+            setHistoryAlerts(JSON.parse(e.newValue))
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+    window.addEventListener('storage', handleStorageChange)
+    return () => window.removeEventListener('storage', handleStorageChange)
+  }, [])
+
   const saveAlertsToStorage = (updated: CustomAlertTrigger[]) => {
     setCustomAlerts(updated)
     try {
@@ -242,7 +271,7 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
       if (!live || !live.rawPrice) return
 
       // Parse threshold value
-      const targetNum = parseFloat(alert.threshold.replace(/[^0-9.]/g, ''))
+      const targetNum = parseFloat(alert.threshold.replace(/[^0-9.-]/g, ''))
       if (isNaN(targetNum)) return
 
       const isAbove = alert.direction === 'CROSSES_ABOVE'
@@ -258,6 +287,11 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
           status: 'TRIGGERED',
           lastTriggered: timestamp,
           currentPrice: live.price,
+        }
+
+        // Retire backend monitoring rule so it is not evaluated offline later
+        if (alert.ruleId) {
+          deleteRule(alert.ruleId).catch(() => {})
         }
 
         // 2. Permanently remove from active alerts list
@@ -387,6 +421,28 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {!isRealtimePermitted ? (
+              <button
+                type="button"
+                onClick={onOpenPricing}
+                title="Explorer Plan: Surveillance sweeps run at 15-minute polling latency. Upgrade to enable tick-level evaluation."
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition-all shadow-xs cursor-pointer"
+              >
+                <Clock className="h-3.5 w-3.5 text-amber-400" />
+                <span>15m Latency</span>
+                <span className="ml-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-200 font-bold uppercase tracking-wider">
+                  Upgrade
+                </span>
+              </button>
+            ) : (
+              <div
+                title="Real-Time Tick Surveillance Active"
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-400 shadow-xs"
+              >
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Tick-Level Realtime</span>
+              </div>
+            )}
             <Link
               to="/guides?topic=how-to-use#setting-alerts-step-by-step"
               className="inline-flex items-center gap-1.5 rounded-lg border border-border/80 bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition"
@@ -468,7 +524,7 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
                   {customAlerts.map((alert) => {
                     const live = livePrices[alert.assetSymbol]
                     const displayedPrice = live ? live.price : (alert.currentPrice ?? 'Live')
-                    const targetNum = parseFloat(alert.threshold.replace(/[^0-9.]/g, ''))
+                    const targetNum = parseFloat(alert.threshold.replace(/[^0-9.-]/g, ''))
                     const currentNum = live?.rawPrice ?? parseFloat((alert.currentPrice || '').replace(/[^0-9.]/g, ''))
                     const isYield = alert.threshold.includes('%')
                     

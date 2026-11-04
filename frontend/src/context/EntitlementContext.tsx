@@ -17,6 +17,8 @@ interface EntitlementContextValue {
     max: number | 'unlimited'
     remaining: number | 'unlimited'
   }
+  isRealtimePermitted: boolean
+  filingHistoryYears: number | 'unlimited'
 }
 
 const EntitlementContext = createContext<EntitlementContextValue | undefined>(undefined)
@@ -102,6 +104,9 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
     [entitlement]
   )
 
+  const isRealtimePermitted = entitlement?.quotas.tick_level_realtime ?? true
+  const filingHistoryYears = entitlement?.quotas.filing_history_years ?? 'unlimited'
+
   return (
     <EntitlementContext.Provider
       value={{
@@ -110,6 +115,8 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
         error,
         refreshEntitlement,
         checkLimit,
+        isRealtimePermitted,
+        filingHistoryYears,
       }}
     >
       {children}
