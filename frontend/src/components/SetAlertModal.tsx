@@ -160,7 +160,11 @@ export default function SetAlertModal({
         // Register continuous rule in the backend monitoring engine (MON-001)
         try {
           const isGilt = symbol.toUpperCase().includes('GILT') || symbol.toUpperCase().includes('TREASURY') || symbol.includes('10Y')
-          const cleanThreshold = threshold.replace(/[^0-9.]/g, '')
+          // Preserve leading negative signs for negative yields or basis spreads
+          const trimmed = threshold.trim()
+          const isNegative = trimmed.startsWith('-')
+          const numericPart = trimmed.replace(/[^0-9.]/g, '')
+          const cleanThreshold = (isNegative ? '-' : '') + numericPart
           const input: CreateRuleInput = isGilt
             ? {
                 metricId: 'UK_GILT_NOMINAL_SPOT_CURVE',

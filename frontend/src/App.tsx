@@ -278,6 +278,16 @@ export default function App() {
   // flips to true once the response lands, so without this a rapid
   // re-select would otherwise start a duplicate request.
   const pendingChatLoads = useRef<Set<string>>(new Set())
+  const activeAbortController = useRef<AbortController | null>(null)
+
+  const handleCancelResearch = () => {
+    if (activeAbortController.current) {
+      activeAbortController.current.abort()
+      activeAbortController.current = null
+      setThinking(false)
+      toast.info('Research query cancelled')
+    }
+  }
   const active = chats.find((c) => c.id === activeId) ?? chats[0]
   const isLoadingActive = Boolean(active.backendId) && !active.messagesLoaded
   const isEmpty = !isLoadingActive && active.messages.length === 0
@@ -391,6 +401,9 @@ export default function App() {
           )
         )
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return
+        }
         if (err instanceof ApiError && err.code === 'UNAUTHENTICATED') {
           navigate('/login', { replace: true })
           return
@@ -429,6 +442,9 @@ export default function App() {
     setDraft('')
     setAttachments([])
     setThinking(true)
+
+    const abortController = new AbortController()
+    activeAbortController.current = abortController
 
     const chatTitle = currentAsset
       ? `${currentAsset.symbol}: ${content.slice(0, 30)}`
@@ -479,7 +495,7 @@ export default function App() {
           ? `[Context: Tagged Asset ${currentAsset.name} (${currentAsset.symbol}), Asset Class: ${currentAsset.assetClass || 'SOVEREIGN'}, Authoritative Source: ${currentAsset.source || 'Primary Market'}]. Query: ${content}`
           : content
 
-        const answer = await postResearch(backendId, wireQuery, effectiveModel)
+        const answer = await postResearch(backendId, wireQuery, effectiveModel, abortController.signal)
         appendAssistantMessage(chatId, {
           role: 'assistant',
           model: effectiveModel,
@@ -503,6 +519,7 @@ export default function App() {
           note: null,
         })
       } finally {
+        activeAbortController.current = null
         setThinking(false)
       }
     })()
@@ -955,6 +972,8 @@ export default function App() {
               value={draft}
               onChange={setDraft}
               onSend={() => send()}
+              onCancel={handleCancelResearch}
+              isGenerating={thinking}
               disabled={thinking}
               attachments={attachments}
               onAttach={(files) => setAttachments((prev) => [...prev, ...files])}

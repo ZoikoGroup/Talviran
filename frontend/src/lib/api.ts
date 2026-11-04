@@ -325,10 +325,12 @@ interface ResearchWire {
 export const postResearch = (
   conversationId: string,
   query: string,
-  model?: string
+  model?: string,
+  signal?: AbortSignal
 ): Promise<ResearchAnswer> =>
   apiFetch<ResearchWire>('/api/v1/research', {
     method: 'POST',
+    signal,
     headers: { 'Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
       conversation_id: conversationId,

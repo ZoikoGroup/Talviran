@@ -1,4 +1,4 @@
-import { ArrowUpIcon, Tag, X } from 'lucide-react'
+import { ArrowUpIcon, Tag, X , Square } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,8 @@ interface ComposerProps {
   value: string
   onChange: (v: string) => void
   onSend: () => void
+  onCancel?: () => void
+  isGenerating?: boolean
   disabled?: boolean
   attachments: File[]
   onAttach: (files: File[]) => void
@@ -34,6 +36,8 @@ export default function Composer({
   value,
   onChange,
   onSend,
+  onCancel,
+  isGenerating,
   disabled,
   attachments,
   onAttach,
@@ -144,23 +148,39 @@ export default function Composer({
           <ModelSwitcher value={model} onChange={onModelChange} disabled={disabled || modelLocked} />
         </span>
 
-        <Button
-          size="icon"
-          onClick={() => {
-            onSend()
-            adjustHeight(true)
-          }}
-          disabled={disabled || !value.trim()}
-          className={cn(
-            'h-9 w-9 shrink-0 rounded-full transition-transform',
-            'bg-gradient-to-br from-indigo-500 to-purple-500 text-white',
-            'hover:scale-105 active:scale-95',
-            'disabled:from-secondary disabled:to-secondary disabled:text-muted-foreground'
-          )}
-        >
-          <ArrowUpIcon className="h-4 w-4" />
-          <span className="sr-only">Send</span>
-        </Button>
+        {isGenerating ? (
+          <Button
+            size="icon"
+            onClick={onCancel}
+            title="Stop generating (cancel query)"
+            className={cn(
+              'h-9 w-9 shrink-0 rounded-full transition-transform animate-pulse',
+              'bg-rose-500 hover:bg-rose-600 text-white shadow-md shadow-rose-500/20',
+              'hover:scale-105 active:scale-95'
+            )}
+          >
+            <Square className="h-3.5 w-3.5 fill-current" />
+            <span className="sr-only">Stop</span>
+          </Button>
+        ) : (
+          <Button
+            size="icon"
+            onClick={() => {
+              onSend()
+              adjustHeight(true)
+            }}
+            disabled={disabled || !value.trim()}
+            className={cn(
+              'h-9 w-9 shrink-0 rounded-full transition-transform',
+              'bg-gradient-to-br from-indigo-500 to-purple-500 text-white',
+              'hover:scale-105 active:scale-95',
+              'disabled:from-secondary disabled:to-secondary disabled:text-muted-foreground'
+            )}
+          >
+            <ArrowUpIcon className="h-4 w-4" />
+            <span className="sr-only">Send</span>
+          </Button>
+        )}
       </div>
 
       <p className="mx-auto mt-2.5 max-w-3xl text-center text-[11.5px] leading-relaxed text-muted-foreground/70">
