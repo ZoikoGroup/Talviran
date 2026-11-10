@@ -20,6 +20,7 @@ from app.modules.evidence.service import (
     _is_gilt_year_list_query,
     _is_greeting,
     _is_help_request,
+    _mentioned_cashtag_ticker,
     _mentioned_decade,
     _mentioned_isin,
     _mentioned_macro_series,
@@ -297,8 +298,18 @@ def test_global_index_mentions_detected() -> None:
     assert _mentions_global_index("FTSE 100 closing price")
     assert _mentions_global_index("Nikkei 225 average")
     assert _mentions_global_index("NIFTY 50 and BSE Sensex levels")
-    assert _mentions_global_index("TradingView screener benchmark aggregates")
     assert not _mentions_global_index("tell me about Bank of England monetary policy")
+
+
+def test_tradingview_alone_does_not_trigger_global_index() -> None:
+    """E1 (2026-11-10 UAT gap analysis): "tradingview" was removed from
+    _GLOBAL_INDEX_PATTERN - it's a charting product name, never itself a
+    market index, and its presence there misrouted "NVIDIA financials &
+    TradingView chart" to "global market indices not yet connected".
+    """
+    assert not _mentions_global_index("Show me a TradingView chart")
+    assert not _mentions_global_index("TradingView screener benchmark aggregates")
+    assert not _mentions_global_index("NVIDIA financials & TradingView chart")
 
 
 def test_etf_mentions_detected() -> None:
@@ -317,6 +328,33 @@ def test_deep_equity_mentions_detected() -> None:
     assert _mentions_deep_equity("Apple market cap and free cash flow")
     assert _mentions_deep_equity("Microsoft P/E ratio and cloud growth")
     assert _mentions_deep_equity("TSMC semiconductor foundry margins")
+
+
+def test_nvidia_plus_tradingview_is_deep_equity_not_global_index() -> None:
+    """E1 (2026-11-10 UAT gap analysis), the exact reproduced query: both
+    patterns used to match, and because _dispatch_answer checks global-index
+    first, this misrouted to "global market indices not yet connected"
+    instead of the correct "equity fundamentals / deep research" answer.
+    """
+    query = "NVIDIA financials & TradingView chart"
+    assert _mentions_deep_equity(query)
+    assert not _mentions_global_index(query)
+    assert _mentions_deep_equity("NVIDIA financials")
+    assert _mentions_deep_equity("NVIDIA price")
+
+
+def test_cashtag_ticker_detection() -> None:
+    """E2 (2026-11-10 UAT gap analysis): a `$SYMBOL` cashtag names a
+    specific instrument via real syntax - detected regardless of whether
+    it turns out to be onboarded, never fuzzy-matched to a guess.
+    """
+    assert _mentioned_cashtag_ticker("Bare $MELI query") == "MELI"
+    assert _mentioned_cashtag_ticker("what about $KO today") == "KO"
+    assert _mentioned_cashtag_ticker("lowercase $meli works too") == "MELI"
+    assert _mentioned_cashtag_ticker("no ticker mentioned here at all") is None
+    assert _mentioned_cashtag_ticker("10 bp of spread, nothing about a ticker") is None
+
+
 def test_ipo_mentions_detected() -> None:
     assert _mentions_ipo("price of jio ipo")
     assert _mentions_ipo("ipo means?")

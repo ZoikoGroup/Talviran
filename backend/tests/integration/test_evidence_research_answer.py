@@ -636,6 +636,176 @@ async def test_equity_query_without_display_rights_falls_back(db_session: AsyncS
     assert answer.evidence_bundle_id is None
 
 
+# ---------------------------------------------------------------- E1 / E2
+# 2026-11-10 UAT gap analysis: two reproduced wrong-entity-routing defects.
+# E1 - "NVIDIA financials & TradingView chart" matched both
+# _mentions_global_index (via the stray "tradingview" keyword) and
+# _mentions_deep_equity, and because global-index was checked first in
+# _dispatch_answer, the query was misrouted to "global market indices not
+# yet connected" instead of the correct equity-fundamentals answer.
+# E2 - a bare "$MELI" fell through every branch to the fully generic
+# _default_reply with zero acknowledgment that a specific ticker had even
+# been named.
+
+
+async def test_nvidia_financials_and_tradingview_chart_routes_to_deep_equity(
+    db_session: AsyncSession,
+) -> None:
+    """The exact E1 reproduction query. NVDA is deliberately NOT onboarded
+    as a real instrument (DATA-002: no fabricated coverage) - the correct
+    outcome is an honest "equity fundamentals / deep research" refusal,
+    never "global market indices" and never a real NVIDIA answer.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    answer = await assemble_research_answer(
+        db_session, query_text="NVIDIA financials & TradingView chart",
+        principal_id=None, account_id=None,
+    )
+
+    assert "global market indices" not in answer.text
+    assert "equity fundamentals" in answer.text
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+
+
+async def test_nvidia_financials_alone_routes_to_deep_equity(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    answer = await assemble_research_answer(
+        db_session, query_text="NVIDIA financials", principal_id=None, account_id=None,
+    )
+    assert "equity fundamentals" in answer.text
+    assert "global market indices" not in answer.text
+
+
+async def test_nvidia_price_routes_to_deep_equity(db_session: AsyncSession) -> None:
+    await _seed_capability_and_jurisdiction(db_session)
+    answer = await assemble_research_answer(
+        db_session, query_text="NVIDIA price", principal_id=None, account_id=None,
+    )
+    assert "equity fundamentals" in answer.text
+
+
+async def test_global_indices_query_still_routes_to_global_index(
+    db_session: AsyncSession,
+) -> None:
+    """Regression: fixing the TradingView collision must not touch a real
+    global-index question.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    answer = await assemble_research_answer(
+        db_session, query_text="What is the S&P 500 level today?",
+        principal_id=None, account_id=None,
+    )
+    assert "global market indices" in answer.text
+
+
+async def test_tradingview_without_equity_request_falls_through_to_default(
+    db_session: AsyncSession,
+) -> None:
+    """A lone TradingView mention names no instrument and no real category
+    - it must not match global-index (the fixed collision) and must not
+    match deep-equity either, so it reaches the fully generic catch-all.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    answer = await assemble_research_answer(
+        db_session, query_text="Show me a TradingView chart",
+        principal_id=None, account_id=None,
+    )
+    assert "global market indices" not in answer.text
+    assert "equity fundamentals" not in answer.text
+
+
+async def test_mixed_instrument_and_chart_request_resolves_real_equity(
+    db_session: AsyncSession,
+) -> None:
+    """"TradingView chart" for a REALLY onboarded equity must still resolve
+    to the real price answer - _equity_price_reply is checked well before
+    the global-index/deep-equity/cashtag branches in _dispatch_answer, so
+    this already worked before the fix; this proves the fix didn't change it.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="twelve-data.equity", actions=["display"])
+    instrument = await _seed_equity(db_session, issuer_name="Apple Inc.", symbol="AAPL")
+    await _seed_equity_fact(db_session, instrument_id=instrument.id, close_price="235.50")
+
+    answer = await assemble_research_answer(
+        db_session, query_text="Show me a TradingView chart for AAPL",
+        principal_id=None, account_id=None,
+    )
+
+    assert answer.facts is not None
+    assert dict(answer.facts.rows)["Close price"] == "235.50 USD"
+
+
+async def test_bare_cashtag_meli_names_the_ticker_and_lists_covered_equities(
+    db_session: AsyncSession,
+) -> None:
+    """The exact E2 reproduction query. MELI is not onboarded, and the
+    reply must name the ticker it saw and what IS covered - never guess at
+    MercadoLibre's identity or fuzzy-match it to an onboarded equity.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="twelve-data.equity", actions=["display"])
+    instrument = await _seed_equity(db_session, issuer_name="Apple Inc.", symbol="AAPL")
+    await _seed_equity_fact(db_session, instrument_id=instrument.id)
+
+    answer = await assemble_research_answer(
+        db_session, query_text="$MELI", principal_id=None, account_id=None,
+    )
+
+    assert "$MELI" in answer.text
+    assert "Apple" in answer.text
+    assert answer.facts is None
+    assert answer.evidence_bundle_id is None
+
+
+async def test_unsupported_ticker_is_distinguished_from_no_instrument(
+    db_session: AsyncSession,
+) -> None:
+    """A different unsupported ticker from the MELI case, proving this is a
+    general mechanism, not a MELI-specific special case - and proving a
+    query with NO ticker at all still gets the fully generic reply, not
+    the ticker-specific one.
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    answer_with_ticker = await assemble_research_answer(
+        db_session, query_text="what about $KO today", principal_id=None, account_id=None,
+    )
+    assert "$KO" in answer_with_ticker.text
+
+    answer_without_ticker = await assemble_research_answer(
+        db_session, query_text="what's the capital of France?",
+        principal_id=None, account_id=None,
+    )
+    assert "$KO" not in answer_without_ticker.text
+    assert "names a specific instrument" not in answer_without_ticker.text
+
+
+async def test_ambiguous_ticker_never_guesses_a_wrong_instrument(
+    db_session: AsyncSession,
+) -> None:
+    """Two onboarded equities sharing one ticker, neither with real price
+    data to break the tie (the real-world dual-listing scenario
+    _match_equity_instrument's own docstring describes). This must never
+    silently resolve to either one - the honest outcome is the same
+    unsupported-ticker reply, never a guess (DATA-002).
+    """
+    await _seed_capability_and_jurisdiction(db_session)
+    await _seed_rights_profile(db_session, code="twelve-data.equity", actions=["display"])
+    await _seed_equity(db_session, issuer_name="Ambiguous Corp One", symbol="XYZ", exchange="LSE")
+    await _seed_equity(
+        db_session, issuer_name="Ambiguous Corp Two", symbol="XYZ", exchange="NASDAQ"
+    )
+
+    answer = await assemble_research_answer(
+        db_session, query_text="$XYZ price", principal_id=None, account_id=None,
+    )
+
+    assert "$XYZ" in answer.text
+    assert answer.facts is None
+    assert "Ambiguous Corp" not in answer.text
+
+
 async def _seed_macro_fact(
     session: AsyncSession, *, metric_id: str, series_code: str, period: str = "2023",
     value: str = "3340032380668.04", knowledge_time: dt.datetime | None = None,

@@ -574,9 +574,18 @@ def _mentions_commodity(text: str) -> bool:
 _GLOBAL_INDEX_PATTERN = re.compile(
     r"\b(?:s&p\s*500|spx|s&p500|nasdaq|ndx|dow\s*jones|djia|russell\s*2000"
     r"|ftse\s*100|dax|dax\s*40|cac\s*40|euro\s*stoxx|stoxx\s*50|nikkei|nikkei\s*225"
-    r"|hang\s*seng|nifty|nifty\s*50|sensex|bse\s*sensex|tradingview)\b",
+    r"|hang\s*seng|nifty|nifty\s*50|sensex|bse\s*sensex)\b",
     re.I,
 )
+# "tradingview" was deliberately removed from the alternation above
+# (2026-11-10 UAT gap analysis, E1): TradingView is a charting product
+# name, never itself a market index, so a query that merely requests a
+# TradingView-style chart for a real equity ("NVIDIA financials &
+# TradingView chart") was being misrouted to "global market indices not
+# yet connected" purely because of this keyword collision - a category
+# error, not a genuine global-index signal. A lone "show me a TradingView
+# chart" with no other instrument/category signal now correctly falls
+# through to the generic catch-all instead of the wrong specific category.
 
 
 def _mentions_global_index(text: str) -> bool:
@@ -625,6 +634,23 @@ _DEEP_EQUITY_PATTERN = re.compile(
 
 def _mentions_deep_equity(text: str) -> bool:
     return bool(_DEEP_EQUITY_PATTERN.search(text))
+
+
+#: A `$SYMBOL` cashtag names a specific instrument via real, unambiguous
+#: syntax - not a guess. Checked only as the last specific branch in
+#: _dispatch_answer, after every real-match and known-asset-class check has
+#: already had its turn, so a cashtag reaching this point is confirmed not
+#: to resolve to exactly one onboarded equity: it is either unsupported or
+#: genuinely ambiguous, never "no instrument named at all" (2026-11-10 UAT
+#: gap analysis, E2: a bare "$MELI" previously received the fully generic
+#: _default_reply with zero acknowledgment that a specific ticker had even
+#: been named).
+_CASHTAG_PATTERN = re.compile(r"\$([A-Za-z]{1,6})\b")
+
+
+def _mentioned_cashtag_ticker(text: str) -> str | None:
+    match = _CASHTAG_PATTERN.search(text)
+    return match.group(1).upper() if match else None
 
 
 #: Only unambiguous month-name date forms, never bare numeric ones
@@ -2856,6 +2882,55 @@ def _not_yet_connected_reply(query_text: str, *, asset_class: str) -> ResearchAn
     )
 
 
+async def _unsupported_ticker_reply(session: AsyncSession, symbol: str) -> ResearchAnswer:
+    """E2 (2026-11-10 UAT gap analysis): names the specific ticker the user
+    asked about, states plainly that it isn't covered, and lists what IS -
+    rather than the fully generic _default_reply a bare, explicitly-named
+    ticker used to fall through to with zero acknowledgment that a specific
+    instrument had even been mentioned. Never fuzzy-matches `symbol` to a
+    different, similarly-named instrument (DATA-002) - the covered list is
+    read live from reference.instrument/instrument_alias joined to a real
+    accepted_fact, never hardcoded, so it can't drift from what's actually
+    onboarded AND priced. An onboarded-but-dataless instrument (e.g. one
+    half of an unresolved ambiguous-ticker pair - _match_equity_instrument's
+    own docstring describes this real dual-listing scenario) must never be
+    recommended as "currently covered" just because a reference row exists.
+    """
+    rows = (
+        await session.execute(
+            select(InstrumentAlias.alias_value, Issuer.name)
+            .join(Instrument, Instrument.id == InstrumentAlias.instrument_id)
+            .join(Issuer, Issuer.id == Instrument.issuer_id)
+            .join(
+                AcceptedFact,
+                (AcceptedFact.subject_id == Instrument.id)
+                & (AcceptedFact.metric_id == METRIC_EQUITY_EOD_PRICE)
+                & (AcceptedFact.status == "ACTIVE"),
+            )
+            .where(
+                InstrumentAlias.alias_type == "TICKER",
+                Instrument.instrument_type == "EQUITY_COMMON",
+            )
+            .distinct()
+        )
+    ).all()
+    covered = sorted({f"{name} ({alias.split(':')[-1]})" for alias, name in rows})
+    covered_text = "; ".join(covered) if covered else "no equities are onboarded yet"
+    return ResearchAnswer(
+        text=(
+            f"${symbol} names a specific instrument, but it isn't in Talvrin's "
+            f"current reconciled coverage — there's no accepted-fact price or "
+            f"financials to show for ${symbol} yet.\n\n"
+            f"Currently covered equities: {covered_text}."
+        ),
+        facts=None,
+        citations=[],
+        note=None,
+        allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
+        evidence_bundle_id=None,
+    )
+
+
 async def _confirming_source_count(session: AsyncSession, accepted_fact_id: uuid.UUID) -> int:
     """How many independently-rights-profiled sources actually back this
     fact - distinct rights_profile_id across its linked observations, since
@@ -3392,6 +3467,12 @@ async def _dispatch_answer(
         answer = _not_yet_connected_reply(
             query_text, asset_class="equity fundamentals / deep research"
         )
+    elif (cashtag := _mentioned_cashtag_ticker(query_text)) is not None:
+        # E2 (2026-11-10 UAT gap analysis): checked last among the specific
+        # branches - a cashtag surviving every earlier check (including the
+        # real _equity_price_reply match above) is confirmed unsupported or
+        # ambiguous, never "no instrument named at all".
+        answer = await _unsupported_ticker_reply(session, cashtag)
     else:
         answer = await _document_backed_fallback_reply(session, query_text, http) or _default_reply(
             query_text
