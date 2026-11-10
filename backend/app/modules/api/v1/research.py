@@ -238,6 +238,118 @@ def _fx_unit_contradicts(
     return False
 
 
+#: 2026-11-02, 205-query battery: the same "composed prose contradicted the
+#: accepted facts" defect class as F5, now for three deterministic claims the
+#: platform already knows exactly:
+#:   - day count: the fact and curated text say ACT/ACT (ICMA), but a composed
+#:     answer said 30/360 (line 15, reproduced across five runs);
+#:   - ex-dividend: the DMO rule is seven business days before the coupon, but
+#:     a composed answer said "the day before settlement" (line 14);
+#:   - inventory completeness: the platform holds 70 gilts with reference
+#:     terms, but composed answers claimed "a single UK gilt" on list questions
+#:     (lines 76-80, 144-145).
+#: None of these needs a second LLM call: each has a canonical token/phrase in
+#: the deterministic answer and a known contradiction pattern, so a model that
+#: departs from it is rejected exactly like a declination.
+_DAY_COUNT_QUERY_PATTERN = re.compile(
+    r"day[- ]?count|daycount|act/act|actual/actual", re.I
+)
+_DAY_COUNT_CANONICAL_PATTERN = re.compile(
+    r"ACT/ACT\s*\(ICMA\)|ACTUAL/ACTUAL\s*\(ICMA\)", re.I
+)
+_DAY_COUNT_CONTRADICTION_PATTERN = re.compile(
+    r"30/360|actual/360|30/actual", re.I
+)
+_EX_DIVIDEND_QUERY_PATTERN = re.compile(r"ex[- ]?div(?:idend)?|\bxd\b", re.I)
+_EX_DIVIDEND_CANONICAL_PATTERN = re.compile(
+    r"(?:seven|7)\s+business\s+days", re.I
+)
+_EX_DIVIDEND_CONTRADICTION_PATTERN = re.compile(
+    r"day\s+(?:before|prior\s+to)\s+(?:the\s+)?(?:settlement|coupon|dividend)"
+    r"|one\s+day\s+before",
+    re.I,
+)
+_SINGLE_GILT_CLAIM_PATTERN = re.compile(
+    r"\b(?:only|single)\s+(?:onboarded\s+|available\s+|UK\s+)?"
+    r"(?:gilt|instrument|bond|Treasury\s+(?:Stock|Gilt))\b"
+    r"|\bno additional gilts?\b"
+    r"|\bthe current onboarded gilt\b"
+    r"|\b(?:only|single)\s+(?:\d[\d.\u00bc\u00bd\u00be/ ]*%\s+)?Treasury\s+(?:Stock|Gilt)\b",
+    re.I,
+)
+_MULTIPLE_INSTRUMENT_CLAIM_PATTERN = re.compile(
+    r"\b(?:two|three|four|multiple|several)\s+(?:distinct\s+)?"
+    r"(?:gilt|bond|treasury|instrument)s?\b",
+    re.I,
+)
+_RANKING_SUPERLATIVE_PATTERN = re.compile(
+    r"\b(?:highest|lowest|best|worst|most attractive|top[- ]yielding|top performer)\b",
+    re.I,
+)
+_COMPARISON_QUERY_PATTERN = re.compile(
+    r"\b(?:compare|comparison|vs\.?|versus|spread|difference)\b", re.I
+)
+
+
+def _convention_contradicts(query_text: str, text: str) -> bool:
+    """True when composed `text` contradicts a deterministic convention
+    answer for `query_text`. Checked only for queries that actually ask
+    about the convention, so unrelated answers are untouched.
+    """
+    if _DAY_COUNT_QUERY_PATTERN.search(query_text):
+        if _DAY_COUNT_CONTRADICTION_PATTERN.search(text) or not (
+            _DAY_COUNT_CANONICAL_PATTERN.search(text)
+        ):
+            return True
+    if _EX_DIVIDEND_QUERY_PATTERN.search(query_text):
+        if _EX_DIVIDEND_CONTRADICTION_PATTERN.search(text) or not (
+            _EX_DIVIDEND_CANONICAL_PATTERN.search(text)
+        ):
+            return True
+    return False
+
+
+def _completeness_contradicts(text: str) -> bool:
+    """True when composed prose claims the platform holds only one gilt (or
+    no additional gilts). The platform's reference data holds 70, so this is
+    a factual completeness claim that is never acceptable regardless of the
+    question that prompted it.
+    """
+    return bool(_SINGLE_GILT_CLAIM_PATTERN.search(text))
+
+
+def _instrument_count_contradicts(
+    facts: evidence_service.FactTable | None, text: str
+) -> bool:
+    """True when a single-instrument answer's composed prose claims multiple
+    instruments. The facts table is the deterministic record of how many
+    instruments the answer covers; a model that turns one into "two gilt
+    instruments" is inventing a second instrument (observed live on the
+    2026 maturity question, 2026-11-02 re-run).
+    """
+    if facts is None or facts.title != "Instrument facts":
+        return False
+    return bool(_MULTIPLE_INSTRUMENT_CLAIM_PATTERN.search(text))
+
+
+def _ranking_superlative_leaks(query_text: str, text: str) -> bool:
+    """True when composed prose introduces a best/highest/top-yielding
+    ranking the user did not ask for. Comparison questions are exempt:
+    "compare the 2032 and 2036 gilts" legitimately needs comparative prose.
+    """
+    if _COMPARISON_QUERY_PATTERN.search(query_text):
+        return False
+    if not _RANKING_SUPERLATIVE_PATTERN.search(text):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:gilt|bond|treasury|instrument|dataset|listed|onboarded)\b",
+            text,
+            re.I,
+        )
+    )
+
+
 async def _try_ai_composed_text(
     db: AsyncSession,
     *,
@@ -264,6 +376,21 @@ async def _try_ai_composed_text(
     the same way (see _AI_DECLINATION_PATTERN).
     """
     if answer.evidence_bundle_id is None:
+        return answer
+
+    if answer.facts is not None and answer.facts.title.startswith("Onboarded UK gilts"):
+        # Inventory answers are already a complete, deterministic list; a
+        # model summarising a 70-row table can drop rows or state a wrong
+        # count (the 205-query battery's 2040s answer claimed "two distinct
+        # issues" for a 13-row decade). Keep the rule-based inventory text
+        # and its full facts table unchanged.
+        return answer
+
+    if answer.note is not None and answer.note.startswith("Deterministic convention answer"):
+        # Day-count and ex-dividend answers are correctness-critical and
+        # have already been contradicted by composition (30/360, "day
+        # before settlement"). Keep the deterministic prose while still
+        # carrying the DMO EvidenceBundle/Citation attached above.
         return answer
 
     conversation = await research_service.get_conversation(
@@ -319,6 +446,22 @@ async def _try_ai_composed_text(
             # the accepted fact it was built on - keep the rule-based
             # answer rather than publishing a materially wrong sentence
             # next to a correct facts table.
+            return answer
+        if _convention_contradicts(query_text, outcome.text):
+            # Day-count / ex-dividend composition contradicted the
+            # deterministic convention answer (2026-11-02 battery).
+            return answer
+        if _completeness_contradicts(outcome.text):
+            # Composition claimed a single/only gilt when the platform
+            # holds a whole universe of them.
+            return answer
+        if _instrument_count_contradicts(answer.facts, outcome.text):
+            # Composition turned one instrument's facts into "two gilt
+            # instruments" - an invented second instrument.
+            return answer
+        if _ranking_superlative_leaks(query_text, outcome.text):
+            # Composition volunteered a best/highest/top-yielding ranking
+            # the user did not ask for (the "Top yielding gilt?" leak).
             return answer
         return dataclasses.replace(answer, text=outcome.text)
     return answer

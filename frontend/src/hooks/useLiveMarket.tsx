@@ -31,6 +31,9 @@ export function LiveMarketProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let active = true
+    // Exponential backoff: starts at 2 s, doubles on each failure, caps at 30 s.
+    // Reset to the base value when the connection opens successfully.
+    let retryDelay = 2000
 
     const connect = () => {
       if (!active) return
@@ -47,6 +50,8 @@ export function LiveMarketProvider({ children }: { children: React.ReactNode }) 
 
         ws.onopen = () => {
           if (!active) return
+          // Successful connection — reset backoff to base interval.
+          retryDelay = 2000
           setIsConnected(true)
         }
 
@@ -72,14 +77,21 @@ export function LiveMarketProvider({ children }: { children: React.ReactNode }) 
         ws.onclose = () => {
           if (!active) return
           setIsConnected(false)
-          reconnectTimer = setTimeout(connect, 3000)
+          // Back off exponentially so repeated failures do not flood the server.
+          reconnectTimer = setTimeout(() => {
+            retryDelay = Math.min(retryDelay * 2, 30000)
+            connect()
+          }, retryDelay)
         }
 
         ws.onerror = () => {
           ws.close()
         }
       } catch {
-        reconnectTimer = setTimeout(connect, 4000)
+        reconnectTimer = setTimeout(() => {
+          retryDelay = Math.min(retryDelay * 2, 30000)
+          connect()
+        }, retryDelay)
       }
     }
 

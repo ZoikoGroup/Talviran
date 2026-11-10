@@ -127,7 +127,7 @@ export default function HomeDashboard({
   }, [searchQuery])
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [overview, setOverview] = useState<DashboardOverviewResponse | null>(null)
-  const { livePrices } = useLiveMarket()
+  const { livePrices, isConnected, lastUpdated } = useLiveMarket()
 
   useEffect(() => {
     // Load real aggregated data from backend API
@@ -301,6 +301,21 @@ const AVAILABLE_TIMEZONES = [
       handleSearchSubmit()
     } else if (e.key === 'Escape') {
       setIsSearchFocused(false)
+    }
+  }
+
+  // PRD TRU-002: Format an ISO timestamp for the data-freshness indicator
+  const formatLastUpdated = (iso: string | null): string => {
+    if (!iso) return 'Awaiting data...'
+    try {
+      return new Date(iso).toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZoneName: 'short',
+      })
+    } catch {
+      return 'Live'
     }
   }
 
@@ -1059,6 +1074,23 @@ const AVAILABLE_TIMEZONES = [
             <span className="text-[10.5px] text-muted-foreground font-normal">70+ global assets</span>
           </button>
         </div>
+        {/* PRD TRU-002: Data freshness indicator — distinguishes live market time
+            from platform knowledge time as required by the trust layer spec. */}
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70 px-0.5">
+          <span
+            className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
+              isConnected ? "bg-emerald-400" : "bg-amber-400"
+            }`}
+          />
+          <span>
+            {isConnected
+              ? `Live \u00b7 as of ${formatLastUpdated(lastUpdated)}`
+              : lastUpdated
+                ? `Delayed \u00b7 last update ${formatLastUpdated(lastUpdated)}`
+                : "Connecting to live feed..."}
+          </span>
+        </div>
+
 
         {/* Main Grid: Hero Banner + Key Developments + Alerts & Economic Calendar */}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">

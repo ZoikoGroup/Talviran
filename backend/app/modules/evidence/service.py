@@ -142,6 +142,58 @@ _ADVICE_PATTERNS = [
         r"\b(bond|gilt|treasury|pick|investment|instrument|stock|equity|security|crypto|coin)s?\b",
         re.I,
     ),
+    # 2026-11-02, 205-query battery: "Top yielding gilt?" returned
+    # "highest observed yield" / "most attractive yield in the dataset"
+    # despite the platform's own refusal copy promising no rankings. The
+    # original patterns required the noun to be adjacent to best/top/worst
+    # ("best gilt"), so every one of these real phrasings slipped through.
+    re.compile(
+        r"\b(top|best|worst|highest|lowest)[- ]?(?:yielding|performing|returning)\b"
+        r"[^.?!]{0,40}\b(gilt|bond|treasury|stock|equity|instrument|portfolio)s?\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(gilt|bond|treasury|stock|equity|instrument|portfolio)s?\b"
+        r"[^.?!]{0,60}\b(best|top|worst|highest|lowest)\b[^.?!]{0,40}"
+        r"\b(return|yield|income|performance)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(best|top|worst|highest|lowest)\b[^.?!]{0,40}"
+        r"\b(return|yield|income|performance)\b"
+        r"[^.?!]{0,40}\b(gilt|bond|treasury|stock|equity|instrument|portfolio)s?\b",
+        re.I,
+    ),
+    re.compile(
+        r"\bwhich\b[^.?!]{0,30}\b(gilt|bond|treasury|stock|equity|instrument)s?\b"
+        r"[^.?!]{0,20}\b(best|top|worst|safe|safest|risky|riskiest)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(gilt|bond|treasury|stock|equity|instrument|portfolio)s?\b"
+        r"[^.?!]{0,60}\b(best|top|worst|highest|lowest)\b[^.?!]{0,40}"
+        r"\b(prices?|coupons?|durations?|dv01|spreads?)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(best|top|worst|highest|lowest)\b[^.?!]{0,40}"
+        r"\b(prices?|coupons?|durations?|dv01|spreads?)\b"
+        r"[^.?!]{0,40}\b(gilt|bond|treasury|stock|equity|instrument|portfolio)s?\b",
+        re.I,
+    ),
+    re.compile(
+        r"\bwhich\b[^.?!]{0,30}\b(gilt|bond|treasury|stock|equity|instrument)s?\b"
+        r"[^.?!]{0,40}\b(invest|buy|hold|allocate|pick)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\ballocat(?:e|ion)\b[^.?!]{0,40}\b(gilt|bond|treasury|portfolio|asset)s?\b",
+        re.I,
+    ),
+    re.compile(r"\bsuitab(?:le|ility)\b", re.I),
+    re.compile(r"\b(good|right|bad)\s+time\s+to\s+(buy|sell|invest|hold)\b", re.I),
+    re.compile(r"\b(financial|investment)\s+advice\b", re.I),
+    re.compile(r"\bgood\s+(buy|investment|idea)\b", re.I),
 ]
 #: "glit" (a real typo hit live: "todays uk glit closing prices") sent a
 #: genuine live-price question past this pattern into the document-search
@@ -231,6 +283,42 @@ def _prefers_document_explanation(text: str) -> bool:
 _ACCRUED_PATTERN = re.compile(
     r"accrued|day count|convention|clean|dirty|act/act|ex[- ]?dividend", re.I
 )
+# 2026-11-02, 205-query battery: the generic accrued-interest document branch
+# was answering two *specific* convention questions it cannot reliably answer,
+# and AI composition then contradicted the platform's own facts:
+#   - "What day count convention do gilts use?" -> "30/360" (line 15) while
+#     the curated text and GB0032452392's accepted fact both say ACT/ACT (ICMA).
+#   - "When is a gilt traded ex-dividend?" -> "the day before settlement"
+#     (line 14) instead of the DMO's seven-business-day rule.
+# Both have one correct deterministic answer, so they get their own branches
+# ahead of the broader accrued/clean/dirty explanation.
+_DAY_COUNT_PATTERN = re.compile(r"day[- ]?count|daycount|act/act|actual/actual", re.I)
+_EX_DIVIDEND_PATTERN = re.compile(r"ex[- ]?div(?:idend)?|\bxd\b", re.I)
+# Inventory/list questions ("show me all onboarded gilts", "list gilts with
+# latest prices", "which gilts have data available"). These must never be
+# answered by the single-instrument seed fallback - the platform has 70 gilts
+# with reference terms, and claiming a single one is a factual correctness bug
+# (2026-11-02, 205-query battery lines 76-80, 144-145; reproduced 4/4).
+_GILT_INVENTORY_PATTERN = re.compile(
+    r"\b(?:all|list|which|inventory|onboarded|available)\b[^.?!]{0,50}\bgilts?\b"
+    r"|\bgilts?\b[^.?!]{0,50}\b(?:inventory|onboarded|available|list)\b"
+    r"|\bhow many\b[^.?!]{0,30}\bgilts?\b",
+    re.I,
+)
+# Plural/list year questions ("what gilts mature in 2026", "2028 maturity
+# gilts") want the whole year's list, not the singular resolver's
+# disambiguation prompt. Kept separate from _GILT_INVENTORY_PATTERN because
+# "which gilt matures in 2036?" (singular) must still resolve/disambiguate.
+_GILT_YEAR_LIST_PATTERN = re.compile(
+    r"\b(?:what|which|list)\b[^.?!]{0,30}\bgilts\b"
+    r"|\bgilts\b[^.?!]{0,30}\b(?:mature|maturing|redeem|redemption)\b"
+    r"|\b(?:19|20)\d{2}\b[^.?!]{0,20}\bgilts\b",
+    re.I,
+)
+# "2040s gilts?" / "2050s gilts?" name a whole decade, not a single maturity
+# year - _mentioned_year deliberately does not parse the trailing "s", so
+# without this the question fell to the one-instrument seed fallback.
+_DECADE_PATTERN = re.compile(r"\b((?:19|20)\d0)s\b", re.I)
 # Deliberately no bare "yield": "what is the yield of the 2036 gilt?" is
 # the gilt-facts branch's question and "explain redemption yield
 # calculation" is the document corpus's, and neither may be stolen. But a
@@ -417,6 +505,17 @@ def _mentions_market_structure(text: str) -> bool:
 def _mentioned_year(text: str) -> int | None:
     match = _YEAR_PATTERN.search(text)
     return int(match.group()) if match else None
+
+
+def _mentioned_decade(text: str) -> tuple[int, int] | None:
+    """The inclusive [start, end] year range for a decade phrase like
+    "2040s" (2040-2049), or None when no decade is named.
+    """
+    match = _DECADE_PATTERN.search(text)
+    if match is None:
+        return None
+    start = int(match.group(1))
+    return start, start + 9
 
 
 def _mentions_yield_curve(text: str) -> bool:
@@ -665,6 +764,22 @@ def _mentions_accrued(text: str) -> bool:
     return bool(_ACCRUED_PATTERN.search(text))
 
 
+def _mentions_day_count(text: str) -> bool:
+    return bool(_DAY_COUNT_PATTERN.search(text))
+
+
+def _mentions_ex_dividend(text: str) -> bool:
+    return bool(_EX_DIVIDEND_PATTERN.search(text))
+
+
+def _is_gilt_inventory_query(text: str) -> bool:
+    return bool(_GILT_INVENTORY_PATTERN.search(text))
+
+
+def _is_gilt_year_list_query(text: str) -> bool:
+    return bool(_GILT_YEAR_LIST_PATTERN.search(text))
+
+
 #: Gilt coupons are written three equivalent ways in real questions: the
 #: canonical single-character vulgar fraction ("4\u00bc% Treasury Stock
 #: 2036"), an ASCII mixed fraction ("4 1/4%"), and a decimal ("4.25%").
@@ -846,6 +961,40 @@ _ACCRUED_EXPLANATION_NOTE = (
     "Explanation only — no calculation was performed. Run the calculator for "
     "a figure tied to a specific settlement date."
 )
+_DMO_CONVENTION_CITATION = Citation(
+    label="UK DMO — Gilt Formulae and Examples, 4th ed. Section Three",
+    meta="Accrued interest, day count & ex-dividend, 18 Dec 2024",
+    pill="SOURCE",
+    kind="book",
+    url="https://www.dmo.gov.uk/media/334d05fo/yldeqns_v4.pdf",
+)
+_DAY_COUNT_EXPLANATION_TEXT = (
+    "UK conventional gilts use the ACT/ACT (ICMA) day-count convention: "
+    "accrued interest is calculated on the actual number of days elapsed in "
+    "the actual coupon period, on a semi-annual basis.\n\n"
+    "That is the convention recorded in the platform's gilt reference facts "
+    "and used by the accrued-interest calculation. 30/360 is the corporate and "
+    "municipal convention, not the UK gilt convention; US Treasuries also use "
+    "an actual/actual basis."
+)
+_DAY_COUNT_EXPLANATION_NOTE = (
+    "Deterministic convention answer. The platform's gilt reference facts and "
+    "accrued-interest calculation both use ACT/ACT (ICMA)."
+)
+_EX_DIVIDEND_EXPLANATION_TEXT = (
+    "UK gilts go ex-dividend seven business days before the coupon date. A "
+    "buyer who trades on or after the ex-dividend date is not entitled to the "
+    "next coupon; the seller keeps it. Cum-dividend means the buyer is entitled "
+    "to the coupon.\n\n"
+    "Inside the ex-dividend window accrued interest becomes negative, because "
+    "the buyer compensates the seller for the coupon the buyer will not "
+    "receive. The DMO's worked example shows the rule: for the 8% Treasury 2015 "
+    "with a 7 June 1999 coupon, the ex-dividend date is 26 May 1999."
+)
+_EX_DIVIDEND_EXPLANATION_NOTE = (
+    "Deterministic convention answer, following the DMO's seven-business-day "
+    "rule. The exact date for a specific gilt depends on its coupon date."
+)
 
 
 @dataclass(frozen=True)
@@ -951,18 +1100,59 @@ def _accrued_reply() -> ResearchAnswer:
     return ResearchAnswer(
         text=_ACCRUED_EXPLANATION_TEXT,
         facts=None,
-        citations=[
-            Citation(
-                label="UK DMO — Gilt Formulae and Examples, 4th ed. Section Three",
-                meta="Accrued interest & ex-dividend, 18 Dec 2024",
-                pill="SOURCE",
-                kind="book",
-                url="https://www.dmo.gov.uk/media/334d05fo/yldeqns_v4.pdf",
-            )
-        ],
+        citations=[_DMO_CONVENTION_CITATION],
         note=_ACCRUED_EXPLANATION_NOTE,
         allowed_output_type=AllowedOutputType.DOCUMENT_EXPLANATION,
         evidence_bundle_id=None,
+    )
+
+
+async def _convention_reply(
+    session: AsyncSession, *, text: str, note: str
+) -> ResearchAnswer:
+    """Deterministic convention text, with the DMO document's real
+    EvidenceBundle/Citation when the acquired corpus is available (and the
+    static DMO formulae citation when it is not). Composition is skipped for
+    these answers via the note prefix - see _try_ai_composed_text.
+    """
+    document_backed = await _document_backed_accrued_reply(session)
+    return ResearchAnswer(
+        text=text,
+        facts=None,
+        citations=document_backed.citations if document_backed else [_DMO_CONVENTION_CITATION],
+        note=note,
+        allowed_output_type=AllowedOutputType.DOCUMENT_EXPLANATION,
+        evidence_bundle_id=(
+            document_backed.evidence_bundle_id if document_backed else None
+        ),
+    )
+
+
+async def _day_count_reply(session: AsyncSession) -> ResearchAnswer:
+    """The one correct answer to "what day count convention do gilts use?".
+
+    Deliberately not AI-composed: AI composition is what replaced this with
+    "30/360" in the 2026-11-02 battery (line 15), so the convention answer
+    stays deterministic.
+    """
+    return await _convention_reply(
+        session,
+        text=_DAY_COUNT_EXPLANATION_TEXT,
+        note=_DAY_COUNT_EXPLANATION_NOTE,
+    )
+
+
+async def _ex_dividend_reply(session: AsyncSession) -> ResearchAnswer:
+    """The one correct answer to "when is a gilt traded ex-dividend?".
+
+    Same reasoning as _day_count_reply: the 2026-11-02 battery's AI
+    composition said "the day before settlement" (line 14) instead of the
+    DMO's seven-business-day rule, so this reply is not AI-composed.
+    """
+    return await _convention_reply(
+        session,
+        text=_EX_DIVIDEND_EXPLANATION_TEXT,
+        note=_EX_DIVIDEND_EXPLANATION_NOTE,
     )
 
 
@@ -2112,6 +2302,213 @@ async def _gilt_reference_reply(
     )
 
 
+async def _gilt_inventory_reply(
+    session: AsyncSession, query_text: str
+) -> ResearchAnswer:
+    """List the whole onboarded gilt universe (or one decade of it).
+
+    The single-instrument seed fallback is correct only for a generic "tell
+    me about the gilt" ask. Inventory questions ("show me all onboarded
+    gilts", "list gilts with latest prices", "which gilts have data
+    available") were reaching that fallback and then AI composition claimed
+    the platform held "a single UK gilt" - false against the 70 gilts with
+    accepted reference terms (2026-11-02, 205-query battery).
+    """
+    if not await _display_allowed(session, "uk-dmo.gilts"):
+        return _default_reply("gilt reference facts")
+
+    now = dt.datetime.now(dt.UTC)
+    decade = _mentioned_decade(query_text)
+    mentioned_year = _mentioned_year(query_text)
+
+    facts = (
+        (
+            await session.execute(
+                select(AcceptedFact).where(
+                    AcceptedFact.subject_type == "INSTRUMENT",
+                    AcceptedFact.metric_id == METRIC_GILT_REFERENCE_TERMS,
+                    AcceptedFact.status == "ACTIVE",
+                    AcceptedFact.valid_range.contains(now),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if decade is not None:
+        start, end = decade
+        facts = [
+            fact
+            for fact in facts
+            if start <= int(str(fact.value["redemption_date"])[:4]) <= end
+        ]
+    elif mentioned_year is not None:
+        facts = [
+            fact
+            for fact in facts
+            if str(fact.value["redemption_date"]).startswith(f"{mentioned_year}-")
+        ]
+    if not facts:
+        if mentioned_year is not None:
+            scope = f"maturing in {mentioned_year}"
+        elif decade is not None:
+            scope = f"maturing in the {decade[0]}s"
+        else:
+            scope = "onboarded"
+        return ResearchAnswer(
+            text=f"I don't have reconciled reference terms for gilts {scope}.",
+            facts=None,
+            citations=[],
+            note=None,
+            allowed_output_type=AllowedOutputType.NEUTRAL_EDUCATION,
+            evidence_bundle_id=None,
+        )
+
+    facts = sorted(
+        facts,
+        key=lambda fact: (
+            str(fact.value["redemption_date"]),
+            str(fact.value["instrument_name"]),
+        ),
+    )
+
+    instrument_ids = [fact.subject_id for fact in facts]
+    instruments = (
+        (
+            await session.execute(
+                select(Instrument).where(Instrument.id.in_(instrument_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    instrument_by_id = {instrument.id: instrument for instrument in instruments}
+    aliases = (
+        (
+            await session.execute(
+                select(InstrumentAlias).where(
+                    InstrumentAlias.instrument_id.in_(instrument_ids),
+                    InstrumentAlias.alias_type == "ISIN",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    isin_by_id = {alias.instrument_id: alias.alias_value for alias in aliases}
+
+    price_by_id: dict[uuid.UUID, AcceptedFact] = {}
+    prices_allowed = await _display_allowed(session, "tradeweb.gilt-prices")
+    if prices_allowed:
+        price_facts = (
+            (
+                await session.execute(
+                    select(AcceptedFact).where(
+                        AcceptedFact.subject_type == "INSTRUMENT",
+                        AcceptedFact.metric_id == METRIC_GILT_MARKET_CLOSE_PRICE,
+                        AcceptedFact.status == "ACTIVE",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for price_fact in price_facts:
+            previous = price_by_id.get(price_fact.subject_id)
+            if previous is None:
+                price_by_id[price_fact.subject_id] = price_fact
+                continue
+            previous_known = previous.knowledge_range.lower
+            candidate_known = price_fact.knowledge_range.lower
+            if candidate_known is not None and (
+                previous_known is None or candidate_known > previous_known
+            ):
+                price_by_id[price_fact.subject_id] = price_fact
+
+    bundle = EvidenceBundle(
+        purpose_type="FACTUAL_EXPLANATION", knowledge_time=now, status="ASSEMBLING"
+    )
+    session.add(bundle)
+    await session.flush()
+
+    rows: list[tuple[str, str]] = []
+    used_price_ids: set[uuid.UUID] = set()
+    for fact in facts:
+        if fact.subject_id not in instrument_by_id:
+            continue
+        isin = isin_by_id.get(fact.subject_id) or "unknown"
+        value = fact.value
+        price_text = ""
+        matched_price_fact = price_by_id.get(fact.subject_id)
+        if matched_price_fact is not None and matched_price_fact.id not in used_price_ids:
+            price_text = f" · close {float(matched_price_fact.value['clean_price']):.2f}"
+            used_price_ids.add(matched_price_fact.id)
+            session.add(
+                EvidenceMember(
+                    evidence_bundle_id=bundle.id,
+                    kind="FACT",
+                    accepted_fact_id=matched_price_fact.id,
+                )
+            )
+        rows.append(
+            (
+                str(value["instrument_name"]),
+                f"{value['coupon_rate']}% · {value['redemption_date']} · {isin}{price_text}",
+            )
+        )
+        session.add(
+            EvidenceMember(
+                evidence_bundle_id=bundle.id,
+                kind="FACT",
+                accepted_fact_id=fact.id,
+            )
+        )
+
+    citations = [
+        Citation(
+            label="UK DMO — Gilts in Issue",
+            meta=f"Accepted reference terms; knowledge-time window current at {now.date().isoformat()}",
+            pill="SOURCE",
+            kind="doc",
+            url="https://www.dmo.gov.uk/data/pdfdatareport?reportCode=D1A",
+        )
+    ]
+    if used_price_ids:
+        citations.append(
+            Citation(
+                label="Tradeweb Market InSite — gilt closing prices",
+                meta="Real market quotes where available",
+                pill="SOURCE",
+                kind="doc",
+            )
+        )
+
+    if mentioned_year is not None:
+        scope = f"maturing in {mentioned_year}"
+    elif decade is not None:
+        scope = f"maturing in the {decade[0]}s"
+    else:
+        scope = "onboarded"
+    price_note = (
+        "Market-close prices are included where the rights profile allows."
+        if used_price_ids
+        else "Market-close prices are not available for this profile."
+    )
+    return ResearchAnswer(
+        text=(
+            f"There {'is' if len(rows) == 1 else 'are'} {len(rows)} UK "
+            f"{'gilt' if len(rows) == 1 else 'gilts'} {scope} with accepted "
+            f"reference terms. The table lists each instrument, coupon, maturity "
+            f"and ISIN. {price_note}"
+        ),
+        facts=FactTable(title=f"Onboarded UK gilts ({len(rows)})", rows=rows),
+        citations=citations,
+        note=None,
+        allowed_output_type=AllowedOutputType.FACTUAL_EVIDENCE,
+        evidence_bundle_id=bundle.id,
+    )
+
+
 async def _isin_reply(
     session: AsyncSession, *, query_text: str, isin: str
 ) -> ResearchAnswer:
@@ -2915,6 +3312,24 @@ async def _dispatch_answer(
         _mentions_treasury(query_text) or _mentions_gilt(query_text)
     ):
         answer = await _gilt_treasury_spread_reply(session, query_text)
+    elif _mentions_day_count(query_text):
+        answer = await _day_count_reply(session)
+    elif _mentions_ex_dividend(query_text):
+        answer = await _ex_dividend_reply(session)
+    elif _is_gilt_year_list_query(query_text):
+        # "What gilts mature in 2026?" is a list request: show every match
+        # in that year rather than the singular resolver's disambiguation
+        # prompt (or a one-instrument answer that composition can turn into
+        # an invented second instrument).
+        answer = await _gilt_inventory_reply(session, query_text)
+    elif _mentioned_year(query_text) is None and (
+        _mentioned_decade(query_text) is not None
+        or _is_gilt_inventory_query(query_text)
+    ):
+        # Inventory/list questions are checked before the single-instrument
+        # gilt branch: "show me all onboarded gilts" names no year and would
+        # otherwise fall through to the one-instrument seed fallback.
+        answer = await _gilt_inventory_reply(session, query_text)
     elif _mentions_accrued(query_text):
         answer = await _document_backed_accrued_reply(session) or _accrued_reply()
     elif _mentions_treasury(query_text):
