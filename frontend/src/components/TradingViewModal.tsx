@@ -300,6 +300,22 @@ export default function TradingViewModal({
               </div>
             ) : useTradingViewEmbed ? (
               <TradingViewWidget
+                // Force a full remount (fresh DOM container) per symbol -
+                // TradingView's external embed script manages its own iframe
+                // outside React's control and (per TradingView's own docs)
+                // requires re-initializing the whole widget on any change,
+                // not just a prop/attribute update. Without this key, the
+                // chart could keep showing a PREVIOUS instrument's real data
+                // under a NEW instrument's header - confirmed reproducible
+                // via HomeDashboard.tsx's search box: handleSearchSubmit
+                // never blurs it after a selection, so it keeps keyboard
+                // focus underneath this modal's full-screen overlay: typing
+                // a second query and pressing Enter again calls
+                // handleSelectAsset -> setSelectedAssetForChart on the SAME
+                // mounted modal instance, swapping `symbol` without ever
+                // unmounting - a real-data mislabeling bug, not a
+                // fabrication one, but just as misleading.
+                key={symbol}
                 symbol={symbol}
                 theme="dark"
                 interval={timeframe === '1D' ? '60' : timeframe === '1W' ? 'D' : 'D'}
