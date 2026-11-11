@@ -586,33 +586,12 @@ export const listAlerts = (cursor?: string): Promise<Page<Alert>> =>
     hasMore: p.has_more,
   }))
 
-export interface TriggerAlertPayload {
-  assetSymbol: string
-  assetName?: string | null
-  thresholdValue: string
-  observedValue: string
-  predicate?: 'CROSSES_ABOVE' | 'CROSSES_BELOW'
-  recipientEmail?: string | null
-}
-
-export const dispatchTriggeredAlert = (payload: TriggerAlertPayload): Promise<{
-  status: string
-  email_dispatched: boolean
-  recipient: string
-  asset_symbol: string
-}> =>
-  apiFetch('/api/v1/alerts/trigger', {
-    method: 'POST',
-    body: JSON.stringify({
-      asset_symbol: payload.assetSymbol,
-      asset_name: payload.assetName ?? null,
-      threshold_value: payload.thresholdValue,
-      observed_value: payload.observedValue,
-      predicate: payload.predicate ?? 'CROSSES_ABOVE',
-      recipient_email: payload.recipientEmail ?? null,
-    }),
-  })
-
+// dispatchTriggeredAlert/TriggerAlertPayload used to live here, calling
+// POST /api/v1/alerts/trigger - a caller-controlled email dispatcher with
+// no verification against any real Alert/MonitoringRule row, removed from
+// the backend alongside this, its only caller (MonitoringPage.tsx's
+// client-side crossing-detection). See backend/app/modules/api/v1/alerts.py
+// (2026-11-10 UAT gap analysis G11 remediation).
 
 // ------------------------------------------------------------------- watchlists
 

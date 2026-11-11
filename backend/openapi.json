@@ -2661,6 +2661,11 @@
             "title": "Provider",
             "type": "string"
           },
+          "simulated": {
+            "default": false,
+            "title": "Simulated",
+            "type": "boolean"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -2884,56 +2889,6 @@
           "symbol"
         ],
         "title": "TradingViewAlertPayload",
-        "type": "object"
-      },
-      "TriggerAlertIn": {
-        "properties": {
-          "asset_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Asset Name"
-          },
-          "asset_symbol": {
-            "title": "Asset Symbol",
-            "type": "string"
-          },
-          "observed_value": {
-            "title": "Observed Value",
-            "type": "string"
-          },
-          "predicate": {
-            "default": "CROSSES_ABOVE",
-            "title": "Predicate",
-            "type": "string"
-          },
-          "recipient_email": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Recipient Email"
-          },
-          "threshold_value": {
-            "title": "Threshold Value",
-            "type": "string"
-          }
-        },
-        "required": [
-          "asset_symbol",
-          "threshold_value",
-          "observed_value"
-        ],
-        "title": "TriggerAlertIn",
         "type": "object"
       },
       "UpdateMemberRoleRequest": {
@@ -3314,59 +3269,6 @@
           }
         },
         "summary": "List Alerts",
-        "tags": [
-          "monitoring"
-        ]
-      }
-    },
-    "/api/v1/alerts/trigger": {
-      "post": {
-        "description": "Receives touched alert from active surveillance, dispatches email to user account,\nand returns delivery confirmation.",
-        "operationId": "trigger_and_dispatch_alert_api_v1_alerts_trigger_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TriggerAlertIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "boolean"
-                      }
-                    ]
-                  },
-                  "title": "Response Trigger And Dispatch Alert Api V1 Alerts Trigger Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Trigger And Dispatch Alert",
         "tags": [
           "monitoring"
         ]
@@ -5506,7 +5408,7 @@
     },
     "/api/v1/sync/trigger": {
       "post": {
-        "description": "Manual or Cron-driven trigger to pull latest data from providers.",
+        "description": "Manual or Cron-driven trigger to pull latest data from providers.\n\nThe AMFI/Twelve Data rows below are hardcoded sample data, not a real\nprovider call - there is no AMFI or Twelve Data real-time integration\nwired to this endpoint. They were previously returned unconditionally,\nlabeled with real-sounding provenance (\"AMFI Statutory Daily NAV\",\n\"Twelve Data / NASDAQ\", \"EOD Reconciled\", bitemporal_status=\"CANONICAL\")\nin every environment - a direct fail-closed-doctrine violation (2026-11-10\nUAT gap analysis G06/G11 remediation). In production this endpoint now\nreturns no fabricated rows at all; outside production it still returns\nthem for local UI development, with `simulated=True` so no consumer can\nmistake them for real data regardless of environment.",
         "operationId": "trigger_external_sync_api_v1_sync_trigger_post",
         "requestBody": {
           "content": {

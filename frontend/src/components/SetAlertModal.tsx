@@ -13,6 +13,23 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/auth/AuthContext'
 import { SubmitButton } from '@/components/ui/field'
 import { createRule, type CreateRuleInput } from '@/lib/api'
+
+// The only instrument this modal can deterministically map onto one of the
+// two real backend-watchable metrics (monitoring/rule_engine.py's
+// SCALAR_VALUE_KEYS) is a UK gilt curve point - "UK 10Y Gilt" etc. are the
+// exact symbol strings globalAssets.ts uses for them. Everything else
+// (equities, FX, commodities, crypto, non-UK sovereigns) has no ISIN
+// plumbed through to this modal at all, so MODEL_IMPLIED_CLEAN_PRICE is
+// never reachable here - that is missing wiring, not something to fake
+// (2026-11-10 UAT gap analysis G11 remediation: this used to hardcode
+// every alert, regardless of symbol, as a UK_GILT_NOMINAL_SPOT_CURVE/10Y
+// rule and silently discard the result either way).
+const UK_GILT_TENOR_PATTERN = /^UK\s+(\d+(?:\.\d+)?)Y\s+Gilt$/i
+
+function resolveWatchableTenorYears(symbol: string): string | null {
+  const match = UK_GILT_TENOR_PATTERN.exec(symbol.trim())
+  return match ? match[1] : null
+}
 import { useEntitlement } from '@/context/EntitlementContext'
 import { toast } from 'sonner'
 
@@ -76,6 +93,13 @@ export default function SetAlertModal({
   )
   const [busy, setBusy] = useState(false)
   const [savedSuccess, setSavedSuccess] = useState(false)
+  //: Whether a real backend MonitoringRule now backs this alert - `null`
+  //: while unknown/not applicable yet. Shown honestly in the success
+  //: screen instead of a blanket "Alert Armed Successfully" regardless of
+  //: what actually happened server-side.
+  const [backendRuleState, setBackendRuleState] = useState<
+    'created' | 'unavailable' | 'failed' | null
+  >(null)
   const { checkLimit } = useEntitlement()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -157,20 +181,31 @@ export default function SetAlertModal({
           // ignore
         }
 
-        // Register continuous rule in the backend monitoring engine (MON-001)
-        try {
-          const input: CreateRuleInput = {
-            metricId: 'UK_GILT_NOMINAL_SPOT_CURVE',
-            predicate,
-            thresholdValue: threshold.replace(/[^0-9.]/g, ''),
-            tenorYears: '10',
-          }
-          const rule = await createRule(input)
-          if (rule && rule.id) {
+        // Register a continuous rule in the real backend monitoring engine
+        // (MON-001) only when this instrument deterministically maps onto
+        // one of the two metrics that engine actually watches - never a
+        // hardcoded guess, and never silently swallowed either way.
+        const tenorYears = resolveWatchableTenorYears(symbol)
+        if (tenorYears !== null) {
+          try {
+            const input: CreateRuleInput = {
+              metricId: 'UK_GILT_NOMINAL_SPOT_CURVE',
+              predicate,
+              thresholdValue: threshold.replace(/[^0-9.]/g, ''),
+              tenorYears,
+            }
+            const rule = await createRule(input)
             newAlert.ruleId = rule.id
+            setBackendRuleState('created')
+          } catch (err) {
+            console.error('Failed to register backend monitoring rule', err)
+            setBackendRuleState('failed')
           }
-        } catch {
-          // fallback
+        } else {
+          // No ISIN or supported metric mapping is available for this
+          // instrument yet - this stays a local-only reminder rather than
+          // a false claim of continuous server-side monitoring.
+          setBackendRuleState('unavailable')
         }
 
         if (
@@ -228,11 +263,32 @@ export default function SetAlertModal({
               <Check className="h-6 w-6" />
             </div>
             <h4 className="text-sm font-semibold text-foreground">
-              {isEditing ? 'Alert Updated Successfully' : 'Alert Armed Successfully'}
+              {isEditing ? 'Alert Updated' : 'Alert Saved'}
             </h4>
-            <p className="text-xs text-muted-foreground mt-1">
-              You will be notified when {symbol} crosses {threshold}.
-            </p>
+            {!isEditing && backendRuleState === 'created' && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Backed by continuous server-side monitoring - you&apos;ll be notified when
+                {' '}{symbol} crosses {threshold}, even while this app is closed.
+              </p>
+            )}
+            {!isEditing && backendRuleState === 'unavailable' && (
+              <p className="text-xs text-amber-400 mt-1">
+                Continuous server-side monitoring isn&apos;t available for {symbol} yet, so this
+                is a local reminder only - it will check while this app is open, but won&apos;t
+                fire if you close it.
+              </p>
+            )}
+            {!isEditing && backendRuleState === 'failed' && (
+              <p className="text-xs text-amber-400 mt-1">
+                We couldn&apos;t register this with server-side monitoring, so it&apos;s saved as
+                a local reminder only for now.
+              </p>
+            )}
+            {isEditing && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Your alert for {symbol} at {threshold} has been updated.
+              </p>
+            )}
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="mt-3 flex flex-1 flex-col min-h-0 overflow-hidden">

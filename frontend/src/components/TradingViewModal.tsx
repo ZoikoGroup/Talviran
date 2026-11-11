@@ -9,6 +9,7 @@ import {
   LineChart,
   CandlestickChart,
   ExternalLink,
+  AlertTriangle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import InstitutionalChart from '@/components/InstitutionalChart'
@@ -60,14 +61,21 @@ export default function TradingViewModal({
   onStartResearch,
   onOpenMonitoring: _onOpenMonitoring,
 }: TradingViewModalProps) {
-  const isSovereign = assetClass === 'SOVEREIGN' || symbol.toLowerCase().includes('gilt') || symbol.toLowerCase().includes('treasury') || symbol.toLowerCase().includes('bund') || symbol.toLowerCase().includes('jgb')
-  
+  // TradingView's embed genuinely covers sovereign yields too (TVC:GB10Y
+  // etc. - see mapToTradingViewSymbol), so there is no real reason to force
+  // every sovereign instrument onto the fabricated native chart - that was
+  // the core of the G06 chart-integrity defect (2026-11-10 UAT gap
+  // analysis remediation): real TradingView is now the default for every
+  // instrument, and the native canvas survives only as an explicitly
+  // labeled, dev-only fallback.
   const [timeframe, setTimeframe] = useState<Timeframe>('1M')
   const [chartMode, setChartMode] = useState<ChartMode>('candles')
-  const [useTradingViewEmbed, setUseTradingViewEmbed] = useState(false)
+  const [useTradingViewEmbed, setUseTradingViewEmbed] = useState(true)
+  const [chartUnavailable, setChartUnavailable] = useState(false)
   const [isMaximized, setIsMaximized] = useState(false)
   const [hoverQuote, setHoverQuote] = useState<HoverQuote | null>(null)
   const [showSetAlert, setShowSetAlert] = useState(false)
+  const isProdBuild = import.meta.env.PROD
 
   const isUp = direction === 'up'
   const isDown = direction === 'down'
@@ -225,8 +233,10 @@ export default function TradingViewModal({
               </div>
             ) : null}
 
-            {/* If asset is non-sovereign, allow toggling between Live TradingView Engine & Native Canvas */}
-            {!isSovereign && (
+            {/* Dev-only: let an engineer compare against the simulated native
+                canvas. There is no legitimate reason to offer this switch in
+                production - TradingView is the only real chart source. */}
+            {!isProdBuild && !chartUnavailable && (
               <button
                 onClick={() => setUseTradingViewEmbed((prev) => !prev)}
                 className={cn(
@@ -234,7 +244,7 @@ export default function TradingViewModal({
                   useTradingViewEmbed ? 'bg-blue-600/20 text-blue-400 border-blue-500/30' : 'bg-card/60 text-muted-foreground hover:text-white'
                 )}
               >
-                <span>{useTradingViewEmbed ? '● TradingView Live' : 'TradingView Live'}</span>
+                <span>{useTradingViewEmbed ? '● TradingView Live' : 'Simulated (dev only)'}</span>
               </button>
             )}
 
@@ -272,21 +282,45 @@ export default function TradingViewModal({
           )}
 
           <div className="relative h-full w-full min-h-0 flex-1">
-            {useTradingViewEmbed && !isSovereign ? (
+            {chartUnavailable ? (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center">
+                <AlertTriangle className="h-6 w-6 text-amber-400" />
+                <span className="text-[13px] font-semibold text-white">Chart data unavailable</span>
+                <span className="max-w-xs text-[11.5px] text-muted-foreground">
+                  Talvrin couldn&apos;t reach the live TradingView feed for {symbol}. No historical
+                  chart is shown rather than an invented one.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setChartUnavailable(false)}
+                  className="mt-1 rounded-lg border border-border/70 bg-card/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-white transition"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : useTradingViewEmbed ? (
               <TradingViewWidget
                 symbol={symbol}
                 theme="dark"
                 interval={timeframe === '1D' ? '60' : timeframe === '1W' ? 'D' : 'D'}
-                onFallbackToNative={() => setUseTradingViewEmbed(false)}
+                onFallbackToNative={isProdBuild ? undefined : () => setUseTradingViewEmbed(false)}
+                onTimeout={isProdBuild ? () => setChartUnavailable(true) : undefined}
               />
             ) : (
-              <InstitutionalChart
-                symbol={symbol}
-                baseValueStr={last}
-                timeframe={timeframe}
-                chartMode={chartMode}
-                onHoverQuote={setHoverQuote}
-              />
+              <div className="relative h-full w-full">
+                {/* Never shown in production - see the toggle button above,
+                    which is itself hidden outside dev. */}
+                <div className="absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-[10.5px] font-semibold tracking-wide text-amber-300">
+                  SIMULATED CHART — DEVELOPMENT ONLY, NOT REAL MARKET DATA
+                </div>
+                <InstitutionalChart
+                  symbol={symbol}
+                  baseValueStr={last}
+                  timeframe={timeframe}
+                  chartMode={chartMode}
+                  onHoverQuote={setHoverQuote}
+                />
+              </div>
             )}
           </div>
         </div>

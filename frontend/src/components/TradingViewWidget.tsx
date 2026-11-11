@@ -14,6 +14,12 @@ interface TradingViewWidgetProps {
   interval?: string
   timezone?: string
   onFallbackToNative?: () => void
+  //: Fired once the embed has taken more than 4s to paint, in addition to
+  //: this widget's own "taking longer than expected" message - lets a
+  //: caller that has no legitimate fallback to offer (production, where
+  //: there is no real OHLC source besides this embed) show an explicit
+  //: unavailable state instead of leaving the spinner up indefinitely.
+  onTimeout?: () => void
 }
 
 /**
@@ -171,6 +177,7 @@ export default function TradingViewWidget({
   interval = 'D',
   timezone = 'Etc/UTC',
   onFallbackToNative,
+  onTimeout,
 }: TradingViewWidgetProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const tvSymbol = mapToTradingViewSymbol(symbol)
@@ -219,13 +226,14 @@ export default function TradingViewWidget({
 
     const timer = setTimeout(() => {
       setLoadTimedOut(true)
+      onTimeout?.()
     }, 4000)
 
     return () => {
       clearTimeout(timer)
       container.innerHTML = ''
     }
-  }, [tvSymbol, theme, interval, timezone])
+  }, [tvSymbol, theme, interval, timezone, onTimeout])
 
   return (
     <div className="relative h-full w-full min-h-0 overflow-hidden rounded-xl bg-[#090b0e]">

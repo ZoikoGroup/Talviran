@@ -28,7 +28,13 @@ interface InstitutionalChartProps {
 }
 
 /**
- * Generates realistic chronological multi-timeframe OHLCV historical series.
+ * Generates a random-walk OHLCV series ending at the current price - it is
+ * not sourced from any real feed or accepted_fact. The only caller
+ * (TradingViewModal.tsx) gates this component behind a dev-only toggle that
+ * does not exist in a production build, and labels it visibly as simulated
+ * whenever it is shown (2026-11-10 UAT gap analysis G06 remediation: this
+ * used to be the unlabeled default chart for every instrument in every
+ * environment).
  */
 function generateHistoricalBars(
   baseStr: string,

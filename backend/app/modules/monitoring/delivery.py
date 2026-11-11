@@ -1,6 +1,5 @@
 """Alert delivery (MON-001 §14) - transports: IN_APP and EMAIL via Resend."""
 
-import datetime as dt
 import json
 import logging
 import urllib.request
@@ -67,57 +66,12 @@ def _send_resend_email(
         return False
 
 
-def send_market_alert_email(
-    *,
-    recipient_email: str,
-    asset_symbol: str,
-    asset_name: str | None,
-    threshold_value: str,
-    observed_value: str,
-    predicate: str = "CROSSES_ABOVE",
-) -> bool:
-    """Dispatches a market threshold alert using canonical Talvrin template design and branding."""
-    settings = get_settings()
-    if not settings.resend_api_key:
-        logger.warning("Cannot dispatch alert email: resend_api_key is not configured")
-        return False
-
-    direction_str = "rises above" if predicate == "CROSSES_ABOVE" else "falls below"
-    display_title = f"{asset_symbol}" + (f" ({asset_name})" if asset_name else "")
-    subject = f"Verified threshold event: {display_title}"
-    preheader = f"Monitored threshold crossed: {asset_symbol} touched {observed_value} ({direction_str} {threshold_value})."
-    time_str = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M:%S") + " UTC"
-
-    body_text = (
-        f"A monitored price condition was met using an entitled, validated price observation on your Talvrin account.\n\n"
-        f"Asset: {display_title}\n"
-        f"Target Threshold: {threshold_value} ({direction_str})\n"
-        f"Observed / Touched Price: {observed_value}\n"
-        f"Trigger Reference Time: {time_str}\n\n"
-        f"This alert has touched its target, is now fulfilled, and has been archived into your Trigger History."
-    )
-
-    from app.core.email_templates.engine import render_talvrin_email_html
-
-    html_content = render_talvrin_email_html(
-        subject=subject,
-        preheader=preheader,
-        body_text=body_text,
-        cta_label="Inspect Price Evidence",
-        action_url="https://app.talvrin.com",
-        badge_label="Objective Alert",
-        notice_reference="TAL-EML-MO-PRICE_CROSS",
-    )
-
-    return _send_resend_email(
-        to_email=recipient_email,
-        subject=subject,
-        html_content=html_content,
-        api_key=settings.resend_api_key,
-        from_email=settings.alerts_from_email,
-    )
-
-
+# send_market_alert_email used to live here: a caller-controlled email
+# dispatcher with no verification against any real Alert/MonitoringRule row
+# (removed alongside its only caller, api/v1/alerts.py's POST /trigger
+# endpoint - see that module's docstring, 2026-11-10 UAT gap analysis G11
+# remediation). deliver_alert below, driven entirely by a real persisted
+# Alert row, remains the only path that ever sends an alert email.
 
 
 async def deliver_alert(
