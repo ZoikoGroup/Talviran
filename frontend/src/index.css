@@ -408,10 +408,18 @@
     display: none;
   }
 
-  /* TradingView Screener Embed sizing fix */
-  .tradingview-widget-container,
-  .tradingview-widget-container__widget,
-  .tradingview-widget-container iframe {
+  /* TradingView Screener Embed sizing fix - scoped to the screener widget
+     specifically (.tv-screener-container, set in TradingViewScreener.tsx).
+     This used to be a bare, unscoped `.tradingview-widget-container` rule -
+     since every TradingView embed in this app reuses that same official
+     class name, the !important min-height:750px leaked into every OTHER
+     embed too (the TradingViewModal chart, sized to its own modal and
+     sometimes much shorter than 750px, and the ComparisonPage chart, fixed
+     at 420px) and silently clipped the bottom of their charts - including
+     the date/x-axis row - behind their own overflow-hidden containers. */
+  .tv-screener-container.tradingview-widget-container,
+  .tv-screener-container .tradingview-widget-container__widget,
+  .tv-screener-container iframe {
     min-height: 750px !important;
     height: 100% !important;
     width: 100% !important;
