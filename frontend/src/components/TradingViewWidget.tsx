@@ -12,6 +12,13 @@ interface TradingViewWidgetProps {
   symbol: string
   theme?: 'dark' | 'light'
   interval?: string
+  // TradingView's own date-range selector value (e.g. '1D','5D','1M','3M',
+  // '12M','60M','ALL') - controls which window of history is visible on
+  // open, independent of `interval` (the bar/candle size). Without this,
+  // every interval beyond the shortest one left the widget showing
+  // whatever its own default history window happened to be, so switching
+  // timeframe buttons past "1D" had no visible effect.
+  range?: string
   timezone?: string
   onFallbackToNative?: () => void
   //: Fired once the embed has taken more than 4s to paint, in addition to
@@ -175,6 +182,7 @@ export default function TradingViewWidget({
   symbol,
   theme = 'dark',
   interval = 'D',
+  range,
   timezone = 'Etc/UTC',
   onFallbackToNative,
   onTimeout,
@@ -207,6 +215,7 @@ export default function TradingViewWidget({
       autosize: true,
       symbol: tvSymbol,
       interval,
+      ...(range ? { range } : {}),
       timezone,
       theme,
       style: '1',
@@ -243,7 +252,7 @@ export default function TradingViewWidget({
       clearTimeout(timer)
       container.innerHTML = ''
     }
-  }, [tvSymbol, theme, interval, timezone, onTimeout])
+  }, [tvSymbol, theme, interval, range, timezone, onTimeout])
 
   return (
     <div className="relative h-full w-full min-h-0 overflow-hidden rounded-xl bg-[#090b0e]">
