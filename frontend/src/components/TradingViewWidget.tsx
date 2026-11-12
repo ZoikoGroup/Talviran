@@ -212,7 +212,17 @@ export default function TradingViewWidget({
       style: '1',
       locale: 'en',
       enable_publishing: false,
-      allow_symbol_change: true,
+      // 2026-11-12 P0 remediation: `true` here let a user change the
+      // displayed symbol from INSIDE the TradingView iframe's own search UI,
+      // entirely independent of this app's selected-instrument state - our
+      // header (driven by React props) would keep showing the original
+      // instrument while the embedded chart silently showed whatever the
+      // user searched for inside it. Confirmed as the root cause of a P0
+      // header/chart identity mismatch (NIFTY 50 header, AAPL chart data)
+      // found while live-testing the chart-switching fix in
+      // TradingViewModal.tsx. False makes this app the only way to change
+      // what's displayed, so header and chart can never disagree.
+      allow_symbol_change: false,
       calendar: false,
       support_host: 'https://www.tradingview.com',
     })

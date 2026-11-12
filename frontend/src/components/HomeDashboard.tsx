@@ -338,6 +338,14 @@ const AVAILABLE_TIMEZONES = [
     if (!Array.isArray(points) || points.length === 0) {
       return isUp ? 'M0,25 L100,5' : 'M0,5 L100,25'
     }
+    // A single real data point (e.g. only one day of history seeded for a
+    // genuinely-connected but sparse series) has no range to plot - a flat
+    // line at its own value, not points.length - 1 === 0 dividing by zero
+    // into NaN path coordinates (which a real, sparse AcceptedFact series
+    // can now reach here, unlike the old always-5-point hardcoded tickers).
+    if (points.length === 1) {
+      return 'M0,13 L100,13'
+    }
     const min = Math.min(...points)
     const max = Math.max(...points)
     const range = max - min || 1
@@ -356,64 +364,21 @@ const AVAILABLE_TIMEZONES = [
       .join(' ')
   }
 
-  const defaultTickers = [
-    {
-      title: 'UK 10Y Gilt',
-      value: '4.216%',
-      change: '▼ 2.4 bps',
-      isUp: false,
-      isBps: true,
-      sparkline: 'M0,18 C10,15 20,24 30,22 C40,20 50,26 60,18 C70,12 80,16 90,8',
-    },
-    {
-      title: 'US 10Y Treasury',
-      value: '4.327%',
-      change: '▲ 1.1 bps',
-      isUp: true,
-      isBps: true,
-      sparkline: 'M0,22 C12,24 24,18 36,19 C48,15 60,12 72,14 C84,8 90,4 100,2',
-    },
-    {
-      title: 'S&P 500',
-      value: '6,589.34',
-      change: '▲ 0.62%',
-      isUp: true,
-      sparkline: 'M0,25 C15,22 25,26 35,20 C45,16 55,22 65,14 C75,10 85,12 95,2',
-    },
-    {
-      title: 'Gold (XAU)',
-      value: '$2,735.40',
-      change: '▲ 0.67%',
-      isUp: true,
-      sparkline: 'M0,22 C12,20 24,18 36,15 48,16 60,12 72,10 84,6 90,4 100,2',
-    },
-    {
-      title: 'BTC/USD',
-      value: '$67,420',
-      change: '▲ 2.82%',
-      isUp: true,
-      sparkline: 'M0,26 C12,22 24,19 36,21 48,16 60,12 72,14 84,6 90,4 100,2',
-    },
-    {
-      title: 'FTSE 100',
-      value: '8,261.40',
-      change: '▲ 0.28%',
-      isUp: true,
-      sparkline: 'M0,24 C10,22 20,25 30,20 C40,16 50,19 60,14 C70,15 80,10 90,6',
-    },
-  ]
-
-  // Dynamic tickers derived from live API overview or fallback, merged with live WebSocket stream
-  const baseTickers = overview?.tickers && overview.tickers.length > 0
-    ? overview.tickers.map((t) => ({
-        title: t.title,
-        value: t.value,
-        change: t.change,
-        isUp: t.is_up,
-        isBps: t.is_bps,
-        sparkline: toSvgPath(t.sparkline, t.is_up),
-      }))
-    : defaultTickers
+  // 2026-11-12 P0 remediation: this used to fall back to a hardcoded
+  // defaultTickers array (S&P 500, Gold, BTC/USD, FTSE 100 included) the
+  // moment the real /api/v1/dashboard/overview response had no tickers -
+  // silently reintroducing, on the frontend, the exact fabricated values
+  // that endpoint's own backend fix just removed. There is no fallback
+  // now: an empty overview.tickers means no real market benchmark is
+  // currently available, and the ribbon says so rather than inventing one.
+  const baseTickers = (overview?.tickers ?? []).map((t) => ({
+    title: t.title,
+    value: t.value,
+    change: t.change,
+    isUp: t.is_up,
+    isBps: t.is_bps,
+    sparkline: toSvgPath(t.sparkline, t.is_up),
+  }))
 
   const tickers = baseTickers.map((t) => {
     const live = livePrices[t.title]
@@ -1009,6 +974,11 @@ const AVAILABLE_TIMEZONES = [
 
         {/* Ticker Row */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
+          {tickers.length === 0 && (
+            <div className="col-span-full flex items-center rounded-xl border border-dashed border-border/70 bg-card/30 p-3.5 text-[12px] text-muted-foreground">
+              No live market benchmark is currently available.
+            </div>
+          )}
           {tickers.map((t) => (
             <div
               key={t.title}

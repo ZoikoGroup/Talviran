@@ -353,7 +353,9 @@ export default function TradingViewModal({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="hidden sm:inline">Authoritative Source:</span>
+            <span className="hidden sm:inline">
+              {bitemporalStatus === 'UNVERIFIED' ? 'Data Source:' : 'Authoritative Source:'}
+            </span>
             <span className="font-semibold text-white">{source}</span>
           </div>
         </div>

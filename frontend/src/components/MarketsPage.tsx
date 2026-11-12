@@ -10,6 +10,7 @@ import {
   TrendingUp,
   TrendingDown,
   ShieldCheck,
+  ShieldQuestion,
   ChevronDown,
   Layers,
   BarChart2,
@@ -41,7 +42,7 @@ interface MarketsPageProps {
 }
 
 export { GLOBAL_MARKET_ASSETS, type MarketAsset } from '@/data/globalAssets'
-import { GLOBAL_MARKET_ASSETS, type MarketAsset } from '@/data/globalAssets'
+import { GLOBAL_MARKET_ASSETS, isVerifiedLiveAsset, type MarketAsset } from '@/data/globalAssets'
 import { matchAssetSearch } from '@/lib/searchSynonyms'
 
 function MiniSparkline({ data, direction }: { data: number[]; direction: 'up' | 'down' | 'flat' }) {
@@ -646,8 +647,18 @@ export default function MarketsPage({
                           {/* Source */}
                           <td className="px-3 py-3">
                             <div className="flex flex-col min-w-0">
-                              <span className="text-[11.5px] font-medium text-foreground flex items-center gap-1 truncate" title={asset.source}>
-                                <ShieldCheck className="h-3 w-3 shrink-0 text-primary" />
+                              <span
+                                className={cn(
+                                  'text-[11.5px] font-medium flex items-center gap-1 truncate',
+                                  isVerifiedLiveAsset(asset.symbol) ? 'text-foreground' : 'text-muted-foreground'
+                                )}
+                                title={asset.source}
+                              >
+                                {isVerifiedLiveAsset(asset.symbol) ? (
+                                  <ShieldCheck className="h-3 w-3 shrink-0 text-primary" />
+                                ) : (
+                                  <ShieldQuestion className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                )}
                                 <span className="truncate">{asset.source}</span>
                               </span>
                               <span className="text-[10.5px] text-muted-foreground whitespace-nowrap">
