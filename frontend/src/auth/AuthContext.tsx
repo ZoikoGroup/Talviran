@@ -1,11 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import * as api from '@/lib/api'
-import {
-  clearDisplayNameOverride,
-  getDisplayNameOverride,
-  nameFromEmail,
-  setDisplayNameOverride,
-} from '@/auth/session'
 
 export interface Session {
   email: string
@@ -23,7 +17,9 @@ interface AuthValue {
   signUp: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   deleteAccount: () => Promise<void>
-  rename: (name: string) => void
+  /** Persists server-side (bug T10 fix) - throws ApiError on failure, so a
+   * caller can show the real reason instead of assuming it always works. */
+  rename: (name: string) => Promise<void>
   /** Re-checks /me and updates `session` to match. Needed after anything
    * that establishes a session cookie without going through signIn/signUp
    * — currently just password reset, which authenticates via a recovery
@@ -35,7 +31,7 @@ const AuthContext = createContext<AuthValue | null>(null)
 
 const toSession = (principal: api.Principal): Session => ({
   email: principal.email,
-  name: getDisplayNameOverride() ?? nameFromEmail(principal.email),
+  name: principal.name,
   totpEnabled: principal.totpEnabled,
 })
 
@@ -85,7 +81,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       // Cleared even if the network call fails - a caller choosing to sign
       // out must end up signed out locally regardless.
-      clearDisplayNameOverride()
       try { sessionStorage.removeItem('talvrin_active_view') } catch {}
       setSession(null)
     }
@@ -95,19 +90,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await api.deleteAccount()
     } finally {
-      clearDisplayNameOverride()
       try { sessionStorage.removeItem('talvrin_active_view') } catch {}
       setSession(null)
     }
   }, [])
 
-  /** Display only - there is no backend profile/display-name endpoint yet
-   * (see session.ts's module docstring). */
-  const rename = useCallback((name: string) => {
+  const rename = useCallback(async (name: string) => {
     const trimmed = name.trim()
     if (!trimmed) return
-    setDisplayNameOverride(trimmed)
-    setSession((prev) => (prev ? { ...prev, name: trimmed } : prev))
+    const principal = await api.updateDisplayName(trimmed)
+    setSession(toSession(principal))
   }, [])
 
   const value = useMemo(

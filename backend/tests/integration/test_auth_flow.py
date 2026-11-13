@@ -406,3 +406,117 @@ async def test_forgot_password_does_not_reveal_whether_an_account_exists(
     for address in (known, _email()):
         r = await client.post("/api/v1/auth/forgot-password", json={"email": address})
         assert r.status_code == 202
+
+
+# ------------------------------------------------------- change password (T11)
+
+
+async def test_change_password_updates_the_credential(client: AsyncClient) -> None:
+    """Settings → Security → Change password: previously a static 'not
+    implemented' message (bug T11), now a real credential change - the old
+    password must stop working and the new one must start."""
+    email = _email()
+    await _signup(client, email)
+
+    r = await client.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": PASSWORD, "new_password": "Brand-New-Horse-9"},
+    )
+    assert r.status_code == 204
+
+    client.cookies.clear()
+    old = await client.post(
+        "/api/v1/auth/login", json={"email": email, "password": PASSWORD}
+    )
+    assert old.status_code == 401
+
+    new = await client.post(
+        "/api/v1/auth/login", json={"email": email, "password": "Brand-New-Horse-9"}
+    )
+    assert new.status_code == 200
+
+
+async def test_change_password_rejects_a_wrong_current_password(client: AsyncClient) -> None:
+    email = _email()
+    await _signup(client, email)
+
+    r = await client.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": "not-the-real-one", "new_password": "Brand-New-Horse-9"},
+    )
+    assert r.status_code == 401
+    assert r.json()["error"]["message"] == "Current password is incorrect."
+
+    # The credential must be genuinely untouched by the rejected attempt.
+    client.cookies.clear()
+    still_old = await client.post(
+        "/api/v1/auth/login", json={"email": email, "password": PASSWORD}
+    )
+    assert still_old.status_code == 200
+
+
+async def test_change_password_rejects_a_weak_new_password(client: AsyncClient) -> None:
+    email = _email()
+    await _signup(client, email)
+
+    r = await client.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": PASSWORD, "new_password": "short"},
+    )
+    assert r.status_code == 422
+    assert r.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+async def test_change_password_requires_an_active_session(client: AsyncClient) -> None:
+    r = await client.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": PASSWORD, "new_password": "Brand-New-Horse-9"},
+    )
+    assert r.status_code == 401
+
+
+# --------------------------------------------------------- display name (T10)
+
+
+async def test_a_new_principal_defaults_to_a_name_derived_from_their_email(
+    client: AsyncClient,
+) -> None:
+    email = "vignesh.k@example.com"
+    r = await _signup(client, email)
+    assert r.json()["name"] == "Vignesh K"
+
+
+async def test_display_name_persists_across_a_fresh_login(client: AsyncClient) -> None:
+    """The actual T10 regression: display name used to live only in a
+    browser localStorage key that sign-out cleared, so a fresh login always
+    reverted to the email-derived default. It must now survive a real
+    sign-out and sign-in, because it is a database column."""
+    email = _email()
+    await _signup(client, email)
+
+    renamed = await client.patch("/api/v1/auth/display-name", json={"name": "Chosen Name"})
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "Chosen Name"
+
+    await client.post("/api/v1/auth/logout")
+    client.cookies.clear()
+
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+    assert login.status_code == 200
+    assert login.json()["name"] == "Chosen Name"
+
+    me = await client.get("/api/v1/auth/me")
+    assert me.json()["name"] == "Chosen Name"
+
+
+async def test_display_name_rejects_a_blank_name(client: AsyncClient) -> None:
+    email = _email()
+    await _signup(client, email)
+
+    r = await client.patch("/api/v1/auth/display-name", json={"name": "   "})
+    assert r.status_code == 422
+
+
+async def test_display_name_requires_an_active_session(client: AsyncClient) -> None:
+    r = await client.patch("/api/v1/auth/display-name", json={"name": "Someone Else"})
+    assert r.status_code == 401

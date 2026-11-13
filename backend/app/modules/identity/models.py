@@ -57,6 +57,11 @@ class Principal(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     role: Mapped[str] = mapped_column(String(32), default="admin", server_default="admin")
     totp_secret: Mapped[str | None] = mapped_column(String(128), default=None, nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    # Settings -> Account -> Display name (bug T10). Null means "not
+    # customised yet" - service.default_display_name derives one from the
+    # email in that case, rather than every existing principal needing a
+    # backfilled value.
+    display_name: Mapped[str | None] = mapped_column(String(120), default=None, nullable=True)
 
 
 class OrganizationInvitation(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

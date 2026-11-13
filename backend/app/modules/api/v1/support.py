@@ -12,7 +12,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.core.config import get_settings
 from app.core.email_templates.engine import render_talvrin_email_html
-from app.modules.api.v1.deps import IdentityDep, SessionDep
+from app.modules.api.v1.deps import OptionalIdentityDep, SessionDep
 from app.modules.audit.service import record_event
 from app.modules.monitoring.delivery import _send_resend_email
 
@@ -58,8 +58,8 @@ def _dispatch_support_emails(
     ref_code: str,
     ticket_id: str,
     req: CreateSupportTicketRequest,
-    account_id: str,
-    principal_id: str,
+    account_id: str | None,
+    principal_id: str | None,
 ) -> None:
     """Dispatches notification emails to both the institutional support desk and the sender."""
     settings = get_settings()
@@ -81,8 +81,8 @@ def _dispatch_support_emails(
         f"• Severity: {req.severity.upper()}\n"
         f"• Subject: {req.subject}\n"
         f"• Contact Email: {req.contact_email or 'Not provided'}\n"
-        f"• Account ID: {account_id}\n"
-        f"• Principal ID: {principal_id}\n"
+        f"• Account ID: {account_id or 'Anonymous (not signed in)'}\n"
+        f"• Principal ID: {principal_id or 'Anonymous (not signed in)'}\n"
     )
     if req.instrument_symbol:
         desk_body += f"• Instrument / Symbol: {req.instrument_symbol}\n"
@@ -173,17 +173,29 @@ def _dispatch_support_emails(
 async def submit_support_ticket(
     req: CreateSupportTicketRequest,
     db: SessionDep,
-    identity: IdentityDep,
+    identity: OptionalIdentityDep,
 ) -> SupportTicketResponse:
-    """Submit an in-app support request or report a market data discrepancy."""
+    """Submit an in-app support request or report a market data discrepancy.
+
+    /contact is a public page (main.tsx has no RequireAuth wrapper on it), so
+    a visitor who isn't signed in must be able to reach this too - it
+    previously required IdentityDep and 401'd for anyone logged out, which
+    the frontend's error handling then silently turned into a mailto: popup
+    instead of a real ticket (the actual cause of the reported "Submit
+    Ticket to Desk opens Outlook" bug, not a mailto-only implementation).
+    An anonymous ticket is recorded honestly as having no account/principal
+    rather than attributing it to whichever session happened to be nearby.
+    """
     ticket_id = str(uuid.uuid4())
     ref_code = f"TAL-{ticket_id[:8].upper()}"
+    account_id = str(identity.account_id) if identity else None
+    principal_id = str(identity.principal_id) if identity else None
 
     payload: dict[str, Any] = {
         "ticket_id": ticket_id,
         "reference_code": ref_code,
-        "account_id": str(identity.account_id),
-        "principal_id": str(identity.principal_id),
+        "account_id": account_id,
+        "principal_id": principal_id,
         "category": req.category,
         "severity": req.severity,
         "subject": req.subject,
@@ -200,7 +212,7 @@ async def submit_support_ticket(
     await record_event(
         db,
         event_type="support.ticket_created",
-        actor_principal_id=identity.principal_id,
+        actor_principal_id=identity.principal_id if identity else None,
         subject_type="support_ticket",
         subject_id=ticket_id,
         payload=payload,
@@ -211,8 +223,8 @@ async def submit_support_ticket(
         ref_code=ref_code,
         ticket_id=ticket_id,
         req=req,
-        account_id=str(identity.account_id),
-        principal_id=str(identity.principal_id),
+        account_id=account_id,
+        principal_id=principal_id,
     )
 
     return SupportTicketResponse(

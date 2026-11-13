@@ -223,3 +223,91 @@ async def test_request_password_reset_never_raises_for_an_unknown_address() -> N
         await supabase_auth.request_password_reset(
             client, email="nobody@example.com", settings=SETTINGS
         )
+
+
+# ------------------------------------------------------- change password (T11)
+
+
+def _routed_client(by_path: dict[str, httpx.Response]) -> httpx.AsyncClient:
+    """change_password makes two calls in sequence (/token, then /user) - a
+    single fixed response per `_client` above can't represent both, so this
+    picks a response by which path was actually requested."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return by_path[request.url.path]
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+async def test_change_password_returns_the_user_on_success() -> None:
+    user_id = str(uuid.uuid4())
+    async with _routed_client(
+        {
+            "/auth/v1/token": httpx.Response(
+                200,
+                json={
+                    "access_token": "a-fresh-access-token",
+                    "user": {"id": user_id, "email": "a@example.com"},
+                },
+            ),
+            "/auth/v1/user": httpx.Response(200, json={"id": user_id, "email": "a@example.com"}),
+        }
+    ) as client:
+        user = await supabase_auth.change_password(
+            client,
+            email="a@example.com",
+            current_password="correct-horse-9",
+            new_password="Brand-New-Horse-9",
+            settings=SETTINGS,
+        )
+    assert str(user.id) == user_id
+
+
+async def test_change_password_rejects_a_wrong_current_password() -> None:
+    """Re-verifies current_password the same way login does - a wrong one
+    must fail before any attempt to set the new password, not after."""
+    async with _routed_client(
+        {
+            "/auth/v1/token": httpx.Response(
+                400, json={"code": 400, "error_code": "invalid_credentials", "msg": "..."}
+            ),
+        }
+    ) as client:
+        with pytest.raises(supabase_auth.InvalidCredentials):
+            await supabase_auth.change_password(
+                client,
+                email="a@example.com",
+                current_password="wrong",
+                new_password="Brand-New-Horse-9",
+                settings=SETTINGS,
+            )
+
+
+async def test_change_password_rejects_a_weak_new_password() -> None:
+    async with _routed_client(
+        {
+            "/auth/v1/token": httpx.Response(
+                200,
+                json={
+                    "access_token": "a-fresh-access-token",
+                    "user": {"id": str(uuid.uuid4()), "email": "a@example.com"},
+                },
+            ),
+            "/auth/v1/user": httpx.Response(
+                422,
+                json={
+                    "code": 422,
+                    "error_code": "weak_password",
+                    "msg": "Password should be at least 6 characters.",
+                },
+            ),
+        }
+    ) as client:
+        with pytest.raises(supabase_auth.WeakPassword):
+            await supabase_auth.change_password(
+                client,
+                email="a@example.com",
+                current_password="correct-horse-9",
+                new_password="short",
+                settings=SETTINGS,
+            )

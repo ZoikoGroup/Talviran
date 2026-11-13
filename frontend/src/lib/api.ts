@@ -64,6 +64,8 @@ export interface Principal {
   accountId: string
   email: string
   totpEnabled: boolean
+  /** Always resolved server-side (bug T10) - never empty. */
+  name: string
 }
 
 interface PrincipalWire {
@@ -71,6 +73,7 @@ interface PrincipalWire {
   account_id: string
   email: string
   totp_enabled?: boolean
+  name?: string
 }
 
 export interface TotpSetupResponse {
@@ -89,6 +92,7 @@ const toPrincipal = (p: PrincipalWire): Principal => ({
   accountId: p.account_id,
   email: p.email,
   totpEnabled: Boolean(p.totp_enabled),
+  name: p.name || p.email,
 })
 
 export const signup = (email: string, password: string): Promise<Principal> =>
@@ -144,6 +148,23 @@ export const resetPassword = (accessToken: string, newPassword: string): Promise
   apiFetch<PrincipalWire>('/api/v1/auth/reset-password', {
     method: 'POST',
     body: JSON.stringify({ access_token: accessToken, new_password: newPassword }),
+  }).then(toPrincipal)
+
+/** Settings → Security → Change password, for the signed-in user. Throws
+ * ApiError('UNAUTHENTICATED') for a wrong current password, or
+ * ApiError('VALIDATION_ERROR') for a new password Supabase rejects. */
+export const changePassword = (currentPassword: string, newPassword: string): Promise<void> =>
+  apiFetch<void>('/api/v1/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+
+/** Settings → Account → Display name (bug T10) - persists server-side,
+ * scoped to the signed-in principal only. */
+export const updateDisplayName = (name: string): Promise<Principal> =>
+  apiFetch<PrincipalWire>('/api/v1/auth/display-name', {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
   }).then(toPrincipal)
 
 // ------------------------------------------------------------------- chats
