@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Search,
   ArrowRight,
@@ -1339,11 +1340,11 @@ const AVAILABLE_TIMEZONES = [
         <div className="flex flex-col items-center justify-between gap-3 border-t border-border/50 pt-5 text-[11px] text-muted-foreground sm:flex-row pb-6">
           <div>© 2026 Talvrin. All rights reserved.</div>
           <div className="flex items-center gap-4">
-            <span className="hover:text-foreground cursor-pointer">Terms</span>
-            <span className="hover:text-foreground cursor-pointer">Privacy</span>
-            <span className="hover:text-foreground cursor-pointer">Cookies</span>
-            <span className="hover:text-foreground cursor-pointer">Disclaimers</span>
-            <span className="hover:text-foreground cursor-pointer">Contact</span>
+            <Link to="/terms" className="hover:text-foreground">Terms</Link>
+            <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
+            <Link to="/cookies" className="hover:text-foreground">Cookies</Link>
+            <Link to="/disclaimers" className="hover:text-foreground">Disclaimers</Link>
+            <Link to="/contact" className="hover:text-foreground">Contact</Link>
           </div>
         </div>
       </div>

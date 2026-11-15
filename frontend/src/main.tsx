@@ -15,6 +15,8 @@ import ResetPassword from '@/pages/ResetPassword'
 import Privacy from '@/pages/Privacy'
 import Terms from '@/pages/Terms'
 import Contact from '@/pages/Contact'
+import Cookies from '@/pages/Cookies'
+import Disclaimers from '@/pages/Disclaimers'
 import Help from '@/pages/Help'
 import Guides from '@/pages/Guides'
 import Join from '@/pages/Join'
@@ -91,6 +93,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="/terms" element={<Terms />} />
+                <Route path="/cookies" element={<Cookies />} />
+                <Route path="/disclaimers" element={<Disclaimers />} />
                 <Route path="/contact" element={<Contact />} />
                 <Route path="/help" element={<Help />} />
                 <Route path="/guides" element={<Guides />} />

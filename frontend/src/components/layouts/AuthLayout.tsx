@@ -33,6 +33,8 @@ const PROMISES = [
 const LEGAL = [
   { to: '/privacy', label: 'Privacy' },
   { to: '/terms', label: 'Terms' },
+  { to: '/cookies', label: 'Cookies' },
+  { to: '/disclaimers', label: 'Disclaimers' },
   { to: '/help', label: 'Help' },
   { to: '/contact', label: 'Contact' },
 ]

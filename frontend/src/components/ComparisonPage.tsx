@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+﻿import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   ArrowLeft,
   Search,
@@ -20,7 +20,13 @@ import {
   Printer,
   BookOpen,
 } from 'lucide-react'
-import { GLOBAL_MARKET_ASSETS, MarketAsset } from '../data/globalAssets'
+import {
+  GLOBAL_MARKET_ASSETS,
+  MarketAsset,
+  UNVERIFIED_SOURCE_LABEL,
+  UNVERIFIED_FRESHNESS_LABEL,
+  UNVERIFIED_STATUS_LABEL,
+} from '../data/globalAssets'
 import { useLiveMarket } from '../hooks/useLiveMarket'
 import { mapToTradingViewSymbol } from './TradingViewWidget'
 import { useEntitlement } from '../context/EntitlementContext'
@@ -69,257 +75,57 @@ export interface DetailedAssetMetrics {
 
 const ASSET_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7']
 
-// Institutional SEC / DMO verified statutory financial database
-const STATUTORY_COMPARISON_REGISTER: Record<string, DetailedAssetMetrics> = {
-  AAPL: {
-    symbol: 'AAPL',
-    name: 'Apple Inc.',
-    assetClass: 'EQUITY',
-    sector: 'Technology Hardware & Devices',
-    exchange: 'NASDAQ',
-    marketCap: '$3.52T',
-    peRatio: 34.2,
-    fwdPe: 29.8,
-    pegRatio: 2.8,
-    evEbitda: 25.1,
-    priceToSales: 8.9,
-    grossMargin: '46.2%',
-    opMargin: '31.3%',
-    netMargin: '24.8%',
-    roe: '147.2%',
-    roic: '58.4%',
-    revGrowthYoY: '+6.1%',
-    epsGrowthYoY: '+12.4%',
-    netDebtEbitda: '0.45x',
-    currentRatio: '1.04',
-    divYield: '0.42%',
-    buybackYield: '3.1%',
-    beta: '1.08',
-    correlationSPX: '0.84',
-    filingSource: 'SEC Form 10-K (0000320193-25-000106)',
-    filingDate: '2025-10-31',
-    bitemporalRange: 'K: 2025-10-31 16:30 UTC | V: FY2025',
-    nextEarningsDate: 'Jan 29, 2026',
-    consensusEst: 'EPS $2.35 / Rev $124.2B',
-  },
-  MSFT: {
-    symbol: 'MSFT',
-    name: 'Microsoft Corporation',
-    assetClass: 'EQUITY',
-    sector: 'Systems Software & Cloud Infrastructure',
-    exchange: 'NASDAQ',
-    marketCap: '$3.28T',
-    peRatio: 35.8,
-    fwdPe: 30.5,
-    pegRatio: 2.2,
-    evEbitda: 23.4,
-    priceToSales: 12.8,
-    grossMargin: '69.8%',
-    opMargin: '44.6%',
-    netMargin: '36.1%',
-    roe: '38.8%',
-    roic: '28.9%',
-    revGrowthYoY: '+15.2%',
-    epsGrowthYoY: '+17.8%',
-    netDebtEbitda: '0.22x',
-    currentRatio: '1.24',
-    divYield: '0.74%',
-    buybackYield: '1.2%',
-    beta: '0.94',
-    correlationSPX: '0.86',
-    filingSource: 'SEC Form 10-K (0000789019-25-000042)',
-    filingDate: '2025-07-28',
-    bitemporalRange: 'K: 2025-07-28 20:15 UTC | V: FY2025',
-    nextEarningsDate: 'Jan 28, 2026',
-    consensusEst: 'EPS $3.12 / Rev $68.9B',
-  },
-  NVDA: {
-    symbol: 'NVDA',
-    name: 'NVIDIA Corporation',
-    assetClass: 'EQUITY',
-    sector: 'Semiconductors & Compute Systems',
-    exchange: 'NASDAQ',
-    marketCap: '$3.44T',
-    peRatio: 48.6,
-    fwdPe: 32.1,
-    pegRatio: 1.4,
-    evEbitda: 38.2,
-    priceToSales: 26.5,
-    grossMargin: '75.4%',
-    opMargin: '62.1%',
-    netMargin: '55.3%',
-    roe: '115.4%',
-    roic: '82.6%',
-    revGrowthYoY: '+122.4%',
-    epsGrowthYoY: '+168.0%',
-    netDebtEbitda: '-0.38x (Net Cash)',
-    currentRatio: '3.82',
-    divYield: '0.03%',
-    buybackYield: '1.4%',
-    beta: '1.68',
-    correlationSPX: '0.78',
-    filingSource: 'SEC Form 10-Q (0001045810-25-000098)',
-    filingDate: '2025-08-28',
-    bitemporalRange: 'K: 2025-08-28 21:00 UTC | V: Q2 FY2026',
-    nextEarningsDate: 'Feb 19, 2026',
-    consensusEst: 'EPS $0.84 / Rev $37.5B',
-  },
-  GOOGL: {
-    symbol: 'GOOGL',
-    name: 'Alphabet Inc.',
-    assetClass: 'EQUITY',
-    sector: 'Interactive Media & Cloud Platform',
-    exchange: 'NASDAQ',
-    marketCap: '$2.21T',
-    peRatio: 23.4,
-    fwdPe: 19.8,
-    pegRatio: 1.3,
-    evEbitda: 14.8,
-    priceToSales: 6.5,
-    grossMargin: '57.6%',
-    opMargin: '32.0%',
-    netMargin: '27.4%',
-    roe: '31.5%',
-    roic: '25.8%',
-    revGrowthYoY: '+14.1%',
-    epsGrowthYoY: '+34.2%',
-    netDebtEbitda: '-0.75x (Net Cash)',
-    currentRatio: '2.15',
-    divYield: '0.45%',
-    buybackYield: '3.4%',
-    beta: '1.05',
-    correlationSPX: '0.81',
-    filingSource: 'SEC Form 10-K (0001652044-25-000018)',
-    filingDate: '2025-02-04',
-    bitemporalRange: 'K: 2025-02-04 21:30 UTC | V: FY2024',
-    nextEarningsDate: 'Feb 03, 2026',
-    consensusEst: 'EPS $2.14 / Rev $96.8B',
-  },
-  AMZN: {
-    symbol: 'AMZN',
-    name: 'Amazon.com Inc.',
-    assetClass: 'EQUITY',
-    sector: 'Broadline Retail & Cloud Infrastructure',
-    exchange: 'NASDAQ',
-    marketCap: '$2.28T',
-    peRatio: 42.1,
-    fwdPe: 31.4,
-    pegRatio: 1.8,
-    evEbitda: 17.5,
-    priceToSales: 3.4,
-    grossMargin: '48.8%',
-    opMargin: '9.8%',
-    netMargin: '7.8%',
-    roe: '22.4%',
-    roic: '14.2%',
-    revGrowthYoY: '+11.8%',
-    epsGrowthYoY: '+54.0%',
-    netDebtEbitda: '0.48x',
-    currentRatio: '1.08',
-    divYield: '0.00%',
-    buybackYield: '0.0%',
-    beta: '1.14',
-    correlationSPX: '0.79',
-    filingSource: 'SEC Form 10-K (0001018724-25-000008)',
-    filingDate: '2025-01-31',
-    bitemporalRange: 'K: 2025-01-31 22:00 UTC | V: FY2024',
-    nextEarningsDate: 'Feb 05, 2026',
-    consensusEst: 'EPS $1.52 / Rev $188.0B',
-  },
-  TSLA: {
-    symbol: 'TSLA',
-    name: 'Tesla Inc.',
-    assetClass: 'EQUITY',
-    sector: 'Automobile Manufacturing & Clean Storage',
-    exchange: 'NASDAQ',
-    marketCap: '$780B',
-    peRatio: 68.4,
-    fwdPe: 55.2,
-    pegRatio: 3.4,
-    evEbitda: 42.1,
-    priceToSales: 7.9,
-    grossMargin: '18.2%',
-    opMargin: '8.4%',
-    netMargin: '6.9%',
-    roe: '14.8%',
-    roic: '11.5%',
-    revGrowthYoY: '+7.8%',
-    epsGrowthYoY: '+8.2%',
-    netDebtEbitda: '-0.95x (Net Cash)',
-    currentRatio: '1.75',
-    divYield: '0.00%',
-    buybackYield: '0.0%',
-    beta: '2.15',
-    correlationSPX: '0.64',
-    filingSource: 'SEC Form 10-K (0001318605-25-000012)',
-    filingDate: '2025-01-29',
-    bitemporalRange: 'K: 2025-01-29 21:00 UTC | V: FY2024',
-    nextEarningsDate: 'Jan 22, 2026',
-    consensusEst: 'EPS $0.78 / Rev $27.4B',
-  },
-  'UK 10Y Gilt': {
-    symbol: 'UK 10Y Gilt',
-    name: 'United Kingdom 10-Year Benchmark Gilt',
-    assetClass: 'SOVEREIGN',
-    sector: 'Sovereign Debt Benchmark',
-    exchange: 'DMO / LSE',
-    marketCap: '£2.41T Total Debt',
-    peRatio: 'Yield: 4.216%',
-    fwdPe: 'N/A',
-    pegRatio: 'N/A',
-    evEbitda: 'N/A',
-    priceToSales: 'N/A',
-    grossMargin: 'N/A',
-    opMargin: 'N/A',
-    netMargin: 'N/A',
-    roe: 'N/A',
-    roic: 'N/A',
-    revGrowthYoY: 'GDP: +0.3%',
-    epsGrowthYoY: 'CPI: +2.3%',
-    netDebtEbitda: 'Debt/GDP: 98.4%',
-    currentRatio: 'N/A',
-    divYield: 'Coupon: 4.25%',
-    buybackYield: 'N/A',
-    beta: '0.12',
-    correlationSPX: '-0.24',
-    filingSource: 'UK Debt Management Office (DMO Benchmark Registry)',
-    filingDate: '2026-10-20',
-    bitemporalRange: 'K: 2026-10-20 10:00 UTC | V: Oct 2026 Run',
-    nextEarningsDate: 'Nov 06, 2026 (BoE MPC)',
-    consensusEst: 'Bank Rate 4.75% -> 4.50%',
-  },
-  'US 10Y': {
-    symbol: 'US 10Y',
-    name: 'United States 10-Year Benchmark Treasury',
-    assetClass: 'SOVEREIGN',
-    sector: 'Sovereign Debt Benchmark',
-    exchange: 'US Treasury / CME',
-    marketCap: '$28.2T Total Debt',
-    peRatio: 'Yield: 4.285%',
-    fwdPe: 'N/A',
-    pegRatio: 'N/A',
-    evEbitda: 'N/A',
-    priceToSales: 'N/A',
-    grossMargin: 'N/A',
-    opMargin: 'N/A',
-    netMargin: 'N/A',
-    roe: 'N/A',
-    roic: 'N/A',
-    revGrowthYoY: 'GDP: +2.8%',
-    epsGrowthYoY: 'CPI: +2.4%',
-    netDebtEbitda: 'Debt/GDP: 122.1%',
-    currentRatio: 'N/A',
-    divYield: 'Coupon: 4.125%',
-    buybackYield: 'N/A',
-    beta: '0.08',
-    correlationSPX: '-0.31',
-    filingSource: 'U.S. Department of the Treasury (Federal Reserve H.15)',
-    filingDate: '2026-10-22',
-    bitemporalRange: 'K: 2026-10-22 16:15 UTC | V: Daily Constant Maturity',
-    nextEarningsDate: 'Nov 07, 2026 (FOMC Decision)',
-    consensusEst: 'Target 4.50% - 4.75%',
-  },
+// Every field below that a real backend connector doesn't back is set to
+// NOT_AVAILABLE, never a plausible-looking invented number - this file
+// used to hardcode an entire fake "Institutional SEC / DMO verified
+// statutory financial database" (specific P/E, EV/EBITDA, ROE, beta,
+// invented SEC filing accession numbers, fake "GiST Deterministic
+// Zero-Overlap Verified" bitemporal ranges) for every symbol, shown
+// on-screen, in an "evidence" drawer, and in two export formats whose
+// own footer claimed "Zero Fabricated Fact Guarantee". None of it was
+// real: no calculation spec exists anywhere in this platform for P/E,
+// EV/EBITDA or any other equity ratio, for any symbol (confirmed against
+// backend/app/modules/calculation/ during the 2026-11-13 UAT gap-analysis
+// audit, G03/G05/G14). Source/freshness/provenance now come from the
+// same isVerifiedLiveAsset labeling globalAssets.ts already applies
+// everywhere else, instead of a separate, parallel fabrication.
+const NOT_AVAILABLE = 'Not available'
+
+function toDetailedMetrics(sym: string): DetailedAssetMetrics {
+  const asset = GLOBAL_MARKET_ASSETS.find((a) => a.symbol === sym)
+  return {
+    symbol: sym,
+    name: asset ? asset.name : sym,
+    assetClass: asset ? asset.assetClass : 'EQUITY',
+    sector: NOT_AVAILABLE,
+    exchange: NOT_AVAILABLE,
+    marketCap: NOT_AVAILABLE,
+    peRatio: NOT_AVAILABLE,
+    fwdPe: NOT_AVAILABLE,
+    pegRatio: NOT_AVAILABLE,
+    evEbitda: NOT_AVAILABLE,
+    priceToSales: NOT_AVAILABLE,
+    grossMargin: NOT_AVAILABLE,
+    opMargin: NOT_AVAILABLE,
+    netMargin: NOT_AVAILABLE,
+    roe: NOT_AVAILABLE,
+    roic: NOT_AVAILABLE,
+    revGrowthYoY: NOT_AVAILABLE,
+    epsGrowthYoY: NOT_AVAILABLE,
+    netDebtEbitda: NOT_AVAILABLE,
+    currentRatio: NOT_AVAILABLE,
+    divYield: NOT_AVAILABLE,
+    buybackYield: NOT_AVAILABLE,
+    beta: NOT_AVAILABLE,
+    correlationSPX: NOT_AVAILABLE,
+    filingSource: asset ? asset.source : UNVERIFIED_SOURCE_LABEL,
+    filingDate: asset ? asset.freshness : UNVERIFIED_FRESHNESS_LABEL,
+    bitemporalRange: asset ? asset.bitemporalStatus : UNVERIFIED_STATUS_LABEL,
+    nextEarningsDate: NOT_AVAILABLE,
+    consensusEst: NOT_AVAILABLE,
+  }
 }
+
 
 export function ComparisonPage({
   onBackToHome,
@@ -485,43 +291,7 @@ export function ComparisonPage({
 
   // Load metrics for selected assets
   const loadedAssets = useMemo(() => {
-    return selectedSymbols.map((sym) => {
-      if (STATUTORY_COMPARISON_REGISTER[sym]) {
-        return STATUTORY_COMPARISON_REGISTER[sym]
-      }
-      const generic = GLOBAL_MARKET_ASSETS.find((a) => a.symbol === sym)
-      return {
-        symbol: sym,
-        name: generic ? generic.name : sym,
-        assetClass: generic ? generic.assetClass : 'EQUITY',
-        sector: 'Global Market Instrument',
-        exchange: 'Global Public Exchange',
-        marketCap: '$150B+',
-        peRatio: 26.5,
-        fwdPe: 22.0,
-        pegRatio: 1.8,
-        evEbitda: 16.5,
-        priceToSales: 5.8,
-        grossMargin: '48.2%',
-        opMargin: '23.4%',
-        netMargin: '19.1%',
-        roe: '26.4%',
-        roic: '19.8%',
-        revGrowthYoY: '+9.4%',
-        epsGrowthYoY: '+15.2%',
-        netDebtEbitda: '0.65x',
-        currentRatio: '1.48',
-        divYield: '1.15%',
-        buybackYield: '1.8%',
-        beta: '1.05',
-        correlationSPX: '0.76',
-        filingSource: 'Statutory Verified Disclosure Registry',
-        filingDate: '2026-09-30',
-        bitemporalRange: 'K: 2026-09-30 18:00 UTC | V: Q3 2026',
-        nextEarningsDate: 'Feb 12, 2026',
-        consensusEst: 'Consensus Fact Audit Pending',
-      }
-    })
+    return selectedSymbols.map(toDetailedMetrics)
   }, [selectedSymbols])
 
   // Filter global assets for adding
@@ -542,7 +312,7 @@ export function ComparisonPage({
     const quota = checkLimit('evidence_dossier_exports_per_month')
     if (quota.isExceeded) {
       toast.error(
-        `Export limit reached (${quota.current} / ${quota.max}). Upgrade to export unlimited statutory memoranda.`
+        `Export limit reached (${quota.current} / ${quota.max}). Upgrade to export unlimited comparisons.`
       )
       if (onOpenPricing) onOpenPricing()
       setIsExportMenuOpen(false)
@@ -551,14 +321,14 @@ export function ComparisonPage({
 
     const timestamp = new Date().toISOString()
 
-    let md = `# TALVRIN™ INSTITUTIONAL ASSET & EVIDENCE COMPARISON BRIEF\n\n`
+    let md = `# TALVRIN™ Asset Comparison Export\n\n`
     md += `- **Date & Time (UTC):** ${timestamp}\n`
     md += `- **Universe:** ${loadedAssets.map(a => a.symbol).join(', ')}\n`
     md += `- **Anchor Base Asset:** ${activeChartSymbol}\n`
-    md += `- **Audit Authority:** SEC EDGAR & UK DMO Benchmark Primary Registries\n\n`
+    md += `- **Note:** Fundamental ratios below are not yet computed by Talvrin for any instrument and are shown as Not available rather than invented.\n\n`
     md += `---\n\n`
 
-    md += `## 1. CROSS-SECTIONAL FINANCIAL MATRIX\n\n`
+    md += `## 1. Cross-Sectional Financial Matrix\n\n`
     md += `| Vector / Metric | ${loadedAssets.map(a => a.symbol).join(' | ')} |\n`
     md += `| :--- | ${loadedAssets.map(() => ':---').join(' | ')} |\n`
     md += `| Market Capitalization | ${loadedAssets.map(a => a.marketCap).join(' | ')} |\n`
@@ -579,13 +349,13 @@ export function ComparisonPage({
     md += `| Dividend / Coupon Yield | ${loadedAssets.map(a => a.divYield).join(' | ')} |\n\n`
 
     md += `---\n\n`
-    md += `## 2. STATUTORY EVIDENCE & FILING AUDIT TRAIL\n\n`
+    md += `## 2. Source & Verification Status\n\n`
     loadedAssets.forEach(a => {
-      md += `- **${a.symbol} (${a.name}):** ${a.filingSource} (Filed: ${a.filingDate})\n`
-      md += `  *Bitemporal Fact Range:* \`${a.bitemporalRange}\` — *GiST Deterministic Zero-Overlap Verified*\n`
+      md += `- **${a.symbol} (${a.name}):** ${a.filingSource}\n`
+      md += `  *Freshness:* ${a.filingDate} &bull; *Bitemporal status:* ${a.bitemporalRange}\n`
     })
 
-    md += `\n---\n*CONFIDENTIAL INVESTOR MEMORANDUM &bull; GENERATED VIA TALVRIN EVIDENCE LAYER &bull; NOT A SOLICITATION*\n`
+    md += `\n---\n*Generated by Talvrin. Not a solicitation or investment recommendation.*\n`
 
     const blob = new Blob([md], { type: 'text/markdown;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -602,7 +372,7 @@ export function ComparisonPage({
     const quota = checkLimit('evidence_dossier_exports_per_month')
     if (quota.isExceeded) {
       toast.error(
-        `Export limit reached (${quota.current} / ${quota.max}). Upgrade to export unlimited statutory memoranda.`
+        `Export limit reached (${quota.current} / ${quota.max}). Upgrade to export unlimited comparisons.`
       )
       if (onOpenPricing) onOpenPricing()
       setIsExportMenuOpen(false)
@@ -617,7 +387,7 @@ export function ComparisonPage({
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Talvrin Institutional Comparison Brief - ${loadedAssets.map(a => a.symbol).join(' vs ')}</title>
+        <title>Talvrin Comparison Export - ${loadedAssets.map(a => a.symbol).join(' vs ')}</title>
         <style>
           @page { size: A4; margin: 16mm; }
           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #0f172a; margin: 0; padding: 20px; font-size: 11pt; line-height: 1.45; }
@@ -635,15 +405,15 @@ export function ComparisonPage({
       <body>
         <div class="header">
           <div>
-            <h1 class="title">TALVRIN™ EXECUTIVE BRIEF</h1>
-            <div class="subtitle">Comparative Financial Analysis</div>
+            <h1 class="title">TALVRIN™ Comparison Export</h1>
+            <div class="subtitle">Not a solicitation or investment recommendation</div>
           </div>
           <div class="meta">
             <div><strong>Date:</strong> ${new Date().toLocaleDateString('en-GB')}</div>
             <div><strong>Universe:</strong> ${loadedAssets.map(a => a.symbol).join(', ')}</div>
-            <div><strong>Audit:</strong> SEC Form 10-K / DMO</div>
           </div>
         </div>
+        <p style="font-size: 8.5pt; color: #64748b;">Fundamental ratios below are not yet computed by Talvrin for any instrument and are shown as "Not available" rather than invented.</p>
 
         <h2>1. Cross-Sectional Vector Comparison</h2>
         <table>
@@ -673,18 +443,19 @@ export function ComparisonPage({
           </tbody>
         </table>
 
-        <h2>2. Statutory Provenance & Audit Trail</h2>
+        <h2>2. Source &amp; Verification Status</h2>
         <ul>
           ${loadedAssets.map(a => `
             <li>
-              <strong>${a.symbol}:</strong> ${a.filingSource} (Filing Date: ${a.filingDate}) &bull;
-              <em>Bitemporal Range:</em> ${a.bitemporalRange}
+              <strong>${a.symbol}:</strong> ${a.filingSource} &bull;
+              <em>Freshness:</em> ${a.filingDate} &bull;
+              <em>Bitemporal status:</em> ${a.bitemporalRange}
             </li>
           `).join('')}
         </ul>
 
         <div class="footer">
-          <div>Talvrin Deterministic Financial Intelligence Estate &bull; Zero Fabricated Fact Guarantee</div>
+          <div>Generated by Talvrin</div>
           <div>Page 1 of 1</div>
         </div>
 
@@ -1132,7 +903,7 @@ export function ComparisonPage({
               { id: 'growth', label: 'Growth & Cash Flow', icon: TrendingUp },
               { id: 'balance', label: 'Solvency & Leverage', icon: ShieldCheck },
               { id: 'catalysts', label: 'Earnings & Catalysts', icon: Calendar },
-              { id: 'evidence', label: 'Statutory Evidence & Provenance', icon: FileText },
+              { id: 'evidence', label: 'Source & Verification', icon: FileText },
             ].map((tab) => {
               const Icon = tab.icon
               const isActive = activeTab === tab.id
@@ -1164,7 +935,7 @@ export function ComparisonPage({
               title="Highlight the top-performing value for each metric in green with a checkmark"
             >
               <Award className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{highlightLeader ? 'Highlight Best Metric: ON' : 'Highlight Best Metric: OFF'}</span>
+              <span>{highlightLeader ? 'Highlight values: ON' : 'Highlight values: OFF'}</span>
             </button>
           </div>
         </div>
@@ -1395,7 +1166,7 @@ export function ComparisonPage({
               {activeTab === 'evidence' && (
                 <>
                   <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Primary Statutory Filing Source</td>
+                    <td className="py-3 px-4 text-slate-300 font-medium">Source</td>
                     {loadedAssets.map((a) => (
                       <td key={a.symbol} className="py-3 px-4 text-indigo-300 font-mono text-[11px]">
                         <button
@@ -1409,7 +1180,7 @@ export function ComparisonPage({
                     ))}
                   </tr>
                   <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Filing Submission Date</td>
+                    <td className="py-3 px-4 text-slate-300 font-medium">Freshness</td>
                     {loadedAssets.map((a) => (
                       <td key={a.symbol} className="py-3 px-4 text-white font-mono">
                         {a.filingDate}
@@ -1417,7 +1188,7 @@ export function ComparisonPage({
                     ))}
                   </tr>
                   <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Bitemporal Fact Range</td>
+                    <td className="py-3 px-4 text-slate-300 font-medium">Bitemporal status</td>
                     {loadedAssets.map((a) => (
                       <td key={a.symbol} className="py-3 px-4 text-slate-300 font-mono text-[11px]">
                         {a.bitemporalRange}
@@ -1425,15 +1196,24 @@ export function ComparisonPage({
                     ))}
                   </tr>
                   <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Audit Status</td>
-                    {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4">
-                        <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                          <CheckCircle className="w-3 h-3" />
-                          Canonical Fact Bundle
-                        </span>
-                      </td>
-                    ))}
+                    <td className="py-3 px-4 text-slate-300 font-medium">Verification status</td>
+                    {loadedAssets.map((a) => {
+                      const verified = a.bitemporalRange === 'CANONICAL' || a.bitemporalRange === 'RECONCILED'
+                      return (
+                        <td key={a.symbol} className="py-3 px-4">
+                          {verified ? (
+                            <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                              <CheckCircle className="w-3 h-3" />
+                              Verified
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                              Not independently verified
+                            </span>
+                          )}
+                        </td>
+                      )
+                    })}
                   </tr>
                 </>
               )}
@@ -1457,26 +1237,28 @@ export function ComparisonPage({
               <div className="flex items-center gap-2 mb-3">
                 <FileText className="w-5 h-5 text-indigo-400" />
                 <h3 className="text-base font-bold text-white">
-                  Statutory Evidence Audit: {evidenceDrawerAsset.symbol}
+                  Source &amp; verification status: {evidenceDrawerAsset.symbol}
                 </h3>
               </div>
 
               <p className="text-xs text-slate-400 mb-4">
-                Talvrin locks every accepted fact to an unalterable filing artifact. Below is the cryptographic and filing reference for {evidenceDrawerAsset.name}.
+                What Talvrin actually knows about the source and freshness of {evidenceDrawerAsset.name}&apos;s data.
               </p>
 
               <div className="space-y-3 bg-slate-900/90 rounded-xl p-4 border border-slate-800 font-mono text-xs">
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase">Source Identifier</span>
+                  <span className="text-slate-500 block text-[10px] uppercase">Source</span>
                   <span className="text-indigo-300">{evidenceDrawerAsset.filingSource}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase">Knowledge & Valid Range</span>
-                  <span className="text-slate-200">{evidenceDrawerAsset.bitemporalRange}</span>
+                  <span className="text-slate-500 block text-[10px] uppercase">Freshness</span>
+                  <span className="text-slate-200">{evidenceDrawerAsset.filingDate}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase">Reconciliation Status</span>
-                  <span className="text-emerald-400">PASSED (Deterministic GiST Zero-Overlap Gate)</span>
+                  <span className="text-slate-500 block text-[10px] uppercase">Bitemporal status</span>
+                  <span className={evidenceDrawerAsset.bitemporalRange === 'UNVERIFIED' ? 'text-amber-400' : 'text-emerald-400'}>
+                    {evidenceDrawerAsset.bitemporalRange}
+                  </span>
                 </div>
               </div>
 
@@ -1485,7 +1267,7 @@ export function ComparisonPage({
                   onClick={() => setEvidenceDrawerAsset(null)}
                   className="px-4 py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
                 >
-                  Close Audit
+                  Close
                 </button>
               </div>
             </div>
