@@ -90,10 +90,28 @@ async def _latest_tenor_series(
 
 
 def _yield_ticker(title: str, values: list[Decimal]) -> DashboardTicker | None:
+    """A yield change is always shown in basis points, never percent - a
+    4.00% -> 4.10% move is +10 bp, not +10% (UAT gap analysis G06). A
+    single-point series has no prior-day reference to diff against at
+    all; showing "0.0 bps" for that case would claim an observed zero
+    change rather than the truth, that no change can be computed yet -
+    "missing reference is unavailable, not 0%" per the same audit. is_up
+    is left None (never True) in that case so a consumer can't render an
+    arrow implying a direction that wasn't actually observed.
+    """
     if not values:
         return None
     latest = values[-1]
-    delta_bps = (latest - values[-2]) * 100 if len(values) > 1 else Decimal(0)
+    if len(values) < 2:
+        return DashboardTicker(
+            title=title,
+            value=f"{latest}%",
+            change="No prior session to compare",
+            is_up=False,
+            is_bps=True,
+            sparkline=[float(v) for v in values],
+        )
+    delta_bps = (latest - values[-2]) * 100
     arrow = "▲" if delta_bps > 0 else "▼" if delta_bps < 0 else "▶"
     return DashboardTicker(
         title=title,
