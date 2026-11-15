@@ -15,8 +15,9 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.core.config import get_settings
 from app.core.db import get_session
 from app.main import create_app
 from app.modules.audit.models import EventLog
@@ -69,3 +70,38 @@ async def test_the_response_never_claims_outlook_is_involved(client: httpx.Async
     r = await client.post("/api/v1/support/tickets", json=_PAYLOAD)
     assert r.status_code == 201
     assert "ticket_id" in r.json()
+
+
+async def test_the_ticket_is_actually_committed_not_just_returned(
+    client: httpx.AsyncClient,
+) -> None:
+    """Confirmed live and by direct inspection: this endpoint never called
+    db.commit() at all. get_session's own contract is "callers commit
+    explicitly" (app/core/db.py), so every ticket ever submitted was
+    silently rolled back on session teardown - a 201 with a reference code
+    for a row that was never actually saved. The test above using the same
+    overridden `db_session` object could never have caught this: a session
+    sees its own uncommitted writes regardless of whether commit() was
+    called, so it would pass either way. This test opens a genuinely
+    separate connection - the only way to prove the row is durable rather
+    than just visible to the request that wrote it.
+    """
+    r = await client.post("/api/v1/support/tickets", json=_PAYLOAD)
+    assert r.status_code == 201
+    ticket_id = r.json()["ticket_id"]
+
+    engine = create_async_engine(get_settings().test_database_url)
+    try:
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as independent_session:
+            row = (
+                await independent_session.execute(
+                    select(EventLog).where(EventLog.subject_id == ticket_id)
+                )
+            ).scalar_one_or_none()
+            assert row is not None, (
+                "ticket row is invisible to a separate connection - "
+                "db.commit() regressed"
+            )
+    finally:
+        await engine.dispose()

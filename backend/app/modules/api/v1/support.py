@@ -217,6 +217,14 @@ async def submit_support_ticket(
         subject_id=ticket_id,
         payload=payload,
     )
+    # get_session's own contract is "callers commit explicitly" - this was
+    # missing entirely (confirmed live: a submitted ticket returned 201 with
+    # a reference code, but a fresh connection to the real database showed
+    # no row at all). Every ticket ever submitted through this endpoint was
+    # silently discarded on session teardown - a false "received" response,
+    # not a working one. Must commit before dispatching email, so a ticket
+    # is never emailed as proof of receipt unless it is actually durable.
+    await db.commit()
 
     # Dispatch email alerts asynchronously (to support desk + user confirmation)
     _dispatch_support_emails(
