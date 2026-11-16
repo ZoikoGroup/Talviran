@@ -22,14 +22,17 @@ import {
   createChat,
   createProject as apiCreateProject,
   deleteChat as apiDeleteChat,
+  cancelResearchJob,
   deleteProject as apiDeleteProject,
   getChat,
+  getResearchJob,
   listChats,
   listProjects,
   patchChat,
   patchProject,
-  postResearch,
+  postResearchJob,
   type ChatMessageWire,
+  type ResearchJob,
 } from '@/lib/api'
 import { useEntitlement } from '@/context/EntitlementContext'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
@@ -59,6 +62,33 @@ interface ChatRecord extends Chat {
 // production build even if the flag leaks into one (import.meta.env.PROD
 // is baked in at build time, not runtime-configurable).
 const USE_MOCK = !import.meta.env.PROD && import.meta.env.VITE_USE_MOCK === 'true'
+
+const RESEARCH_JOB_POLL_INTERVAL_MS = 1200
+const RESEARCH_JOB_MAX_POLLS = 150 // ~3 minutes at the interval above
+
+/** UAT gap-analysis G15: polls a research job until it reaches a terminal
+ * state (COMPLETED/FAILED/CANCELED), or gives up after a bounded number of
+ * attempts rather than polling forever - "Long research uses stage
+ * progress and an approved timeout" (TAL-UAT-GAP-001 §13). A timeout
+ * resolves as FAILED with a safe, generic message: the job itself keeps
+ * running server-side (this is a client giving up watching, not a
+ * cancellation), so it is never silently lost. */
+async function pollResearchJobToCompletion(jobId: string): Promise<ResearchJob> {
+  for (let attempt = 0; attempt < RESEARCH_JOB_MAX_POLLS; attempt++) {
+    const job = await getResearchJob(jobId)
+    if (job.status === 'COMPLETED' || job.status === 'FAILED' || job.status === 'CANCELED') {
+      return job
+    }
+    await new Promise((resolve) => setTimeout(resolve, RESEARCH_JOB_POLL_INTERVAL_MS))
+  }
+  return {
+    jobId,
+    status: 'FAILED',
+    conversationId: '',
+    result: null,
+    error: "This is taking longer than expected. It's still running — check back shortly.",
+  }
+}
 
 function errorMessageFor(err: unknown): string {
   if (err instanceof ApiError) {
@@ -107,6 +137,10 @@ export default function App() {
     () => (localStorage.getItem('talvrin-model') as ModelId) || DEFAULT_MODEL
   )
   const [thinking, setThinking] = useState(false)
+  // UAT gap-analysis G15 - the in-flight research job, if any, so a
+  // visible Cancel action has something real to cancel server-side rather
+  // than just hiding the spinner client-side.
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('talvrin-sidebar') === 'collapsed'
   )
@@ -477,7 +511,29 @@ export default function App() {
           ? `[Context: Tagged Asset ${currentAsset.name} (${currentAsset.symbol}), Asset Class: ${currentAsset.assetClass || 'SOVEREIGN'}, Authoritative Source: ${currentAsset.source || 'Primary Market'}]. Query: ${content}`
           : content
 
-        const answer = await postResearch(backendId, wireQuery, effectiveModel)
+        const job = await postResearchJob(backendId, wireQuery, effectiveModel)
+        setActiveJobId(job.jobId)
+        const finished = await pollResearchJobToCompletion(job.jobId)
+
+        if (finished.status === 'CANCELED') {
+          // The user asked to stop - nothing to show, not an error. The
+          // worker guarantees no half-written reply exists to display even
+          // if the cancel arrived mid-composition (UAT gap-analysis G15).
+          return
+        }
+        if (finished.status === 'FAILED') {
+          appendAssistantMessage(chatId, {
+            role: 'assistant',
+            model: effectiveModel,
+            text: finished.error ?? 'Something went wrong composing this answer.',
+            facts: null,
+            citations: [],
+            note: null,
+          })
+          return
+        }
+        const answer = finished.result
+        if (!answer) return // COMPLETED always carries a result; defensive only
         appendAssistantMessage(chatId, {
           role: 'assistant',
           model: effectiveModel,
@@ -501,9 +557,24 @@ export default function App() {
           note: null,
         })
       } finally {
+        setActiveJobId(null)
         setThinking(false)
       }
     })()
+  }
+
+  // UAT gap-analysis G15: a real server-side cancel, not just hiding the
+  // spinner. request_cancel is idempotent and safe to call even if the
+  // job has already finished by the time this reaches the backend - the
+  // worker's own cooperative check (and the compose/commit rollback it
+  // guards) is what actually prevents a half-written reply from appearing,
+  // this button only asks for that to happen.
+  const cancelActiveResearch = () => {
+    if (!activeJobId) return
+    void cancelResearchJob(activeJobId).catch(() => {
+      // Best-effort: pollResearchJobToCompletion's own loop will still
+      // resolve the job to whatever its real final state turns out to be.
+    })
   }
 
   const startChat = (projectId: string | null = null, asset: TaggedAsset | null = null): ChatRecord => {
@@ -930,20 +1001,31 @@ export default function App() {
                 ))}
 
                 {thinking && (
-                  <div className="mb-7 flex gap-3.5">
-                    <img src={brandIcon} alt="" className="h-7 w-7 shrink-0 rounded-lg" />
-                    <div className="pt-0.5">
-                      <div className="mb-1.5 text-[13px] font-semibold">Talvrin</div>
-                      <div className="flex gap-1.5 pt-1.5">
-                        {[0, 1, 2].map((i) => (
-                          <span
-                            key={i}
-                            className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60"
-                            style={{ animationDelay: `${i * 0.16}s` }}
-                          />
-                        ))}
+                  <div className="mb-7 flex items-start justify-between gap-3.5">
+                    <div className="flex gap-3.5">
+                      <img src={brandIcon} alt="" className="h-7 w-7 shrink-0 rounded-lg" />
+                      <div className="pt-0.5">
+                        <div className="mb-1.5 text-[13px] font-semibold">Talvrin</div>
+                        <div className="flex gap-1.5 pt-1.5">
+                          {[0, 1, 2].map((i) => (
+                            <span
+                              key={i}
+                              className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60"
+                              style={{ animationDelay: `${i * 0.16}s` }}
+                            />
+                          ))}
+                        </div>
                       </div>
                     </div>
+                    {activeJobId && (
+                      <button
+                        type="button"
+                        onClick={cancelActiveResearch}
+                        className="shrink-0 rounded-lg border border-border/80 px-2.5 py-1 text-[11.5px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      >
+                        Cancel
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

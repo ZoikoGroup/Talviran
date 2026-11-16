@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+import json
 import logging
 import re
 import uuid
@@ -483,6 +484,108 @@ async def _try_ai_composed_text(
     return answer
 
 
+async def compose_and_persist_research_answer(
+    db: AsyncSession,
+    *,
+    account_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    query: str,
+    model: str | None,
+    dek: bytes,
+    http: httpx.AsyncClient,
+    request_id: str,
+) -> ResearchOut:
+    """The actual research work - everything POST /api/v1/research and
+    scripts/run_research_worker.py both need, factored out once (UAT gap-
+    analysis G15) rather than duplicated. Appends the user's message,
+    composes the answer, appends the assistant's reply, links the evidence
+    bundle - and deliberately does NOT commit, so a caller that needs one
+    more check before committing (the worker's cancellation re-check, see
+    jobs_service.is_cancel_requested) still can. The synchronous endpoint
+    below commits unconditionally right after calling this, same as
+    before this refactor.
+    """
+    try:
+        await research_service.append_message(
+            db,
+            account_id=account_id,
+            conversation_id=conversation_id,
+            role=research_service.ROLE_USER,
+            content=query,
+            dek=dek,
+        )
+    except research_service.NotFound as exc:
+        raise _not_found() from exc
+    except research_service.ContentTooLong as exc:
+        raise _too_long(exc) from exc
+
+    answer = await evidence_service.assemble_research_answer(
+        db,
+        query_text=query,
+        principal_id=principal_id,
+        account_id=account_id,
+        http=http,
+    )
+    answer = await _try_ai_composed_text(
+        db,
+        answer=answer,
+        query_text=query,
+        conversation_id=conversation_id,
+        principal_id=principal_id,
+        account_id=account_id,
+        dek=dek,
+        http=http,
+        model=model,
+    )
+
+    full_content = answer.text
+    metadata: dict[str, Any] = {}
+    if answer.facts is not None:
+        metadata["facts"] = {"title": answer.facts.title, "rows": answer.facts.rows}
+    if answer.citations:
+        metadata["citations"] = [
+            {"label": c.label, "meta": c.meta, "pill": c.pill, "kind": c.kind, "url": c.url}
+            for c in answer.citations
+        ]
+    if metadata:
+        full_content += f"\n\n<!--METADATA\n{json.dumps(metadata)}\n-->"
+
+    assistant_message = await research_service.append_message(
+        db,
+        account_id=account_id,
+        conversation_id=conversation_id,
+        role=research_service.ROLE_ASSISTANT,
+        content=full_content,
+        dek=dek,
+    )
+
+    if answer.evidence_bundle_id is not None:
+        bundle = await db.get(EvidenceBundle, answer.evidence_bundle_id)
+        assert bundle is not None  # just flushed in this same transaction
+        bundle.research_message_id = assistant_message.id
+        bundle.status = "READY"
+
+    return ResearchOut(
+        request_id=request_id,
+        generated_at=dt.datetime.now(dt.UTC),
+        evidence_bundle_id=answer.evidence_bundle_id,
+        allowed_output_type=answer.allowed_output_type.value,
+        message_id=assistant_message.id,
+        text=answer.text,
+        facts=(
+            FactTableOut(title=answer.facts.title, rows=answer.facts.rows)
+            if answer.facts is not None
+            else None
+        ),
+        citations=[
+            CitationOut(label=c.label, meta=c.meta, pill=c.pill, kind=c.kind, url=c.url)
+            for c in answer.citations
+        ],
+        note=answer.note,
+    )
+
+
 @router.post("/research", status_code=status.HTTP_201_CREATED, response_model=ResearchOut)
 async def create_research_answer(
     request: Request,
@@ -508,87 +611,18 @@ async def create_research_answer(
         except QuotaExceededError as exc:
             raise TalvrinAPIError(code=ErrorCode.RIGHTS_RESTRICTED, message=str(exc)) from exc
 
-        try:
-            await research_service.append_message(
-                db,
-                account_id=identity.account_id,
-                conversation_id=body.conversation_id,
-                role=research_service.ROLE_USER,
-                content=body.query,
-                dek=dek,
-            )
-        except research_service.NotFound as exc:
-            raise _not_found() from exc
-        except research_service.ContentTooLong as exc:
-            raise _too_long(exc) from exc
-
-        answer = await evidence_service.assemble_research_answer(
+        response = await compose_and_persist_research_answer(
             db,
-            query_text=body.query,
-            principal_id=identity.principal_id,
             account_id=identity.account_id,
-            http=http,
-        )
-        answer = await _try_ai_composed_text(
-            db,
-            answer=answer,
-            query_text=body.query,
+            principal_id=identity.principal_id,
             conversation_id=body.conversation_id,
-            principal_id=identity.principal_id,
-            account_id=identity.account_id,
-            dek=dek,
-            http=http,
+            query=body.query,
             model=body.model,
-        )
-
-        import json
-        full_content = answer.text
-        metadata: dict[str, Any] = {}
-        if answer.facts is not None:
-            metadata["facts"] = {"title": answer.facts.title, "rows": answer.facts.rows}
-        if answer.citations:
-            metadata["citations"] = [
-                {"label": c.label, "meta": c.meta, "pill": c.pill, "kind": c.kind, "url": c.url}
-                for c in answer.citations
-            ]
-        if metadata:
-            full_content += f"\n\n<!--METADATA\n{json.dumps(metadata)}\n-->"
-
-        assistant_message = await research_service.append_message(
-            db,
-            account_id=identity.account_id,
-            conversation_id=body.conversation_id,
-            role=research_service.ROLE_ASSISTANT,
-            content=full_content,
             dek=dek,
-        )
-
-        if answer.evidence_bundle_id is not None:
-            bundle = await db.get(EvidenceBundle, answer.evidence_bundle_id)
-            assert bundle is not None  # just flushed in this same transaction
-            bundle.research_message_id = assistant_message.id
-            bundle.status = "READY"
-
-        await db.commit()
-
-        response = ResearchOut(
+            http=http,
             request_id=get_request_id(),
-            generated_at=dt.datetime.now(dt.UTC),
-            evidence_bundle_id=answer.evidence_bundle_id,
-            allowed_output_type=answer.allowed_output_type.value,
-            message_id=assistant_message.id,
-            text=answer.text,
-            facts=(
-                FactTableOut(title=answer.facts.title, rows=answer.facts.rows)
-                if answer.facts is not None
-                else None
-            ),
-            citations=[
-                CitationOut(label=c.label, meta=c.meta, pill=c.pill, kind=c.kind, url=c.url)
-                for c in answer.citations
-            ],
-            note=answer.note,
         )
+        await db.commit()
         return status.HTTP_201_CREATED, response.model_dump(mode="json")
 
     try:

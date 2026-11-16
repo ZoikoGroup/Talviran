@@ -343,12 +343,73 @@ interface ResearchWire {
   note: string | null
 }
 
-export const postResearch = (
+// ------------------------------------------------------------ research jobs
+
+/** UAT gap-analysis G15 - the async, cancellable counterpart to
+ * postResearch. "queued"/"running" are states this app can actually show
+ * accurately (and cancel for real) while a request is in flight, instead
+ * of an opaque loading spinner on an open connection. */
+export type ResearchJobStatus =
+  | 'QUEUED'
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCEL_REQUESTED'
+  | 'CANCELED'
+
+export interface ResearchJob {
+  jobId: string
+  status: ResearchJobStatus
+  conversationId: string
+  result: ResearchAnswer | null
+  error: string | null
+}
+
+interface ResearchJobWire {
+  job_id: string
+  status: ResearchJobStatus
+  conversation_id: string
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+  result: ResearchWire | null
+  error: string | null
+}
+
+function fromResearchJobWire(r: ResearchJobWire): ResearchJob {
+  return {
+    jobId: r.job_id,
+    status: r.status,
+    conversationId: r.conversation_id,
+    result: r.result
+      ? {
+          requestId: r.result.request_id,
+          generatedAt: r.result.generated_at,
+          evidenceBundleId: r.result.evidence_bundle_id,
+          allowedOutputType: r.result.allowed_output_type,
+          messageId: r.result.message_id,
+          text: r.result.text,
+          facts: r.result.facts,
+          citations: r.result.citations.map((c) => ({
+            label: c.label,
+            meta: c.meta ?? undefined,
+            pill: c.pill as Freshness,
+            kind: c.kind as CiteKind,
+            url: c.url ?? undefined,
+          })),
+          note: r.result.note,
+        }
+      : null,
+    error: r.error,
+  }
+}
+
+export const postResearchJob = (
   conversationId: string,
   query: string,
   model?: string
-): Promise<ResearchAnswer> =>
-  apiFetch<ResearchWire>('/api/v1/research', {
+): Promise<ResearchJob> =>
+  apiFetch<ResearchJobWire>('/api/v1/research/jobs', {
     method: 'POST',
     headers: { 'Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
@@ -356,27 +417,15 @@ export const postResearch = (
       query,
       ...(model ? { model } : {}),
     }),
-  }).then((r) => ({
-    requestId: r.request_id,
-    generatedAt: r.generated_at,
-    evidenceBundleId: r.evidence_bundle_id,
-    allowedOutputType: r.allowed_output_type,
-    messageId: r.message_id,
-    text: r.text,
-    facts: r.facts,
-    // Cast at the wire boundary: the backend's pill/kind values are drawn
-    // from these exact fixed sets by construction (evidence/service.py),
-    // but the wire type itself is just `string` since JSON carries no
-    // literal-union information.
-    citations: r.citations.map((c) => ({
-      label: c.label,
-      meta: c.meta ?? undefined,
-      pill: c.pill as Freshness,
-      kind: c.kind as CiteKind,
-      url: c.url ?? undefined,
-    })),
-    note: r.note,
-  }))
+  }).then(fromResearchJobWire)
+
+export const getResearchJob = (jobId: string): Promise<ResearchJob> =>
+  apiFetch<ResearchJobWire>(`/api/v1/research/jobs/${jobId}`).then(fromResearchJobWire)
+
+export const cancelResearchJob = (jobId: string): Promise<ResearchJob> =>
+  apiFetch<ResearchJobWire>(`/api/v1/research/jobs/${jobId}/cancel`, { method: 'POST' }).then(
+    fromResearchJobWire
+  )
 
 // --------------------------------------------------------- research evidence
 
