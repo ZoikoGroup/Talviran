@@ -10,9 +10,11 @@ an anonymous ticket can be recorded honestly rather than attributed to
 whichever session happened to be nearby.
 """
 
+import uuid
 from collections.abc import AsyncIterator
 
 import httpx
+import pytest
 import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -21,6 +23,7 @@ from app.core.config import get_settings
 from app.core.db import get_session
 from app.main import create_app
 from app.modules.audit.models import EventLog
+from app.modules.support.models import TICKET_EMAIL_FAILED, Ticket, TicketEmailDispatch
 
 
 @pytest_asyncio.fixture
@@ -105,3 +108,108 @@ async def test_the_ticket_is_actually_committed_not_just_returned(
             )
     finally:
         await engine.dispose()
+
+
+async def test_a_double_submission_with_the_same_idempotency_key_is_one_ticket(
+    client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """G08: a slow-network retry or an impatient double-click POSTs the
+    exact same request twice with the same client-generated Idempotency-Key.
+    Before this change, every call minted a fresh uuid.uuid4() unconditionally
+    - two tickets, two audit rows, two sets of emails for one real request.
+    """
+    key = f"test-{uuid.uuid4()}"
+    r1 = await client.post(
+        "/api/v1/support/tickets", json=_PAYLOAD, headers={"Idempotency-Key": key}
+    )
+    r2 = await client.post(
+        "/api/v1/support/tickets", json=_PAYLOAD, headers={"Idempotency-Key": key}
+    )
+    assert r1.status_code == 201
+    assert r2.status_code == 201
+    body1, body2 = r1.json(), r2.json()
+    assert body1["ticket_id"] == body2["ticket_id"]
+    assert body1["reference_code"] == body2["reference_code"]
+
+    # Exactly one row, not two, actually landed in support.ticket.
+    rows = (
+        await db_session.execute(
+            select(Ticket).where(Ticket.idempotency_key == key)
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+
+
+async def test_distinct_or_missing_idempotency_keys_still_create_two_tickets(
+    client: httpx.AsyncClient,
+) -> None:
+    """Confirms the new idempotency path hasn't broken ordinary distinct
+    submissions - the overwhelming majority of callers today, since the
+    frontend doesn't send this header at all yet.
+    """
+    r1 = await client.post("/api/v1/support/tickets", json=_PAYLOAD)
+    r2 = await client.post("/api/v1/support/tickets", json=_PAYLOAD)
+    assert r1.status_code == 201 and r2.status_code == 201
+    assert r1.json()["ticket_id"] != r2.json()["ticket_id"]
+
+    key_a, key_b = f"test-{uuid.uuid4()}", f"test-{uuid.uuid4()}"
+    r3 = await client.post(
+        "/api/v1/support/tickets", json=_PAYLOAD, headers={"Idempotency-Key": key_a}
+    )
+    r4 = await client.post(
+        "/api/v1/support/tickets", json=_PAYLOAD, headers={"Idempotency-Key": key_b}
+    )
+    assert r3.status_code == 201 and r4.status_code == 201
+    assert r3.json()["ticket_id"] != r4.json()["ticket_id"]
+
+
+async def test_a_failed_email_send_still_leaves_a_durable_failed_ticket(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Simulates a Resend/DB-adjacent outage at send time: _send_resend_email
+    itself raises (standing in for a network failure, not just a non-2xx
+    response the real function already turns into `False`). The ticket must
+    still be durably created and returned 201 - never lost, never blocking
+    the response - with its outbox row left `failed` and therefore
+    identifiable/retryable, not silently dropped the way a bare
+    `logger.error()` used to leave it.
+    """
+
+    class _FakeSettings:
+        resend_api_key = "test-key-not-real"
+        support_from_email = "support@app.talvrin.com"
+        alerts_from_email = "alerts@app.talvrin.com"
+        support_inbox_email = "talvrin@zoikogroup.com"
+
+    monkeypatch.setattr(
+        "app.modules.api.v1.support.get_settings", lambda: _FakeSettings()
+    )
+
+    def _boom(**kwargs: object) -> bool:
+        raise RuntimeError("simulated Resend outage")
+
+    monkeypatch.setattr("app.modules.api.v1.support._send_resend_email", _boom)
+
+    payload = {**_PAYLOAD, "contact_email": "investor@example.com"}
+    r = await client.post("/api/v1/support/tickets", json=payload)
+    assert r.status_code == 201
+    ticket_id = r.json()["ticket_id"]
+
+    ticket = (
+        await db_session.execute(select(Ticket).where(Ticket.id == uuid.UUID(ticket_id)))
+    ).scalar_one()
+    assert ticket.reference_code == r.json()["reference_code"]
+
+    dispatches = (
+        await db_session.execute(
+            select(TicketEmailDispatch).where(
+                TicketEmailDispatch.ticket_id == uuid.UUID(ticket_id)
+            )
+        )
+    ).scalars().all()
+    assert len(dispatches) == 2, "desk alert + user receipt, contact_email was provided"
+    assert all(d.status == TICKET_EMAIL_FAILED for d in dispatches)
+    assert all(d.last_error and "simulated Resend outage" in d.last_error for d in dispatches)
+    assert all(d.attempt_count == 1 for d in dispatches)
