@@ -19,7 +19,7 @@ import {
 import { GUIDE_TOPICS } from '@/data/guidesData'
 import { ARTICLES } from '@/data/helpArticles'
 import { SUPPORT_EMAIL } from '@/data/contact'
-import { submitSupportTicket, type CreateSupportTicketPayload, type SupportTicketResult } from '@/lib/api'
+import { ApiError, submitSupportTicket, type CreateSupportTicketPayload, type SupportTicketResult } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 interface GuidesPanelProps {
@@ -122,9 +122,21 @@ export default function GuidesPanel({
     }
   }
 
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
   const handleTicketSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!ticketDesc.trim()) return setTicketError('Please provide a message or description.')
+    const desc = ticketDesc.trim()
+    const email = ticketEmail.trim()
+    if (!desc) return setTicketError('Please provide a message or description.')
+    if (desc.length < 10) {
+      return setTicketError(
+        `Message is too short (${desc.length}/10 characters minimum). Please add more detail.`
+      )
+    }
+    if (email && !EMAIL_RE.test(email)) {
+      return setTicketError('Please enter a valid contact email address (e.g. name@company.com).')
+    }
     setTicketError(null)
     setSubmittingTicket(true)
 
@@ -137,14 +149,20 @@ export default function GuidesPanel({
           : 'general_inquiry',
         severity: 'standard',
         subject: `${ticketTopic}: ${ticketName || 'User'}`,
-        description: ticketDesc.trim(),
-        contact_email: ticketEmail.trim() || undefined,
+        description: desc,
+        contact_email: email || undefined,
         instrument_symbol: ticketInstrument.trim() || undefined,
       }
       const res = await submitSupportTicket(payload)
       setTicketResult(res)
-    } catch {
-      setTicketError("Failed to submit ticket. Please email desk directly.")
+    } catch (err) {
+      if (err instanceof ApiError && err.validationIssues?.length) {
+        setTicketError(err.validationIssues.map((i) => i.msg).join(' '))
+      } else if (err instanceof ApiError) {
+        setTicketError(`${err.message} Please email ${SUPPORT_EMAIL} directly.`)
+      } else {
+        setTicketError(`Failed to submit ticket. Please email ${SUPPORT_EMAIL} directly.`)
+      }
     } finally {
       setSubmittingTicket(false)
     }

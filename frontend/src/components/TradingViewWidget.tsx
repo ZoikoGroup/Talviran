@@ -36,14 +36,24 @@ interface TradingViewWidgetProps {
 export function mapToTradingViewSymbol(symbol: string): string {
   const s = symbol.trim().toUpperCase()
 
-  // Sovereign Fixed Income (Official TVC benchmarks)
+  // Sovereign Fixed Income (Official TVC benchmarks). Only tenors confirmed
+  // live to actually resolve on TradingView are mapped - a guessed symbol
+  // that doesn't exist renders a wrong/misleading chart, whereas falling
+  // through to the "no chart feed" state (below) is an honest result.
   if (s.includes('UK 10Y') || s.includes('GILT 10Y') || s === 'UK10Y' || s === 'GB10Y') return 'TVC:GB10Y'
   if (s.includes('UK 2Y') || s.includes('GILT 2Y') || s === 'UK02Y' || s === 'GB02Y') return 'TVC:GB02Y'
+  if (s.includes('UK 5Y') || s.includes('GILT 5Y') || s === 'UK05Y' || s === 'GB05Y') return 'TVC:GB05Y'
   if (s.includes('UK 30Y') || s.includes('GILT 30Y') || s === 'UK30Y' || s === 'GB30Y') return 'TVC:GB30Y'
   if (s.includes('US 10Y') || s.includes('TREASURY 10Y') || s === 'US10Y') return 'TVC:US10Y'
   if (s.includes('US 2Y') || s.includes('TREASURY 2Y') || s === 'US02Y') return 'TVC:US02Y'
+  if (s.includes('US 5Y') || s.includes('TREASURY 5Y') || s === 'US05Y') return 'TVC:US05Y'
+  if (s.includes('US 20Y') || s.includes('TREASURY 20Y') || s === 'US20Y') return 'TVC:US20Y'
   if (s.includes('US 30Y') || s.includes('TREASURY 30Y') || s === 'US30Y') return 'TVC:US30Y'
   if (s.includes('DE 10Y') || s.includes('BUND') || s === 'DE10Y') return 'TVC:DE10Y'
+  if (s.includes('DE 2Y') || s.includes('SCHATZ') || s === 'DE02Y') return 'TVC:DE02Y'
+  if (s.includes('DE 30Y') || s === 'DE30Y') return 'TVC:DE30Y'
+  if (s.includes('FR 10Y') || s.includes('OAT') || s === 'FR10Y') return 'TVC:FR10Y'
+  if (s.includes('IT 10Y') || s.includes('BTP') || s === 'IT10Y') return 'TVC:IT10Y'
   if (s.includes('JP 10Y') || s.includes('JGB') || s === 'JP10Y') return 'TVC:JP10Y'
   if (s.includes('IN 10Y') || s.includes('G-SEC') || s === 'IN10Y') return 'TVC:IN10Y'
 

@@ -534,15 +534,15 @@ export default function WatchlistsPage({
               )}
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="relative">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <div className="relative min-w-0 flex-1 sm:flex-none">
                 <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <input
                   type="text"
                   placeholder="Filter instruments..."
                   value={tableSearch}
                   onChange={(e) => setTableSearch(e.target.value)}
-                  className="h-8 w-48 rounded-lg border border-border bg-background pl-8 pr-3 text-[12.5px] text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-8 w-full min-w-0 rounded-lg border border-border bg-background pl-8 pr-3 text-[12.5px] text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-primary sm:w-48"
                 />
               </div>
 
@@ -557,10 +557,11 @@ export default function WatchlistsPage({
 
               <button
                 onClick={() => setShowAddItem(true)}
+                title="Add instrument to watchlist"
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-[12.5px] font-medium text-foreground hover:bg-accent transition shadow-sm"
               >
                 <Plus className="h-3.5 w-3.5" />
-                <span>Add Instrument</span>
+                <span className="hidden sm:inline">Add Instrument</span>
               </button>
             </div>
           </div>

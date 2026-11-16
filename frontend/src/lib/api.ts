@@ -12,16 +12,29 @@ import type { CiteKind, Freshness } from '@/data/mockReply'
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
+export interface ApiValidationIssue {
+  loc: (string | number)[]
+  msg: string
+}
+
 export class ApiError extends Error {
   code: string
   status: number
   retryAfterSeconds?: number
+  validationIssues?: ApiValidationIssue[]
 
-  constructor(code: string, message: string, status: number, retryAfterSeconds?: number) {
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+    retryAfterSeconds?: number,
+    validationIssues?: ApiValidationIssue[]
+  ) {
     super(message)
     this.code = code
     this.status = status
     this.retryAfterSeconds = retryAfterSeconds
+    this.validationIssues = validationIssues
   }
 }
 
@@ -30,6 +43,7 @@ interface ErrorEnvelope {
     code?: string
     message?: string
     retry_after_seconds?: number
+    details?: { errors?: ApiValidationIssue[] }
   }
 }
 
@@ -50,7 +64,8 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
       err?.code ?? 'INTERNAL_ERROR',
       err?.message ?? 'Something went wrong. Please try again.',
       res.status,
-      err?.retry_after_seconds
+      err?.retry_after_seconds,
+      err?.details?.errors
     )
   }
 
