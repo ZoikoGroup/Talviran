@@ -195,6 +195,51 @@ async def test_missing_idempotency_key_is_rejected(
         assert r.status_code == 422
 
 
+async def test_idempotency_cache_does_not_leak_across_tenants(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    """G10 gap: run_idempotent (core/idempotency.py) returns a stored
+    response before any permission check runs - its own docstring already
+    flagged "scope should be widened to include principal_id once real auth
+    exists", which has been true since P2, but the call site here was never
+    updated, so the Redis key was keyed only on the client-supplied
+    Idempotency-Key header plus a hash of the raw request body - nothing
+    about the authenticated caller. Reusing another tenant's exact
+    Idempotency-Key value together with their exact request bytes (a
+    replayed/leaked request, a shared proxy log, a retried request captured
+    somewhere) must still 404 the same way reusing their conversation_id
+    normally does (test_unknown_conversation_is_not_found) - never silently
+    replay their cached research answer, message_id, or citations back to a
+    different account.
+    """
+    await _seed_pdp_prerequisites(db_session)
+
+    async with make_client() as owner:
+        await _signed_in(owner)
+        chat_id = await _new_chat(owner)
+        key = str(uuid.uuid4())
+        payload = {"conversation_id": chat_id, "query": "what is accrued interest?"}
+        first = await owner.post(
+            "/api/v1/research", json=payload, headers={"Idempotency-Key": key}
+        )
+        assert first.status_code == 201, first.text
+
+    async with make_client() as attacker:
+        await _signed_in(attacker)
+        # Byte-identical Idempotency-Key and body to the owner's own request
+        # above, down to reusing the owner's conversation_id verbatim - this
+        # is deliberately not "a stranger's random guess", it's "whoever
+        # later holds this exact header+body pair, however they came by it".
+        replay = await attacker.post(
+            "/api/v1/research", json=payload, headers={"Idempotency-Key": key}
+        )
+        assert replay.status_code == 404, (
+            "a cross-tenant Idempotency-Key+body collision must fall through "
+            "to the real ownership check, never replay the first tenant's "
+            f"cached answer: {replay.text}"
+        )
+
+
 async def test_research_requires_a_session(make_client: ClientFactory) -> None:
     async with make_client() as client:
         r = await client.post(

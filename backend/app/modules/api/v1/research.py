@@ -11,6 +11,22 @@ wired into a real endpoint for the first time here): a retried request with
 the same key and body replays the stored response rather than appending the
 turn twice; the same key with a different body is a 409, never a silent
 overwrite.
+
+The idempotency cache key is scoped by account_id (2026-11-15 UAT gap
+analysis G10 remediation): core/idempotency.py's own docstring flagged this
+as a known gap when it was first built ("scope should be widened to include
+principal_id once real auth exists") and real auth has existed since P2, but
+the call site here was never updated. Without this, the Redis record is
+keyed only on the client-supplied Idempotency-Key header + a hash of the
+raw request body — nothing about the authenticated caller — so a second
+tenant who ever replayed the exact same header value against the exact same
+request bytes (e.g. a leaked/guessed key, a shared proxy cache, a replayed
+request) would get back the FIRST tenant's stored research answer straight
+from Redis, with no RLS or PDP check in that path at all: `run_idempotent`
+returns the cached body before `_handler` (where every permission check
+lives) ever runs. Folding account_id into `scope` makes that collision
+structurally impossible — two tenants now write into disjoint key spaces no
+matter what Idempotency-Key value or body either of them chooses.
 """
 
 from __future__ import annotations
@@ -578,7 +594,7 @@ async def create_research_answer(
     try:
         result = await run_idempotent(
             redis,
-            scope=_IDEMPOTENCY_SCOPE,
+            scope=f"{_IDEMPOTENCY_SCOPE}:{identity.account_id}",
             idempotency_key=idempotency_key,
             request_body=raw_body,
             handler=_handler,
