@@ -10,6 +10,7 @@ import uuid
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,7 @@ from app.modules.monitoring.models import (
     MonitoringRule,
     MonitoringRuleVersion,
     RuleEvaluation,
+    RuleEvaluationInput,
 )
 from app.modules.monitoring.rule_engine import (
     RuleEvaluationRecorded,
@@ -391,6 +393,113 @@ async def test_without_rearm_threshold_every_crossing_still_fires(
 
         assert isinstance(result, RuleEvaluationRecorded), (rate, expected_outcome)
         assert result.outcome == expected_outcome, (rate, expected_outcome, result.outcome)
+
+
+async def test_out_of_order_late_arrival_does_not_override_current_state_or_refire(
+    db_session: AsyncSession,
+) -> None:
+    """A later-valid-time fact (day12) is evaluated first and genuinely
+    crosses the threshold (MATCH). Afterwards, a straggler fact for an
+    EARLIER valid date (day11, a backfill/correction arriving late) is
+    ingested and triggers its own evaluation.
+
+    _resolve_current_value always re-resolves "the latest ACTIVE fact by
+    valid_range" fresh from the database (market/queries.py's
+    latest_accepted_fact, ordered by valid_range, never by arrival/insert
+    order) rather than trusting whichever fact happened to trigger the
+    call. So the late, chronologically-earlier straggler must never become
+    "the current value" - the engine must keep seeing day12's fact as
+    current and record an honest STILL_MATCHED, never un-firing day12's
+    MATCH and never firing a second, spurious MATCH off stale data that
+    arrived out of order.
+    """
+    account_id, principal_id = uuid.uuid4(), uuid.uuid4()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+    rule_version_id = await _seed_rule_version(
+        db_session, account_id=account_id, principal_id=principal_id,
+        threshold_value=Decimal("5.0"),
+    )
+
+    # day10: below threshold - establishes INITIAL_STATE.
+    await _seed_curve_point(
+        db_session, spot_rate_pct="4.5", valid_on=dt.date(2026, 9, 10),
+        knowledge_time=dt.datetime(2026, 9, 10, 8, 0, tzinfo=dt.UTC),
+    )
+    await db_session.commit()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+    first = await evaluate_rule_version(
+        db_session, rule_version_id=rule_version_id, trigger_type=_TRIGGER_TYPE,
+        trigger_id=None,
+    )
+    assert isinstance(first, RuleEvaluationRecorded)
+    assert first.outcome == OUTCOME_INITIAL_STATE
+    await db_session.commit()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+
+    # day12: above threshold, arrives (and is evaluated) in normal order -
+    # a genuine crossing.
+    day12_fact = await _seed_curve_point(
+        db_session, spot_rate_pct="5.5", valid_on=dt.date(2026, 9, 12),
+        knowledge_time=dt.datetime(2026, 9, 12, 8, 0, tzinfo=dt.UTC),
+    )
+    await db_session.commit()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+    second = await evaluate_rule_version(
+        db_session, rule_version_id=rule_version_id, trigger_type=_TRIGGER_TYPE,
+        trigger_id=day12_fact.id,
+    )
+    assert isinstance(second, RuleEvaluationRecorded)
+    assert second.outcome == OUTCOME_MATCH
+
+    # day11: a straggler for a valid date BEFORE day12, but it only arrives
+    # (and triggers evaluation) now, AFTER day12 was already evaluated.
+    # Its own value (3.0) would be "below threshold" if it were (wrongly)
+    # treated as current.
+    await db_session.commit()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+    day11_fact = await _seed_curve_point(
+        db_session, spot_rate_pct="3.0", valid_on=dt.date(2026, 9, 11),
+        knowledge_time=dt.datetime(2026, 9, 13, 8, 0, tzinfo=dt.UTC),
+    )
+    await db_session.commit()
+    await _act_as(db_session, account_id=account_id, principal_id=principal_id)
+    third = await evaluate_rule_version(
+        db_session, rule_version_id=rule_version_id, trigger_type=_TRIGGER_TYPE,
+        trigger_id=day11_fact.id,
+    )
+
+    assert isinstance(third, RuleEvaluationRecorded)
+    assert third.outcome == OUTCOME_STILL_MATCHED, (
+        "a late-arriving, chronologically-earlier straggler must never look "
+        "like a fresh re-crossing or un-fire the real MATCH"
+    )
+    assert third.rule_evaluation_id != second.rule_evaluation_id, (
+        "a new trigger must still be recorded as its own evaluation row, "
+        "even though it changes nothing about the current state"
+    )
+
+    # The evaluation's own recorded evidence must point at day12's fact -
+    # proof the engine resolved the CURRENT value (day12), not the fact
+    # that happened to trigger this call (day11).
+    third_input = (
+        await db_session.execute(
+            select(RuleEvaluationInput).where(
+                RuleEvaluationInput.rule_evaluation_id == third.rule_evaluation_id
+            )
+        )
+    ).scalar_one()
+    assert third_input.accepted_fact_id == day12_fact.id
+    assert third_input.accepted_fact_id != day11_fact.id
+
+    match_count = (
+        await db_session.execute(
+            select(RuleEvaluation).where(
+                RuleEvaluation.rule_version_id == rule_version_id,
+                RuleEvaluation.outcome == OUTCOME_MATCH,
+            )
+        )
+    ).all()
+    assert len(match_count) == 1, "the out-of-order straggler must not cause a second MATCH"
 
 
 async def test_insert_without_rls_context_is_rejected(db_session: AsyncSession) -> None:
