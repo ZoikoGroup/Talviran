@@ -219,6 +219,7 @@ export default function TradingViewModal({
 
             <button
               onClick={onClose}
+              aria-label="Close chart"
               className="grid h-8 w-8 place-items-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground transition"
             >
               <X className="h-5 w-5" />
@@ -256,6 +257,7 @@ export default function TradingViewModal({
               <div className="flex rounded-lg border border-border/80 bg-background/50 p-0.5 text-[11px]">
                 <button
                   onClick={() => setChartMode('candles')}
+                  aria-label="Switch to candlestick chart style"
                   className={cn(
                     'inline-flex items-center gap-1.5 rounded-md px-2 sm:px-2.5 py-1 font-medium transition text-[11px]',
                     chartMode === 'candles' ? 'bg-primary text-white shadow-xs' : 'text-muted-foreground hover:text-white'
@@ -266,6 +268,7 @@ export default function TradingViewModal({
                 </button>
                 <button
                   onClick={() => setChartMode('area')}
+                  aria-label="Switch to area line chart style"
                   className={cn(
                     'inline-flex items-center gap-1.5 rounded-md px-2 sm:px-2.5 py-1 font-medium transition text-[11px]',
                     chartMode === 'area' ? 'bg-primary text-white shadow-xs' : 'text-muted-foreground hover:text-white'

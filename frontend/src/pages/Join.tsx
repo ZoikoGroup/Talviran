@@ -153,37 +153,33 @@ export default function Join() {
               </div>
             )}
 
-            <Field label="Email address" hint="Locked to the invited address">
-              <input
-                type="email"
-                disabled
-                value={invitation?.email}
-                className="w-full rounded-xl border border-border/80 bg-muted/50 px-3.5 py-2 text-xs font-mono text-muted-foreground cursor-not-allowed"
-              />
-            </Field>
+            <Field
+              label="Email address"
+              hint="Locked to the invited address"
+              type="email"
+              disabled
+              value={invitation?.email}
+            />
 
-            <Field label="Set your password" hint="Minimum 8 characters">
-              <input
-                type="password"
-                required
-                autoFocus
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Choose a strong password"
-                className="w-full rounded-xl border border-border/80 bg-background px-3.5 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </Field>
+            <Field
+              label="Set your password"
+              hint="Minimum 8 characters"
+              type="password"
+              required
+              autoFocus
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Choose a strong password"
+            />
 
-            <Field label="Confirm password">
-              <input
-                type="password"
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm your password"
-                className="w-full rounded-xl border border-border/80 bg-background px-3.5 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </Field>
+            <Field
+              label="Confirm password"
+              type="password"
+              required
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Confirm your password"
+            />
 
             <SubmitButton busy={submitting}>
               {submitting ? 'Activating Seat...' : 'Accept & Join Workspace'}

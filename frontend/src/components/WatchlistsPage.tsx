@@ -412,7 +412,7 @@ export default function WatchlistsPage({
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-background p-6 md:p-8">
       {/* Header */}
-      <div className="mx-auto flex w-full max-w-7xl items-start justify-between gap-4 pb-6 border-b border-border">
+      <div className="mx-auto flex w-full max-w-7xl flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-border">
         <div>
           <div className="flex items-center gap-2.5">
             {onBack && (
@@ -435,10 +435,10 @@ export default function WatchlistsPage({
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
           <Link
             to="/guides?topic=platform-surfaces"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border/80 bg-background px-3 py-2 text-[12.5px] font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border/80 bg-background px-3 py-2 text-[12.5px] font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition-colors w-full sm:w-auto"
             title="Read documentation on portfolio watchlists & canonical reconciliation"
           >
             <BookOpen className="h-4 w-4 text-primary" />
@@ -447,7 +447,7 @@ export default function WatchlistsPage({
 
           <button
             onClick={() => setShowNewWatchlist(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-[13px] font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 active:scale-95"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-[13px] font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 active:scale-95 w-full sm:w-auto"
           >
             <FolderPlus className="h-4 w-4" />
             <span>New Watchlist</span>
@@ -505,6 +505,7 @@ export default function WatchlistsPage({
                 <button
                   onClick={() => handleDeleteWatchlist(currentList.id)}
                   title="Delete Watchlist"
+                  aria-label={`Delete watchlist ${currentList.name}`}
                   className="rounded-lg p-1.5 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-400 transition"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -725,6 +726,7 @@ export default function WatchlistsPage({
                             <button
                               onClick={() => onOpenMonitoringForRule && onOpenMonitoringForRule(item.symbol)}
                               title="Set Alert Rule"
+                              aria-label={`Set alert rule for ${item.symbol}`}
                               className="rounded-lg border border-border p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition"
                             >
                               <Bell className="h-3.5 w-3.5" />
@@ -733,6 +735,7 @@ export default function WatchlistsPage({
                             <button
                               onClick={() => handleRemoveItem(item.id)}
                               title="Remove from watchlist"
+                              aria-label={`Remove ${item.symbol} from watchlist`}
                               className="rounded-lg p-1 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-400 transition"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -759,25 +762,21 @@ export default function WatchlistsPage({
                 Create a custom portfolio or observation basket to track across global markets.
               </p>
               <form onSubmit={handleCreateWatchlist} className="mt-5 space-y-4">
-                <Field label="Watchlist Name">
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. European Inflation & Sovereign Debt"
-                    value={newWatchlistName}
-                    onChange={(e) => setNewWatchlistName(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13.5px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </Field>
-                <Field label="Description (optional)">
-                  <input
-                    type="text"
-                    placeholder="Brief description of portfolio scope"
-                    value={newWatchlistDesc}
-                    onChange={(e) => setNewWatchlistDesc(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13.5px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </Field>
+                <Field
+                  label="Watchlist Name"
+                  type="text"
+                  required
+                  placeholder="e.g. European Inflation & Sovereign Debt"
+                  value={newWatchlistName}
+                  onChange={(e) => setNewWatchlistName(e.target.value)}
+                />
+                <Field
+                  label="Description (optional)"
+                  type="text"
+                  placeholder="Brief description of portfolio scope"
+                  value={newWatchlistDesc}
+                  onChange={(e) => setNewWatchlistDesc(e.target.value)}
+                />
                 <div className="mt-6 flex justify-end gap-2.5">
                   <button
                     type="button"
@@ -804,28 +803,31 @@ export default function WatchlistsPage({
                 Track a benchmark rate, sovereign bond, index, or currency pair.
               </p>
               <form onSubmit={handleAddItem} className="mt-5 space-y-4">
-                <Field label="Symbol / Ticker">
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. UK 5Y Gilt, EUR/GBP, NASDAQ 100"
-                    value={itemSymbol}
-                    onChange={(e) => setItemSymbol(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13.5px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </Field>
-                <Field label="Instrument Name">
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. United Kingdom 5-Year Sovereign Benchmark"
-                    value={itemName}
-                    onChange={(e) => setItemName(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13.5px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </Field>
-                <Field label="Asset Class">
+                <Field
+                  label="Symbol / Ticker"
+                  type="text"
+                  required
+                  placeholder="e.g. UK 5Y Gilt, EUR/GBP, NASDAQ 100"
+                  value={itemSymbol}
+                  onChange={(e) => setItemSymbol(e.target.value)}
+                />
+                <Field
+                  label="Instrument Name"
+                  type="text"
+                  required
+                  placeholder="e.g. United Kingdom 5-Year Sovereign Benchmark"
+                  value={itemName}
+                  onChange={(e) => setItemName(e.target.value)}
+                />
+                <div>
+                  <label
+                    htmlFor="add-item-asset-class"
+                    className="mb-2 block text-[13px] font-medium leading-none"
+                  >
+                    Asset Class
+                  </label>
                   <select
+                    id="add-item-asset-class"
                     value={itemAssetClass}
                     onChange={(e) => setItemAssetClass(e.target.value)}
                     className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13.5px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -835,7 +837,7 @@ export default function WatchlistsPage({
                     <option value="FX">Foreign Exchange (FX)</option>
                     <option value="COMMODITY">Commodity (COMMODITY)</option>
                   </select>
-                </Field>
+                </div>
                 <div className="mt-6 flex justify-end gap-2.5">
                   <button
                     type="button"
