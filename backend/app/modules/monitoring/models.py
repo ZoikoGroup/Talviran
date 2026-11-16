@@ -299,6 +299,15 @@ class Alert(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         PGUUID(as_uuid=True), ForeignKey("evidence.evidence_bundle.id"), default=None
     )
     status: Mapped[str] = mapped_column(String(16), default=STATUS_ALERT_CREATED)
+    # UAT gap-analysis G12: set when the accepted_fact this alert's own
+    # evidence_bundle_id cites has since been materially corrected -
+    # market/pipeline/correction_propagation.py is the only writer. NULL
+    # means "no correction has touched this alert's evidence," not "this
+    # alert was definitely never wrong" - an alert created before any
+    # evidence bundle existed can never be flagged this way.
+    reassessment_correction_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("market.correction_event.id"), default=None
+    )
 
 
 class AlertSuppression(UUIDPrimaryKeyMixin, Base):

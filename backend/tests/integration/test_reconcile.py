@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.market.models import (
     AcceptedFact,
+    CorrectionEvent,
     Dataset,
     Source,
     SourceArtifact,
@@ -178,6 +179,85 @@ async def test_changed_value_supersedes_without_mutating_history(db_session: Asy
     assert old_fact.value == {"coupon_rate": "4.25"}, "history must never be rewritten in place"
     assert new_fact.status == "ACTIVE"
     assert new_fact.value == {"coupon_rate": "4.50"}
+
+
+async def test_a_real_correction_records_a_correction_event(db_session: AsyncSession) -> None:
+    """UAT gap-analysis G12: proves the actual wiring, not just
+    correction_propagation.py in isolation - a genuine value-change
+    correction through the real reconcile_and_publish path must produce a
+    market.correction_event row linking the two real fact versions."""
+    subject_id = uuid.uuid4()
+    t0 = dt.datetime.now(dt.UTC)
+    t1 = t0 + dt.timedelta(days=1)
+
+    first = await reconcile_and_publish(
+        db_session, subject_type="INSTRUMENT", subject_id=subject_id, metric_id="TEST_METRIC",
+        candidates=[await _candidate(db_session, coupon_rate="4.25")],
+        policy=_POLICY, valid_range=_VALID_RANGE, knowledge_time=t0,
+    )
+    await db_session.commit()
+
+    second = await reconcile_and_publish(
+        db_session, subject_type="INSTRUMENT", subject_id=subject_id, metric_id="TEST_METRIC",
+        candidates=[await _candidate(db_session, coupon_rate="4.50")],
+        policy=_POLICY, valid_range=_VALID_RANGE, knowledge_time=t1,
+    )
+    await db_session.commit()
+
+    events = (
+        await db_session.execute(
+            select(CorrectionEvent).where(CorrectionEvent.new_fact_id == second.accepted_fact_id)
+        )
+    ).scalars().all()
+    assert len(events) == 1
+    assert events[0].old_fact_id == first.accepted_fact_id
+    assert events[0].subject_id == subject_id
+    assert events[0].metric_id == "TEST_METRIC"
+    # TEST_METRIC has no registered materiality rule - classify_materiality's
+    # own documented default is to treat any change as material.
+    assert events[0].is_material is True
+
+
+async def test_an_agreeing_source_republish_records_no_correction_event(
+    db_session: AsyncSession,
+) -> None:
+    """The 'agreeing source' path (reconcile.py's own second reason branch)
+    re-publishes the SAME value once a second source has weighed in on it -
+    nothing a reader would ever see changed, so this must never create a
+    correction_event at all, not even an immaterial one. Triggering it for
+    real needs both the already-backing observation and the new agreeing
+    one in the same call (reconcile.py's own `backed_present`/
+    `new_agreeing_source` logic reads both from one candidates list, the
+    same shape ingest_tail._gather_candidates actually produces)."""
+    subject_id = uuid.uuid4()
+    t0 = dt.datetime.now(dt.UTC)
+    t1 = t0 + dt.timedelta(days=1)
+
+    original_candidate = await _candidate(db_session, coupon_rate="4.25", source_code="source-b")
+    first = await reconcile_and_publish(
+        db_session, subject_type="INSTRUMENT", subject_id=subject_id, metric_id="TEST_METRIC",
+        candidates=[original_candidate],
+        policy=_POLICY, valid_range=_VALID_RANGE, knowledge_time=t0,
+    )
+    await db_session.commit()
+
+    agreeing_candidate = await _candidate(db_session, coupon_rate="4.25", source_code="source-a")
+    second = await reconcile_and_publish(
+        db_session, subject_type="INSTRUMENT", subject_id=subject_id, metric_id="TEST_METRIC",
+        candidates=[original_candidate, agreeing_candidate],
+        policy=_POLICY, valid_range=_VALID_RANGE, knowledge_time=t1,
+    )
+    await db_session.commit()
+
+    assert second.decision == "ACCEPTED"
+    assert second.accepted_fact_id != first.accepted_fact_id  # still a new, linking fact row
+
+    events = (
+        await db_session.execute(
+            select(CorrectionEvent).where(CorrectionEvent.new_fact_id == second.accepted_fact_id)
+        )
+    ).scalars().all()
+    assert events == []
 
 
 async def test_disagreeing_candidates_flag_conflict_and_create_no_fact(

@@ -175,6 +175,41 @@ class FactObservationLink(UUIDPrimaryKeyMixin, Base):
     role: Mapped[str] = mapped_column(String(20))
 
 
+class CorrectionEvent(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """One row per real value-change correction to an accepted_fact (UAT
+    gap-analysis G12: "corrections create a new version and a
+    material-change link"). Written once, immediately after reconcile.py
+    sets the superseded row's `superseded_by_id` — always recorded,
+    whether or not the change turns out to be material, so the full
+    correction history is reconstructable even for changes nobody needed
+    to act on. `is_material`/`explanation` reuse the same per-metric
+    materiality.py classification the "what changed" answer-composition
+    path already uses (market/change_detection.py) — one materiality
+    definition, not two.
+
+    Only a *material* correction propagates `id` onto
+    research.message.reassessment_correction_id / monitoring.alert.
+    reassessment_correction_id (market/pipeline/correction_propagation.py)
+    — an immaterial republish (e.g. a new agreeing source for the same
+    value) must not flag every saved answer that ever cited the metric.
+    """
+
+    __tablename__ = "correction_event"
+    __table_args__ = {"schema": "market"}
+
+    subject_type: Mapped[str] = mapped_column(String(32))
+    subject_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), index=True)
+    metric_id: Mapped[str] = mapped_column(String(64), index=True)
+    old_fact_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("market.accepted_fact.id"), index=True
+    )
+    new_fact_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("market.accepted_fact.id"), index=True
+    )
+    is_material: Mapped[bool]
+    explanation: Mapped[str] = mapped_column(String(1000))
+
+
 class OutboxEvent(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     """Transactional outbox — written in the same transaction as the
     accepted_fact it announces (ENG-ARCH-003: outbox + durable job table in
