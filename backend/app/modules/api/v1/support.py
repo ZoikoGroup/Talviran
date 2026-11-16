@@ -14,7 +14,7 @@ from app.core.config import get_settings
 from app.core.email_templates.engine import render_talvrin_email_html
 from app.modules.api.v1.deps import OptionalIdentityDep, SessionDep
 from app.modules.audit.service import record_event
-from app.modules.monitoring.delivery import _send_resend_email
+from app.modules.monitoring.delivery import send_transactional_email
 from app.modules.support.models import Ticket
 from app.modules.support.service import (
     NewTicketEmails,
@@ -82,16 +82,14 @@ async def _dispatch_support_emails(
     AI-001 applies to the AI Gateway).
     """
     settings = get_settings()
-    if not settings.resend_api_key:
+    if not settings.smtp_host and not settings.resend_api_key:
         logger.info(
-            "Resend API key not configured; leaving email dispatch for ticket %s queued",
+            "No email transport configured; leaving email dispatch for ticket %s queued",
             ref_code,
         )
         return
 
-    from_email = settings.support_from_email or settings.alerts_from_email
-
-    # 1. Dispatch internal alert to institutional desk (talvrin@zoikogroup.com)
+    # 1. Dispatch internal alert to the support desk mailbox
     desk_body = (
         f"A new institutional ticket has been submitted to the Talvrin platform:\n\n"
         f"• Reference: {ref_code}\n"
@@ -128,14 +126,12 @@ async def _dispatch_support_emails(
     )
 
     try:
-        desk_sent = _send_resend_email(
+        desk_sent = send_transactional_email(
             to_email=settings.support_inbox_email,
             subject=f"[{ref_code}] New {cat_name} - {req.subject}",
             html_content=desk_html,
-            api_key=settings.resend_api_key,
-            from_email=from_email,
         )
-        desk_error = None if desk_sent else "Resend reported a non-2xx response"
+        desk_error = None if desk_sent else "email transport reported failure"
         if desk_sent:
             logger.info(
                 "Dispatched ticket %s notification to %s",
@@ -183,14 +179,12 @@ async def _dispatch_support_emails(
 
         assert dispatches.user_receipt_dispatch_id is not None  # contact_email implies this
         try:
-            user_sent = _send_resend_email(
+            user_sent = send_transactional_email(
                 to_email=req.contact_email,
                 subject=f"Receipt Confirmation: [{ref_code}] {req.subject}",
                 html_content=user_html,
-                api_key=settings.resend_api_key,
-                from_email=from_email,
             )
-            user_error = None if user_sent else "Resend reported a non-2xx response"
+            user_error = None if user_sent else "email transport reported failure"
             if user_sent:
                 logger.info(
                     "Dispatched ticket %s confirmation to %s", ref_code, req.contact_email

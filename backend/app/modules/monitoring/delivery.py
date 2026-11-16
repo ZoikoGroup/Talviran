@@ -2,9 +2,13 @@
 
 import json
 import logging
+import smtplib
+import ssl
 import urllib.request
 import uuid
 from dataclasses import dataclass
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,6 +68,79 @@ def _send_resend_email(
     except Exception as exc:
         logger.warning("Failed to dispatch alert via Resend: %s", exc)
         return False
+
+
+def _send_smtp_email(
+    to_email: str,
+    subject: str,
+    html_content: str,
+    *,
+    host: str,
+    port: int,
+    user: str,
+    password: str,
+    from_email: str,
+) -> bool:
+    """Dispatches transactional email via a direct SMTP connection to a real
+    hosted mailbox (e.g. GoDaddy's smtpout.secureserver.net). Port 465 is
+    implicit TLS (SMTP_SSL); anything else is plain SMTP upgraded with
+    STARTTLS - the two connection modes a hosted mailbox actually offers.
+    """
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = from_email
+        msg["To"] = to_email
+        msg.attach(MIMEText(html_content, "html"))
+
+        context = ssl.create_default_context()
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, timeout=10, context=context) as server:
+                server.login(user, password)
+                server.sendmail(from_email, [to_email], msg.as_string())
+        else:
+            with smtplib.SMTP(host, port, timeout=10) as server:
+                server.starttls(context=context)
+                server.login(user, password)
+                server.sendmail(from_email, [to_email], msg.as_string())
+        return True
+    except Exception as exc:
+        logger.warning("Failed to dispatch email via SMTP to %s: %s", to_email, exc)
+        return False
+
+
+def send_transactional_email(to_email: str, subject: str, html_content: str) -> bool:
+    """Single entry point for transactional email (ticket receipts, desk
+    notifications, etc.): a configured SMTP mailbox is used in preference to
+    Resend, so callers never need to know or care which transport is
+    actually wired up in this environment. Logs and returns False rather
+    than raising when neither transport is configured.
+    """
+    settings = get_settings()
+
+    if settings.smtp_host and settings.smtp_user and settings.smtp_pass:
+        return _send_smtp_email(
+            to_email,
+            subject,
+            html_content,
+            host=settings.smtp_host,
+            port=settings.smtp_port,
+            user=settings.smtp_user,
+            password=settings.smtp_pass,
+            from_email=settings.smtp_from or settings.smtp_user,
+        )
+
+    if settings.resend_api_key:
+        return _send_resend_email(
+            to_email=to_email,
+            subject=subject,
+            html_content=html_content,
+            api_key=settings.resend_api_key,
+            from_email=settings.support_from_email or settings.alerts_from_email,
+        )
+
+    logger.info("No email transport configured; skipping send to %s", to_email)
+    return False
 
 
 # send_market_alert_email used to live here: a caller-controlled email

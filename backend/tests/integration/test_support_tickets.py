@@ -47,6 +47,37 @@ _PAYLOAD = {
 }
 
 
+class _NoTransportSettings:
+    """Real-looking settings with no email transport configured.
+
+    Without this, these tests pick up whatever real SMTP/Resend credentials
+    happen to be in the developer's own .env (get_settings() reads it same
+    as the dev server does) and send genuine email through them on every
+    test run - confirmed: before this fixture existed, a single local test
+    run sent several real emails through the live SMTP mailbox. Tests that
+    specifically want to exercise the dispatch path override
+    app.modules.api.v1.support.get_settings/send_transactional_email
+    themselves, which simply wins by running later in the same test.
+    """
+
+    resend_api_key: str | None = None
+    smtp_host = None
+    smtp_port = 465
+    smtp_user = None
+    smtp_pass = None
+    smtp_from = None
+    support_from_email = "support@app.talvrin.com"
+    alerts_from_email = "alerts@app.talvrin.com"
+    support_inbox_email = "talvrin@zoikogroup.com"
+
+
+@pytest.fixture(autouse=True)
+def _no_real_email_transport_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.modules.api.v1.support.get_settings", lambda: _NoTransportSettings()
+    )
+
+
 async def test_an_anonymous_visitor_can_submit_a_ticket(
     client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -177,20 +208,20 @@ async def test_a_failed_email_send_still_leaves_a_durable_failed_ticket(
     `logger.error()` used to leave it.
     """
 
-    class _FakeSettings:
+    class _FakeSettingsWithTransport(_NoTransportSettings):
+        # Must be truthy so _dispatch_support_emails's "no transport
+        # configured" early-return doesn't skip the send attempt below
+        # before send_transactional_email (mocked to fail) is ever reached.
         resend_api_key = "test-key-not-real"
-        support_from_email = "support@app.talvrin.com"
-        alerts_from_email = "alerts@app.talvrin.com"
-        support_inbox_email = "talvrin@zoikogroup.com"
 
     monkeypatch.setattr(
-        "app.modules.api.v1.support.get_settings", lambda: _FakeSettings()
+        "app.modules.api.v1.support.get_settings", lambda: _FakeSettingsWithTransport()
     )
 
     def _boom(**kwargs: object) -> bool:
         raise RuntimeError("simulated Resend outage")
 
-    monkeypatch.setattr("app.modules.api.v1.support._send_resend_email", _boom)
+    monkeypatch.setattr("app.modules.api.v1.support.send_transactional_email", _boom)
 
     payload = {**_PAYLOAD, "contact_email": "investor@example.com"}
     r = await client.post("/api/v1/support/tickets", json=payload)

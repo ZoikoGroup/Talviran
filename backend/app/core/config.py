@@ -116,6 +116,16 @@ class Settings(BaseSettings):
     support_inbox_email: str = "talvrin@zoikogroup.com"
     support_from_email: str = "support@app.talvrin.com"
 
+    #: Direct SMTP transport (e.g. a real hosted mailbox) for transactional
+    #: email - checked before Resend in send_transactional_email() so a
+    #: configured mailbox is used in preference to a third-party API key.
+    #: Optional: only required when that mailbox is actually the transport.
+    smtp_host: str | None = None
+    smtp_port: int = 465
+    smtp_user: str | None = None
+    smtp_pass: str | None = None
+    smtp_from: str | None = None
+
     #: Stripe billing configuration
     stripe_secret_key: str | None = None
     stripe_publishable_key: str | None = None
