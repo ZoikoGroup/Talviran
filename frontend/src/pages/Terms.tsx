@@ -12,13 +12,15 @@ import PageLayout, {
  * Grounded in PRD-001 §11 (recommendation-safe interaction contract), §12
  * (commercial and tier contract), RIGHTS-001 §15 (export, download, API and
  * redistribution) and §14 (attribution), and POL-001 §14 (execution and
- * dealing adjacency).
+ * dealing adjacency). The Plans and billing section is grounded in the real
+ * commercial module (app/modules/commercial/{models,service}.py) - the five
+ * price-book tiers, Stripe checkout and cancel_at_period_end semantics are
+ * actual code, not illustrative figures.
  *
  * Deliberately absent: governing law, jurisdiction, limitation of liability,
- * warranty disclaimers, termination, payment and refund terms, indemnities and
- * dispute resolution. None of those exist anywhere in the documentation estate,
- * and a contract is exactly the wrong place to improvise. The notice at the top
- * says so.
+ * warranty disclaimers, indemnities and dispute resolution. None of those
+ * exist anywhere in the documentation estate, and a contract is exactly the
+ * wrong place to improvise. The notice at the top says so.
  */
 
 const ALLOWED = [
@@ -47,6 +49,7 @@ const TOC: TocEntry[] = [
   { id: 'decisions', label: 'Your decisions' },
   { id: 'data', label: 'Licensed data' },
   { id: 'account', label: 'Your account' },
+  { id: 'plans', label: 'Plans and billing' },
   { id: 'availability', label: 'Availability' },
   { id: 'jurisdiction', label: 'Where it is available' },
   { id: 'changes', label: 'Changes to these terms' },
@@ -180,12 +183,29 @@ export default function Terms() {
           />
         </Section>
 
+        <Section id="plans" heading="Plans and billing">
+          <p>
+            Talvrin is offered on five plan tiers — Explorer (free evaluation),
+            Research, Professional, Teams and Enterprise (custom) — billed
+            monthly or annually. Checkout is handled through Stripe where
+            configured. Cancelling a paid plan stops automatic renewal but
+            does not cut off access immediately: your plan's full benefits
+            remain available until the current billing period ends, at which
+            point the account reverts to the free tier. A specific refund
+            policy is not yet published; see the notice above.
+          </p>
+        </Section>
+
         <Section id="availability" heading="Availability">
           <p>
-            Talvrin is currently a prototype. It is not connected to live market
-            data, the content shown is placeholder material, and no service level
-            is offered or implied. Do not rely on anything in the current build
-            for a real decision.
+            Talvrin ingests real data from its connected sources — including
+            UK DMO gilts, the Bank of England yield curve, Frankfurter FX,
+            DBnomics macro data and Twelve Data equities — rather than showing
+            placeholder content. Coverage is bounded by which sources are connected and
+            which metrics have a registered freshness profile: an instrument
+            or metric Talvrin doesn't yet connect to is reported as
+            unavailable, not silently approximated. No specific uptime or
+            service level is offered or implied.
           </p>
         </Section>
 

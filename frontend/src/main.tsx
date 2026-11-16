@@ -17,6 +17,7 @@ import Terms from '@/pages/Terms'
 import Contact from '@/pages/Contact'
 import Cookies from '@/pages/Cookies'
 import Disclaimers from '@/pages/Disclaimers'
+import AcceptableUse from '@/pages/AcceptableUse'
 import Accessibility from '@/pages/Accessibility'
 import DataProcessingAddendum from '@/pages/DataProcessingAddendum'
 import AiTerms from '@/pages/AiTerms'
@@ -100,6 +101,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/cookies" element={<Cookies />} />
                 <Route path="/disclaimers" element={<Disclaimers />} />
+                <Route path="/acceptable-use" element={<AcceptableUse />} />
                 <Route path="/accessibility" element={<Accessibility />} />
                 <Route path="/dpa" element={<DataProcessingAddendum />} />
                 <Route path="/ai-terms" element={<AiTerms />} />

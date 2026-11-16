@@ -24,6 +24,7 @@ const FOOTER_LINKS = [
   { to: '/terms', label: 'Terms' },
   { to: '/cookies', label: 'Cookies' },
   { to: '/disclaimers', label: 'Disclaimers' },
+  { to: '/acceptable-use', label: 'Acceptable Use' },
   { to: '/accessibility', label: 'Accessibility' },
   { to: '/dpa', label: 'DPA' },
   { to: '/ai-terms', label: 'AI Terms' },
