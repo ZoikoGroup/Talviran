@@ -46,7 +46,9 @@ async def _make_instrument(
     await db_session.flush()
 
     db_session.add(
-        InstrumentAlias(instrument_id=instrument.id, alias_type="TICKER", alias_value=ticker)
+        InstrumentAlias(
+            instrument_id=instrument.id, alias_type="TICKER", alias_value=ticker.upper()
+        )
     )
     if isin:
         db_session.add(
@@ -125,10 +127,10 @@ async def test_share_class_variants_are_distinct_not_collapsed(db_session: Async
     db_session.add_all(
         [
             InstrumentAlias(
-                instrument_id=class_a.id, alias_type="TICKER", alias_value=f"GOOGL{suffix}"
+                instrument_id=class_a.id, alias_type="TICKER", alias_value=f"GOOGL{suffix}".upper()
             ),
             InstrumentAlias(
-                instrument_id=class_c.id, alias_type="TICKER", alias_value=f"GOOG{suffix}"
+                instrument_id=class_c.id, alias_type="TICKER", alias_value=f"GOOG{suffix}".upper()
             ),
         ]
     )
