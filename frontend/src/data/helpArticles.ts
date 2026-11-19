@@ -64,9 +64,9 @@ export const ARTICLES: Article[] = [
     category: 'Getting started',
     question: 'What is the difference between talvrin-go and talvrin-pro?',
     answer: [
-      'talvrin-go is tuned for fast answers to everyday lookups and conventions. talvrin-pro works through deeper evidence chains and multi-step calculations, and takes longer.',
-      'Both are held to the same evidence rules. Choosing a different model changes how much work goes into the answer, never whether a figure needs a source.',
-      'You can switch models from the pill in the composer at any point, including mid-conversation. Earlier replies keep the model that produced them, shown next to the Talvrin name.',
+      'Use talvrin-go for focused questions and quick lookups. Use talvrin-pro for research that combines multiple sources or requires more detailed analysis and takes longer to run.',
+      'Both use the same evidence and access rules. Choosing an engine changes how much work goes into the answer — never whether a figure needs a source, and never which data you are entitled to see.',
+      'You can switch engines from the pill in the composer at any point, including mid-conversation. Earlier replies keep the engine that produced them, shown next to the Talvrin name. We do not promise a fixed response time for either engine; actual speed depends on the question.',
     ],
   },
 
@@ -119,11 +119,10 @@ export const ARTICLES: Article[] = [
   {
     id: 'no-advice',
     category: 'What Talvrin will not do',
-    question: 'Why won’t Talvrin tell me whether to buy something?',
+    question: 'Why won’t Talvrin tell me whether to buy or sell an asset?',
     answer: [
-      'Talvrin has no buy, sell or hold output — not a cautious one, not a hedged one. There is no response type, API field, alert action or button for it anywhere in the product.',
-      'Partly this is regulatory: making personal recommendations about investments is a regulated activity in most jurisdictions. Mostly it is the point of the product. Talvrin’s job is to get you to the evidence quickly and show its working, so the judgement stays yours and is defensible.',
-      'If you ask anyway, it will recognise what you meant and route you to the facts, calculations and comparisons that bear on the question.',
+      'Talvrin helps you research public markets and inspect the evidence behind the results. It does not provide personalized investment advice or buy, sell or hold recommendations — there is no response type, API field, alert action or button for one anywhere in the product.',
+      'Review the sources, assumptions and limitations behind an answer, and make your own decision. If you ask for a recommendation anyway, Talvrin recognizes what you meant and routes you to the facts, calculations and comparisons that bear on the question instead.',
     ],
   },
   {
@@ -176,8 +175,8 @@ export const ARTICLES: Article[] = [
     category: 'Account',
     question: 'What happens to my research history?',
     answer: [
-      'Your chats, projects and settings are stored so the product has continuity between sessions. They are not turned into behavioural marketing profiles, are not used to train models, and are not used to infer what kind of investor you are.',
-      'In the current prototype this state lives in your own browser and never leaves your device.',
+      'Your chats, projects and settings are stored on the server against your account, not just in this browser, so they follow you between devices and sessions. They are not turned into behavioral marketing profiles, are not used to train models, and are not used to infer what kind of investor you are.',
+      'Research content is encrypted at rest per account. Signing in on a new device loads your existing chats and projects from the server rather than starting empty.',
     ],
   },
   {
@@ -193,8 +192,8 @@ export const ARTICLES: Article[] = [
     category: 'Account',
     question: 'Is this the finished product?',
     answer: [
-      'No. This build is a working interface on placeholder content. There is no live market data, answers are canned examples, and sign-in does not check credentials against anything.',
-      'Do not rely on any figure you see in the current build for a real decision.',
+      'No, but it is not a disconnected demo either. Talvrin runs on real connectors — UK DMO gilts, the Bank of England yield curve, Frankfurter FX rates, DBnomics macro series and Twelve Data equities — reconciled into the platform’s own record, and sign-in is checked by a real authentication provider.',
+      'Coverage is still bounded by which sources are connected, and some planned capabilities — such as exporting a research dossier — are not built yet. Where a figure or capability is not available, the product says so rather than guessing.',
     ],
   },
 ]

@@ -932,7 +932,7 @@ export function ComparisonPage({
                   ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 shadow-sm'
                   : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
               }`}
-              title="Highlight the top-performing value for each metric in green with a checkmark"
+              title="Mark the lowest Trailing P/E among the loaded instruments — a lower multiple is not automatically the better investment, just the lower number"
             >
               <Award className="w-3.5 h-3.5 text-emerald-400" />
               <span>{highlightLeader ? 'Highlight values: ON' : 'Highlight values: OFF'}</span>

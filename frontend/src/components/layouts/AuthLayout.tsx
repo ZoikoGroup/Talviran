@@ -95,7 +95,8 @@ export default function AuthLayout({
             </Link>
           ))}
           <span className="ml-auto hidden sm:inline">
-            Prototype — sessions are held locally on this device.
+            Sign-in is handled by our authentication provider; your session stays with your
+            account, not just this device.
           </span>
         </div>
       </div>
