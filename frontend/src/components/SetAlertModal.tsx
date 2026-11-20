@@ -239,7 +239,7 @@ export default function SetAlertModal({
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 p-2 sm:p-4 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto">
-      <div className="relative my-auto flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl border border-border bg-[#0e1218] p-4 sm:p-5 shadow-2xl text-foreground animate-in zoom-in-95 duration-150">
+      <div className="relative my-auto flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-2xl text-foreground animate-in zoom-in-95 duration-150">
         <div className="flex shrink-0 items-center justify-between border-b border-border/60 pb-2.5">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary border border-primary/20">
@@ -340,7 +340,7 @@ export default function SetAlertModal({
                   <div className="text-[10px] font-semibold tracking-wider text-emerald-400 uppercase">
                     Live Market Price / Yield
                   </div>
-                  <div className="font-mono text-base font-bold text-white tracking-tight">
+                  <div className="font-mono text-base font-bold text-foreground tracking-tight">
                     {currentPrice}
                   </div>
                 </div>

@@ -32,6 +32,7 @@ import { toast } from 'sonner'
 import TradingViewScreener from '@/components/TradingViewScreener'
 import type { TaggedAsset } from '@/data/mockReply'
 import { useLiveMarket } from '@/hooks/useLiveMarket'
+import { useTheme } from '@/theme/ThemeContext'
 
 interface MarketsPageProps {
   initialSymbol?: string | null
@@ -98,6 +99,7 @@ export default function MarketsPage({
   const [isSyncing, setIsSyncing] = useState(false)
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
   const { livePrices } = useLiveMarket()
+  const { theme } = useTheme()
 
   useEffect(() => {
     void listWatchlists().then(setWatchlists).catch(() => {})
@@ -452,7 +454,7 @@ export default function MarketsPage({
             <TradingViewScreener
               initialMarket={activeRegion === 'UK' ? 'uk' : activeRegion === 'EU' ? 'germany' : activeRegion === 'APAC' ? 'india' : 'america'}
               height={850}
-              colorTheme="dark"
+              colorTheme={theme}
               onStartResearch={onStartResearch}
             />
           </div>
@@ -735,7 +737,7 @@ export default function MarketsPage({
 
                                 {/* Watchlist Selection Menu */}
                                 {activeDropdownSymbol === asset.symbol && (
-                                  <div className="absolute right-0 top-full z-30 mt-1 w-52 rounded-xl border border-border bg-[#12151c] p-1.5 shadow-xl text-left animate-in fade-in zoom-in-95">
+                                  <div className="absolute right-0 top-full z-30 mt-1 w-52 rounded-xl border border-border bg-card p-1.5 shadow-xl text-left animate-in fade-in zoom-in-95">
                                     <div className="px-2 py-1 text-[11px] font-medium text-muted-foreground border-b border-border/60">
                                       Select Target Watchlist
                                     </div>
@@ -749,7 +751,7 @@ export default function MarketsPage({
                                           <button
                                             key={wl.id}
                                             onClick={() => handleAddToWatchlist(wl.id, asset)}
-                                            className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[12px] text-foreground hover:bg-white/10 transition text-left"
+                                            className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[12px] text-foreground hover:bg-accent transition text-left"
                                           >
                                             <span className="truncate">{wl.name}</span>
                                             <Bookmark className="h-3 w-3 opacity-50 shrink-0" />

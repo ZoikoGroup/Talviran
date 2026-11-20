@@ -32,6 +32,7 @@ import { mapToTradingViewSymbol } from './TradingViewWidget'
 import { useEntitlement } from '../context/EntitlementContext'
 import { toast } from 'sonner'
 import SetAlertModal from './SetAlertModal'
+import { useTheme } from '../theme/ThemeContext'
 
 export interface ComparisonPageProps {
   onBackToHome?: () => void
@@ -208,6 +209,7 @@ export function ComparisonPage({
   }, [selectedSymbols, activeChartSymbol])
 
   const [chartStyle, setChartStyle] = useState<'2' | '10' | '1'>('2') // '2' is % Return Line (all curves full width), '10' is Baseline, '1' is Candlestick
+  const { theme } = useTheme()
 
   // Embed verified live TradingView market comparison chart
   useEffect(() => {
@@ -239,7 +241,7 @@ export function ComparisonPage({
       symbol: primaryTvSymbol,
       interval: 'D',
       timezone: 'Etc/UTC',
-      theme: 'dark',
+      theme,
       style: chartStyle,
       locale: 'en',
       enable_publishing: false,
@@ -271,7 +273,7 @@ export function ComparisonPage({
     return () => {
       container.innerHTML = ''
     }
-  }, [activeChartSymbol, selectedSymbols, chartStyle])
+  }, [activeChartSymbol, selectedSymbols, chartStyle, theme])
 
   const addSymbol = (sym: string) => {
     if (selectedSymbols.length >= 6) return
@@ -476,14 +478,14 @@ export function ComparisonPage({
   }
 
   return (
-    <div className="flex flex-1 h-full flex-col overflow-y-auto bg-[#070b12] text-slate-100 font-sans pb-16 scrollbar-slim">
+    <div className="flex flex-1 h-full flex-col overflow-y-auto bg-background text-foreground font-sans pb-16 scrollbar-slim">
       {/* Top Header */}
-      <header className="sticky top-0 z-30 shrink-0 flex items-center justify-between px-6 py-4 bg-[#0a101d]/90 backdrop-blur-md border-b border-slate-800">
+      <header className="sticky top-0 z-30 shrink-0 flex items-center justify-between px-6 py-4 bg-background/90 backdrop-blur-md border-b border-border">
         <div className="flex items-center gap-4">
           {onBackToHome && (
             <button
               onClick={onBackToHome}
-              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               title="Return to Home Dashboard"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -491,7 +493,7 @@ export function ComparisonPage({
           )}
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+              <h1 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
                 Asset & Evidence Comparison
               </h1>
             </div>
@@ -505,7 +507,7 @@ export function ComparisonPage({
               if (onOpenGuides) onOpenGuides('how-to-use')
               else window.open('/guides?topic=how-to-use#running-comparisons', '_blank')
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-muted hover:bg-accent text-foreground/90 border border-border transition-colors cursor-pointer"
             title="Open side-by-side comparison guide in right drawer"
           >
             <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
@@ -524,7 +526,7 @@ export function ComparisonPage({
               disabled={loadedAssets.length === 0}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
                 loadedAssets.length === 0
-                  ? 'bg-slate-800/60 text-slate-500 border-slate-700/50 cursor-not-allowed opacity-50'
+                  ? 'bg-muted/60 text-muted-foreground/80 border-border/50 cursor-not-allowed opacity-50'
                   : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm border-indigo-500/50'
               }`}
             >
@@ -533,26 +535,26 @@ export function ComparisonPage({
             </button>
 
             {isExportMenuOpen && (
-              <div className="absolute right-0 top-9 w-60 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 z-50 space-y-1">
+              <div className="absolute right-0 top-9 w-60 bg-card border border-border rounded-xl shadow-2xl p-2 z-50 space-y-1">
                 <button
                   onClick={exportBriefPDF}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs rounded-lg hover:bg-slate-800 text-slate-200 transition-colors"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs rounded-lg hover:bg-muted text-foreground transition-colors"
                 >
                   <Printer className="w-4 h-4 text-indigo-400" />
                   <div>
-                    <div className="font-semibold text-white">Save / Print PDF</div>
-                    <div className="text-[10px] text-slate-400">Institutional brief format</div>
+                    <div className="font-semibold text-foreground">Save / Print PDF</div>
+                    <div className="text-[10px] text-muted-foreground">Institutional brief format</div>
                   </div>
                 </button>
 
                 <button
                   onClick={exportBriefMarkdown}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs rounded-lg hover:bg-slate-800 text-slate-200 transition-colors"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs rounded-lg hover:bg-muted text-foreground transition-colors"
                 >
                   <FileDown className="w-4 h-4 text-emerald-400" />
                   <div>
-                    <div className="font-semibold text-white">Download Markdown (.md)</div>
-                    <div className="text-[10px] text-slate-400">Complete analysis, table & filings</div>
+                    <div className="font-semibold text-foreground">Download Markdown (.md)</div>
+                    <div className="text-[10px] text-muted-foreground">Complete analysis, table & filings</div>
                   </div>
                 </button>
 
@@ -567,12 +569,12 @@ export function ComparisonPage({
                     a.click()
                     setIsExportMenuOpen(false)
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs rounded-lg hover:bg-slate-800 text-slate-200 transition-colors"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs rounded-lg hover:bg-muted text-foreground transition-colors"
                 >
-                  <Download className="w-4 h-4 text-slate-400" />
+                  <Download className="w-4 h-4 text-muted-foreground" />
                   <div>
-                    <div className="font-semibold text-white">Export Raw JSON Data</div>
-                    <div className="text-[10px] text-slate-400">Full statutory metric payload</div>
+                    <div className="font-semibold text-foreground">Export Raw JSON Data</div>
+                    <div className="text-[10px] text-muted-foreground">Full statutory metric payload</div>
                   </div>
                 </button>
               </div>
@@ -584,27 +586,27 @@ export function ComparisonPage({
       {/* Main Container */}
       <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
         {/* Active Asset Badges, 1-Click Quick Add, and Search */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl bg-[#0f172a]/90 border border-slate-800 shadow-lg">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl bg-card/90 border border-border shadow-lg">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="text-xs text-slate-400 font-medium">Active Instruments ({loadedAssets.length}/6):</span>
+            <span className="text-xs text-muted-foreground font-medium">Active Instruments ({loadedAssets.length}/6):</span>
             {loadedAssets.length === 0 ? (
-              <span className="text-xs text-slate-500 italic">No instruments selected</span>
+              <span className="text-xs text-muted-foreground/80 italic">No instruments selected</span>
             ) : (
               loadedAssets.map((asset, idx) => (
                 <div
                   key={asset.symbol}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/90 border text-xs font-semibold text-white shadow-sm"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/90 border text-xs font-semibold text-foreground shadow-sm"
                   style={{ borderColor: `${ASSET_COLORS[idx % ASSET_COLORS.length]}80` }}
                 >
                   <span
                     className="w-2.5 h-2.5 rounded-full inline-block"
                     style={{ backgroundColor: ASSET_COLORS[idx % ASSET_COLORS.length] }}
                   />
-                  <span className="font-bold text-white">{asset.symbol}</span>
-                  <span className="text-slate-300 hidden sm:inline">{asset.name}</span>
+                  <span className="font-bold text-foreground">{asset.symbol}</span>
+                  <span className="text-foreground/90 hidden sm:inline">{asset.name}</span>
                   <button
                     onClick={() => removeSymbol(asset.symbol)}
-                    className="p-0.5 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors ml-1"
+                    className="p-0.5 hover:bg-accent rounded text-muted-foreground hover:text-foreground transition-colors ml-1"
                     title={`Remove ${asset.symbol}`}
                   >
                     <X className="w-3.5 h-3.5" />
@@ -617,7 +619,7 @@ export function ComparisonPage({
           <div className="flex items-center gap-2 flex-wrap">
             {/* 1-Click Quick Add Suggestions */}
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-slate-400 font-medium">Quick Add:</span>
+              <span className="text-[11px] text-muted-foreground font-medium">Quick Add:</span>
               {['GOOGL', 'AMZN', 'TSLA', 'US 10Y', 'UK 10Y Gilt'].map((quickSym) => {
                 const isSelected = selectedSymbols.includes(quickSym)
                 if (isSelected || selectedSymbols.length >= 6) return null
@@ -625,7 +627,7 @@ export function ComparisonPage({
                   <button
                     key={quickSym}
                     onClick={() => addSymbol(quickSym)}
-                    className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition-all"
+                    className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-muted hover:bg-accent text-foreground/90 hover:text-foreground border border-border/60 transition-all"
                   >
                     <Plus className="w-2.5 h-2.5 text-indigo-400" />
                     {quickSym}
@@ -645,15 +647,15 @@ export function ComparisonPage({
                 </button>
 
                 {isSearchOpen && (
-                  <div className="absolute right-0 top-10 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 z-50">
+                  <div className="absolute right-0 top-10 w-72 bg-card border border-border rounded-xl shadow-2xl p-3 z-50">
                     <div className="relative mb-2">
-                      <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5" />
+                      <Search className="w-4 h-4 text-muted-foreground absolute left-2.5 top-2.5" />
                       <input
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search ticker, gilt, bond..."
-                        className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                        className="w-full pl-9 pr-3 py-1.5 text-xs bg-background border border-border rounded-lg text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-indigo-500"
                         autoFocus
                       />
                     </div>
@@ -663,19 +665,19 @@ export function ComparisonPage({
                           <button
                             key={item.symbol}
                             onClick={() => addSymbol(item.symbol)}
-                            className="w-full text-left px-2.5 py-1.5 rounded hover:bg-slate-800 flex items-center justify-between text-xs"
+                            className="w-full text-left px-2.5 py-1.5 rounded hover:bg-muted flex items-center justify-between text-xs"
                           >
                             <div>
-                              <span className="font-bold text-white mr-1.5">{item.symbol}</span>
-                              <span className="text-slate-400 truncate">{item.name}</span>
+                              <span className="font-bold text-foreground mr-1.5">{item.symbol}</span>
+                              <span className="text-muted-foreground truncate">{item.name}</span>
                             </div>
-                            <span className="text-[10px] text-slate-500 px-1 py-0.5 bg-slate-800 rounded">
+                            <span className="text-[10px] text-muted-foreground/80 px-1 py-0.5 bg-muted rounded">
                               {item.assetClass}
                             </span>
                           </button>
                         ))
                       ) : (
-                        <p className="text-[11px] text-slate-500 text-center py-2">
+                        <p className="text-[11px] text-muted-foreground/80 text-center py-2">
                           {searchQuery ? 'No matching instruments found' : 'Type ticker or name to add...'}
                         </p>
                       )}
@@ -689,23 +691,23 @@ export function ComparisonPage({
 
         {/* Empty State Banner when no instruments selected */}
         {loadedAssets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl bg-[#0f172a]/70 border border-slate-800 shadow-xl space-y-4 my-8">
+          <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl bg-card/70 border border-border shadow-xl space-y-4 my-8">
             <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
               <LineChart className="w-8 h-8" />
             </div>
             <div className="max-w-md space-y-1.5">
-              <h3 className="text-lg font-bold text-white tracking-tight">No Assets Selected</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <h3 className="text-lg font-bold text-foreground tracking-tight">No Assets Selected</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
                 Add instruments to start comparing live price movements, SEC filings, statutory balance sheets, and cross-sectional valuation multiples.
               </p>
             </div>
             <div className="flex items-center gap-2 pt-2 flex-wrap justify-center">
-              <span className="text-xs text-slate-400 font-medium mr-1">Popular:</span>
+              <span className="text-xs text-muted-foreground font-medium mr-1">Popular:</span>
               {['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'US 10Y'].map((sym) => (
                 <button
                   key={sym}
                   onClick={() => addSymbol(sym)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all hover:border-indigo-500/50"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-muted hover:bg-accent text-foreground border border-border transition-all hover:border-indigo-500/50"
                 >
                   <Plus className="w-3 h-3 text-indigo-400" />
                   {sym}
@@ -716,15 +718,15 @@ export function ComparisonPage({
         ) : (
           <>
         {/* Live Institutional TradingView Chart Embed with Instrument Switcher */}
-        <div className="p-4 rounded-xl bg-[#0f172a]/80 border border-slate-800 shadow-xl space-y-3">
+        <div className="p-4 rounded-xl bg-card/80 border border-border shadow-xl space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <LineChart className="w-4 h-4 text-indigo-400 shrink-0" />
               <div className="flex items-baseline gap-2 flex-wrap">
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-foreground">
                   Multi-Instrument Comparative Overlay
                 </h2>
-                <span className="text-[10.5px] text-slate-400">
+                <span className="text-[10.5px] text-muted-foreground">
                   (Base: <strong className="text-indigo-400">{activeChartSymbol}</strong> &bull; Overlaid: {selectedSymbols.filter(s => s !== activeChartSymbol).join(', ') || 'None'})
                 </span>
               </div>
@@ -732,8 +734,8 @@ export function ComparisonPage({
 
             {/* Instrument switcher buttons and Color Legend */}
             <div className="flex items-center gap-2.5 flex-wrap">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs flex-wrap">
-                <span className="text-[11px] text-slate-400 font-medium">Legend:</span>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border text-xs flex-wrap">
+                <span className="text-[11px] text-muted-foreground font-medium">Legend:</span>
                 {loadedAssets.map((asset, idx) => {
                   const color = ASSET_COLORS[idx % ASSET_COLORS.length]
                   const isBase = activeChartSymbol === asset.symbol
@@ -756,13 +758,13 @@ export function ComparisonPage({
               </div>
 
               {/* Format Toggle: % Return Line vs Baseline vs Candlestick */}
-              <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-lg border border-slate-800">
+              <div className="flex items-center gap-1 bg-card/90 p-1 rounded-lg border border-border">
                 <button
                   onClick={() => setChartStyle('2')}
                   className={`px-2.5 py-0.5 text-xs font-semibold rounded transition-all ${
                     chartStyle === '2'
                       ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400/50'
-                      : 'text-slate-400 hover:text-white'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                   title="Normalized % return line overlay across all assets from 0.00% baseline"
                 >
@@ -773,7 +775,7 @@ export function ComparisonPage({
                   className={`px-2.5 py-0.5 text-xs font-semibold rounded transition-all ${
                     chartStyle === '10'
                       ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400/50'
-                      : 'text-slate-400 hover:text-white'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                   title="Baseline mode: green/red fill above/below reference level"
                 >
@@ -784,7 +786,7 @@ export function ComparisonPage({
                   className={`px-2.5 py-0.5 text-xs font-semibold rounded transition-all ${
                     chartStyle === '1'
                       ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                   title="Candlestick base with relative overlay lines"
                 >
@@ -793,8 +795,8 @@ export function ComparisonPage({
               </div>
 
               <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-slate-400 font-medium">Base:</span>
-                <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-lg border border-slate-800 flex-wrap">
+                <span className="text-[11px] text-muted-foreground font-medium">Base:</span>
+                <div className="flex items-center gap-1 bg-card/90 p-1 rounded-lg border border-border flex-wrap">
                   {loadedAssets.map((asset) => (
                     <button
                       key={asset.symbol}
@@ -802,7 +804,7 @@ export function ComparisonPage({
                       className={`px-2.5 py-0.5 text-xs font-semibold rounded transition-all ${
                         activeChartSymbol === asset.symbol
                           ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400/50'
-                          : 'text-slate-400 hover:text-white'
+                          : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
                       {asset.symbol}
@@ -813,7 +815,7 @@ export function ComparisonPage({
             </div>
           </div>
 
-          <div className="w-full h-[420px] rounded-lg overflow-hidden bg-[#090b0e] border border-slate-800/80 relative">
+          <div className="w-full h-[420px] rounded-lg overflow-hidden bg-background border border-border/80 relative">
             <div ref={tvContainerRef} className="tradingview-widget-container h-full w-full" />
           </div>
         </div>
@@ -832,16 +834,16 @@ export function ComparisonPage({
             return (
               <div
                 key={asset.symbol}
-                className={`p-4 rounded-xl bg-slate-900/90 border transition-all shadow-md relative group flex flex-col justify-between ${
-                  isBase ? 'border-indigo-500/60 ring-1 ring-indigo-500/20' : 'border-slate-800 hover:border-slate-700'
+                className={`p-4 rounded-xl bg-card/90 border transition-all shadow-md relative group flex flex-col justify-between ${
+                  isBase ? 'border-indigo-500/60 ring-1 ring-indigo-500/20' : 'border-border hover:border-border'
                 }`}
                 style={{ borderTop: `3px solid ${color}` }}
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                      <span className="font-bold text-base text-white tracking-tight">{asset.symbol}</span>
-                      <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-slate-800/90 text-slate-400 border border-slate-700/60">
+                      <span className="font-bold text-base text-foreground tracking-tight">{asset.symbol}</span>
+                      <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-muted/90 text-muted-foreground border border-border/60">
                         {asset.exchange}
                       </span>
                       {isBase && (
@@ -856,18 +858,18 @@ export function ComparisonPage({
                         if (matched) setSelectedAssetForAlert(matched)
                       }}
                       title={`Set monitoring alert for ${asset.symbol}`}
-                      className="p-1 rounded-md text-slate-500 hover:text-indigo-300 hover:bg-indigo-600/20 transition-all shrink-0"
+                      className="p-1 rounded-md text-muted-foreground/80 hover:text-indigo-300 hover:bg-indigo-600/20 transition-all shrink-0"
                     >
                       <Bell className="w-3.5 h-3.5" />
                     </button>
                   </div>
 
-                  <div className="text-[11px] text-slate-400 truncate mb-2.5 font-normal">
+                  <div className="text-[11px] text-muted-foreground truncate mb-2.5 font-normal">
                     {asset.name}
                   </div>
 
                   <div className="flex items-baseline gap-2 mb-3 flex-wrap">
-                    <span className="text-xl font-black text-white tracking-tight">{price}</span>
+                    <span className="text-xl font-black text-foreground tracking-tight">{price}</span>
                     <span
                       className={`text-xs font-bold inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded ${
                         isUp ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10'
@@ -879,14 +881,14 @@ export function ComparisonPage({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-[11px] pt-2.5 border-t border-slate-800/90 text-slate-400">
+                <div className="grid grid-cols-2 gap-2 text-[11px] pt-2.5 border-t border-border/90 text-muted-foreground">
                   <div className="truncate">
-                    <span className="text-slate-500 block text-[10px] uppercase tracking-wider">Mkt Cap</span>
-                    <strong className="text-slate-200 font-semibold">{asset.marketCap}</strong>
+                    <span className="text-muted-foreground/80 block text-[10px] uppercase tracking-wider">Mkt Cap</span>
+                    <strong className="text-foreground font-semibold">{asset.marketCap}</strong>
                   </div>
                   <div className="truncate text-right">
-                    <span className="text-slate-500 block text-[10px] uppercase tracking-wider">Beta</span>
-                    <strong className="text-slate-200 font-semibold">{asset.beta}</strong>
+                    <span className="text-muted-foreground/80 block text-[10px] uppercase tracking-wider">Beta</span>
+                    <strong className="text-foreground font-semibold">{asset.beta}</strong>
                   </div>
                 </div>
               </div>
@@ -895,7 +897,7 @@ export function ComparisonPage({
         </div>
 
         {/* Tab Navigation for Detailed Sections */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2">
           <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-1 scrollbar-slim">
             {[
               { id: 'valuation', label: 'Valuation & Multiples', icon: DollarSign },
@@ -914,7 +916,7 @@ export function ComparisonPage({
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-all ${
                     isActive
                       ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/40 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
@@ -930,7 +932,7 @@ export function ComparisonPage({
               className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all ${
                 highlightLeader
                   ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 shadow-sm'
-                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                  : 'bg-card text-muted-foreground border-border hover:text-foreground'
               }`}
               title="Mark the lowest Trailing P/E among the loaded instruments — a lower multiple is not automatically the better investment, just the lower number"
             >
@@ -941,30 +943,30 @@ export function ComparisonPage({
         </div>
 
         {/* Detailed Comparison Table Matrix */}
-        <div className="rounded-xl border border-slate-800 bg-[#0c1220] overflow-x-auto shadow-xl scrollbar-slim">
+        <div className="rounded-xl border border-border bg-card overflow-x-auto shadow-xl scrollbar-slim">
           <table className="w-full text-left border-collapse min-w-[720px]">
             <thead>
-              <tr className="border-b border-slate-800 bg-[#0e1627]">
-                <th className="py-3.5 px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider w-[240px] shrink-0">
+              <tr className="border-b border-border bg-card">
+                <th className="py-3.5 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-[240px] shrink-0">
                   Financial Metric / Vector
                 </th>
                 {loadedAssets.map((asset, idx) => (
-                  <th key={asset.symbol} className="py-3.5 px-4 text-xs font-bold text-white uppercase tracking-wider min-w-[150px]">
+                  <th key={asset.symbol} className="py-3.5 px-4 text-xs font-bold text-foreground uppercase tracking-wider min-w-[150px]">
                     <div className="flex flex-col gap-1 min-w-[200px]">
                       <div className="flex items-center gap-1.5">
                         <span
                           className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
                           style={{ backgroundColor: ASSET_COLORS[idx % ASSET_COLORS.length] }}
                         />
-                        <span className="text-sm font-bold text-white">{asset.symbol}</span>
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/60">
+                        <span className="text-sm font-bold text-foreground">{asset.symbol}</span>
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border/60">
                           {asset.exchange}
                         </span>
                       </div>
-                      <div className="text-xs font-medium text-slate-200">
+                      <div className="text-xs font-medium text-foreground">
                         {asset.name}
                       </div>
-                      <div className="text-[10.5px] text-slate-400 font-normal leading-tight">
+                      <div className="text-[10.5px] text-muted-foreground font-normal leading-tight">
                         {asset.sector}
                       </div>
                     </div>
@@ -972,50 +974,50 @@ export function ComparisonPage({
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 text-xs">
+            <tbody className="divide-y divide-border/60 text-xs">
               {activeTab === 'valuation' && (
                 <>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Trailing P/E Ratio (TTM)</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Trailing P/E Ratio (TTM)</td>
                     {loadedAssets.map((a) => {
                       const isBest = highlightLeader && typeof a.peRatio === 'number' && a.peRatio === Math.min(...loadedAssets.filter(x => typeof x.peRatio === 'number').map(x => x.peRatio as number))
                       return (
                         <td key={a.symbol} className="py-3 px-4 font-mono font-semibold">
-                          <span className={isBest ? 'text-emerald-400 font-bold flex items-center gap-1' : 'text-white'}>
+                          <span className={isBest ? 'text-emerald-400 font-bold flex items-center gap-1' : 'text-foreground'}>
                             {a.peRatio} {isBest && <CheckCircle className="w-3 h-3 text-emerald-400 inline" />}
                           </span>
                         </td>
                       )
                     })}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Forward P/E Ratio (NTM)</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Forward P/E Ratio (NTM)</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.fwdPe}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">PEG Ratio (Price / Earnings to Growth)</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">PEG Ratio (Price / Earnings to Growth)</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.pegRatio}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">EV / EBITDA Multiple</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">EV / EBITDA Multiple</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.evEbitda}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Price to Sales (P/S)</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Price to Sales (P/S)</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.priceToSales}
                       </td>
                     ))}
@@ -1025,42 +1027,42 @@ export function ComparisonPage({
 
               {activeTab === 'profitability' && (
                 <>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Gross Margin %</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Gross Margin %</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono font-semibold">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono font-semibold">
                         {a.grossMargin}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Operating Margin %</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Operating Margin %</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.opMargin}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Net Profit Margin %</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Net Profit Margin %</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.netMargin}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Return on Equity (ROE)</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Return on Equity (ROE)</td>
                     {loadedAssets.map((a) => (
                       <td key={a.symbol} className="py-3 px-4 text-emerald-400 font-mono font-bold">
                         {a.roe}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Return on Invested Capital (ROIC)</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Return on Invested Capital (ROIC)</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.roic}
                       </td>
                     ))}
@@ -1070,34 +1072,34 @@ export function ComparisonPage({
 
               {activeTab === 'growth' && (
                 <>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Revenue Growth YoY</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Revenue Growth YoY</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono font-semibold">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono font-semibold">
                         {a.revGrowthYoY}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Diluted EPS Growth YoY</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Diluted EPS Growth YoY</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.epsGrowthYoY}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Share Buyback / Repurchase Yield</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Share Buyback / Repurchase Yield</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.buybackYield}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Dividend Yield (Annualized)</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Dividend Yield (Annualized)</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.divYield}
                       </td>
                     ))}
@@ -1107,26 +1109,26 @@ export function ComparisonPage({
 
               {activeTab === 'balance' && (
                 <>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Net Debt / EBITDA Leverage</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Net Debt / EBITDA Leverage</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.netDebtEbitda}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Current Ratio (Liquidity)</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Current Ratio (Liquidity)</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono font-semibold">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono font-semibold">
                         {a.currentRatio}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Benchmark Correlation (S&P 500)</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Benchmark Correlation (S&P 500)</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.correlationSPX}
                       </td>
                     ))}
@@ -1136,26 +1138,26 @@ export function ComparisonPage({
 
               {activeTab === 'catalysts' && (
                 <>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Next Scheduled Reporting / Catalyst</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Next Scheduled Reporting / Catalyst</td>
                     {loadedAssets.map((a) => (
                       <td key={a.symbol} className="py-3 px-4 text-indigo-300 font-mono">
                         {a.nextEarningsDate}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Consensus Estimate / Target Range</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Consensus Estimate / Target Range</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.consensusEst}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Policy Classification</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Policy Classification</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-slate-400 font-mono text-[11px]">
+                      <td key={a.symbol} className="py-3 px-4 text-muted-foreground font-mono text-[11px]">
                         PDP Deterministic Guarded
                       </td>
                     ))}
@@ -1165,8 +1167,8 @@ export function ComparisonPage({
 
               {activeTab === 'evidence' && (
                 <>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Source</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Source</td>
                     {loadedAssets.map((a) => (
                       <td key={a.symbol} className="py-3 px-4 text-indigo-300 font-mono text-[11px]">
                         <button
@@ -1174,29 +1176,29 @@ export function ComparisonPage({
                           className="hover:underline flex items-center gap-1"
                         >
                           {a.filingSource}
-                          <ExternalLink className="w-3 h-3 text-slate-500" />
+                          <ExternalLink className="w-3 h-3 text-muted-foreground/80" />
                         </button>
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Freshness</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Freshness</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-white font-mono">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground font-mono">
                         {a.filingDate}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Bitemporal status</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Bitemporal status</td>
                     {loadedAssets.map((a) => (
-                      <td key={a.symbol} className="py-3 px-4 text-slate-300 font-mono text-[11px]">
+                      <td key={a.symbol} className="py-3 px-4 text-foreground/90 font-mono text-[11px]">
                         {a.bitemporalRange}
                       </td>
                     ))}
                   </tr>
-                  <tr className="hover:bg-slate-800/30 transition-colors">
-                    <td className="py-3 px-4 text-slate-300 font-medium">Verification status</td>
+                  <tr className="hover:bg-accent/40 transition-colors">
+                    <td className="py-3 px-4 text-foreground/90 font-medium">Verification status</td>
                     {loadedAssets.map((a) => {
                       const verified = a.bitemporalRange === 'CANONICAL' || a.bitemporalRange === 'RECONCILED'
                       return (
@@ -1226,36 +1228,36 @@ export function ComparisonPage({
         {/* Evidence Drawer Modal */}
         {evidenceDrawerAsset && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-            <div className="bg-[#0f172a] border border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
+            <div className="bg-card border border-border rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
               <button
                 onClick={() => setEvidenceDrawerAsset(null)}
-                className="absolute right-4 top-4 text-slate-400 hover:text-white p-1 rounded-lg"
+                className="absolute right-4 top-4 text-muted-foreground hover:text-foreground p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
 
               <div className="flex items-center gap-2 mb-3">
                 <FileText className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-base font-bold text-white">
+                <h3 className="text-base font-bold text-foreground">
                   Source &amp; verification status: {evidenceDrawerAsset.symbol}
                 </h3>
               </div>
 
-              <p className="text-xs text-slate-400 mb-4">
+              <p className="text-xs text-muted-foreground mb-4">
                 What Talvrin actually knows about the source and freshness of {evidenceDrawerAsset.name}&apos;s data.
               </p>
 
-              <div className="space-y-3 bg-slate-900/90 rounded-xl p-4 border border-slate-800 font-mono text-xs">
+              <div className="space-y-3 bg-card/90 rounded-xl p-4 border border-border font-mono text-xs">
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase">Source</span>
+                  <span className="text-muted-foreground/80 block text-[10px] uppercase">Source</span>
                   <span className="text-indigo-300">{evidenceDrawerAsset.filingSource}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase">Freshness</span>
-                  <span className="text-slate-200">{evidenceDrawerAsset.filingDate}</span>
+                  <span className="text-muted-foreground/80 block text-[10px] uppercase">Freshness</span>
+                  <span className="text-foreground">{evidenceDrawerAsset.filingDate}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase">Bitemporal status</span>
+                  <span className="text-muted-foreground/80 block text-[10px] uppercase">Bitemporal status</span>
                   <span className={evidenceDrawerAsset.bitemporalRange === 'UNVERIFIED' ? 'text-amber-400' : 'text-emerald-400'}>
                     {evidenceDrawerAsset.bitemporalRange}
                   </span>

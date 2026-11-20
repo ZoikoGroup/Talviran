@@ -173,7 +173,7 @@ export default function TradingViewScreener({
   return (
     <div className="flex flex-col gap-3 w-full">
       {/* Top Ask Talvrin Research & Country Selector Bar */}
-      <div className="flex flex-col gap-2.5 rounded-xl border border-border bg-[#101318] p-3 shadow-sm">
+      <div className="flex flex-col gap-2.5 rounded-xl border border-border bg-card p-3 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Ask Talvrin Search Bar */}
           <form onSubmit={handleScreenerAsk} className="flex items-center gap-2 flex-1 min-w-[280px] max-w-xl">
@@ -184,7 +184,7 @@ export default function TradingViewScreener({
                 value={screenerQuery}
                 onChange={(e) => setScreenerQuery(e.target.value)}
                 placeholder="Ask Talvrin about any stock or instrument in this screener (e.g. BSE, AAPL, RELIANCE)…"
-                className="w-full rounded-lg border border-border/80 bg-[#151922] pl-8 pr-3 py-1.5 text-[12px] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/80 focus:ring-1 focus:ring-primary/20"
+                className="w-full rounded-lg border border-border/80 bg-background pl-8 pr-3 py-1.5 text-[12px] text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/80 focus:ring-1 focus:ring-primary/20"
               />
             </div>
             <button
@@ -203,7 +203,7 @@ export default function TradingViewScreener({
             <select
               value={selectedMarket}
               onChange={(e) => setSelectedMarket(e.target.value as TradingViewMarket)}
-              className="rounded-lg border border-border bg-[#181c24] px-2.5 py-1.5 text-[12px] font-semibold text-white focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+              className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-[12px] font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
             >
               {SUPPORTED_MARKETS.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -255,7 +255,7 @@ export default function TradingViewScreener({
 
       <div
         ref={containerRef}
-        className="tv-screener-container tradingview-widget-container relative w-full overflow-hidden rounded-xl border border-border bg-[#0d0f14]"
+        className="tv-screener-container tradingview-widget-container relative w-full overflow-hidden rounded-xl border border-border bg-card"
         style={{
           minHeight: '780px',
           height: typeof height === 'number' ? `${height}px` : height || '780px',
