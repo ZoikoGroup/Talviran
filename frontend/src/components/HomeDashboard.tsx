@@ -9,7 +9,6 @@ import {
   FileText,
   Bookmark,
   Layers,
-  Cpu,
   Settings,
   Plus,
   Trash2,
@@ -427,38 +426,21 @@ const AVAILABLE_TIMEZONES = [
     },
   ]
 
-  const defaultAlerts = [
-    {
-      title: 'US 10Y yield moved above 4.30%',
-      time: '12 minutes ago',
-      color: 'bg-amber-400',
-    },
-    {
-      title: 'UK CPI data released',
-      time: '2 hours ago',
-      color: 'bg-emerald-400',
-    },
-    {
-      title: 'NVIDIA filing updated (10-Q)',
-      time: '6 hours ago',
-      color: 'bg-blue-500',
-    },
-  ]
-
-  // Dynamic user alerts from real Monitoring rule events in database
-  const userAlerts = overview?.alerts && overview.alerts.length > 0
-    ? overview.alerts.map((a) => {
-        let dot = 'bg-blue-400'
-        if (a.status === 'open' || a.status === 'triggered') dot = 'bg-amber-400'
-        else if (a.status === 'acknowledged') dot = 'bg-blue-400'
-        else if (a.status === 'resolved') dot = 'bg-emerald-400'
-        return {
-          title: a.title,
-          time: a.time_ago,
-          color: dot,
-        }
-      })
-    : defaultAlerts
+  // Dynamic user alerts from real Monitoring rule events in database. No
+  // fabricated fallback here: an account with no alert history sees an
+  // honest empty state, not an invented "US 10Y yield moved above 4.30%"
+  // that it never actually armed (2026-11-20 UAT gap analysis, T19/T24).
+  const userAlerts = (overview?.alerts ?? []).map((a) => {
+    let dot = 'bg-blue-400'
+    if (a.status === 'open' || a.status === 'triggered') dot = 'bg-amber-400'
+    else if (a.status === 'acknowledged') dot = 'bg-blue-400'
+    else if (a.status === 'resolved') dot = 'bg-emerald-400'
+    return {
+      title: a.title,
+      time: a.time_ago,
+      color: dot,
+    }
+  })
 
   const defaultCalendar = [
     { date: '18 Sep', time: '13:30', flag: '🇺🇸', code: 'US', event: 'Initial Jobless Claims' },
@@ -516,52 +498,17 @@ const AVAILABLE_TIMEZONES = [
       }))
     : defaultResearch
 
-  const defaultWatchlists = [
-    {
-      id: 'default-1',
-      title: 'Core Bonds',
-      detail: '12 instruments',
-      change: '▲ 0.18%',
-      isUp: true,
-      icon: Layers,
-    },
-    {
-      id: 'default-2',
-      title: 'Tech Leaders',
-      detail: '8 instruments',
-      change: '▲ 1.24%',
-      isUp: true,
-      icon: Cpu,
-    },
-    {
-      id: 'default-3',
-      title: 'UK Equities',
-      detail: '15 instruments',
-      change: '▲ 0.32%',
-      isUp: true,
-      icon: FileText,
-    },
-    {
-      id: 'default-4',
-      title: 'Global ETFs',
-      detail: '10 instruments',
-      change: '▼ 0.21%',
-      isUp: false,
-      icon: Layers,
-    },
-  ]
-
-  // Real user watchlists from DB
-  const savedWatchlists = overview?.watchlists && overview.watchlists.length > 0
-    ? overview.watchlists.map((w) => ({
-        id: w.id,
-        title: w.title,
-        detail: w.detail,
-        change: w.change,
-        isUp: w.is_up,
-        icon: Layers,
-      }))
-    : defaultWatchlists
+  // Real user watchlists from DB. No fabricated fallback: an account with
+  // no saved watchlists sees an honest empty state, not an invented "Core
+  // Bonds / 12 instruments" list it never created (T20/T24).
+  const savedWatchlists = (overview?.watchlists ?? []).map((w) => ({
+    id: w.id,
+    title: w.title,
+    detail: w.detail,
+    change: w.change,
+    isUp: w.is_up,
+    icon: Layers,
+  }))
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6 scrollbar-slim lg:px-10">
@@ -1102,7 +1049,12 @@ const AVAILABLE_TIMEZONES = [
           <div className="flex flex-col justify-between rounded-2xl border border-border/70 bg-card/70 p-5 backdrop-blur-md lg:col-span-5">
             <div>
               <div className="flex items-center justify-between pb-3 border-b border-border/50">
-                <h3 className="text-[14px] font-semibold text-foreground">Key market developments</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-[14px] font-semibold text-foreground">Key market developments</h3>
+                  <span className="rounded-md bg-secondary/80 px-1.5 py-0.5 text-[9.5px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Sample
+                  </span>
+                </div>
                 <button
                   onClick={() => onSearch('Latest market developments')}
                   className="flex items-center gap-1 text-[11.5px] font-medium text-primary hover:underline"
@@ -1110,13 +1062,16 @@ const AVAILABLE_TIMEZONES = [
                   View all <ArrowRight className="h-3 w-3" />
                 </button>
               </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Illustrative headlines, not a live news feed - no source or timestamp is real. Use
+                "View all" to ask Talvrin a real question grounded in actual evidence.
+              </p>
 
               <div className="mt-3 divide-y divide-border/40">
                 {keyDevelopments.map((item, idx) => (
                   <div
                     key={idx}
-                    onClick={() => onSearch(item.title)}
-                    className="group flex cursor-pointer items-start gap-3 py-2.5 transition-colors hover:bg-accent/30 rounded-lg px-1.5"
+                    className="flex items-start gap-3 py-2.5 rounded-lg px-1.5"
                   >
                     <span className="w-5 shrink-0 text-[11.5px] font-mono text-muted-foreground">{item.time}</span>
                     <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${item.dotColor}`} />
@@ -1156,6 +1111,11 @@ const AVAILABLE_TIMEZONES = [
               </div>
 
               <div className="mt-2 space-y-2">
+                {userAlerts.length === 0 && (
+                  <p className="py-2 text-[11.5px] text-muted-foreground">
+                    No alerts yet. Set one from a Watchlist or Markets row.
+                  </p>
+                )}
                 {userAlerts.map((a, i) => (
                   <div
                     key={i}
@@ -1266,6 +1226,11 @@ const AVAILABLE_TIMEZONES = [
             </div>
 
             <div className="mt-3 space-y-2">
+              {savedWatchlists.length === 0 && (
+                <p className="py-2 text-[12px] text-muted-foreground">
+                  No saved watchlists yet. Create one from the Watchlists page.
+                </p>
+              )}
               {savedWatchlists.map((w, idx) => (
                 <div
                   key={idx}

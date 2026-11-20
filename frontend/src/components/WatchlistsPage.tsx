@@ -174,107 +174,13 @@ export default function WatchlistsPage({
         setSelectedId(data[0].id)
       }
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message)
-      } else {
-        // Offline or demo fallback
-        const mockDefaults: Watchlist[] = [
-          {
-            id: 'mock-1',
-            name: 'Global Sovereign 10Y',
-            description: 'Key sovereign benchmark 10-year yields and benchmark debt',
-            isDefault: true,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            items: [
-              {
-                id: 'm1',
-                watchlistId: 'mock-1',
-                symbol: 'UK 10Y Gilt',
-                name: 'UK 10-Year Benchmark Gilt',
-                assetClass: 'RATES',
-                sortOrder: 0,
-                createdAt: new Date().toISOString(),
-              },
-              {
-                id: 'm2',
-                watchlistId: 'mock-1',
-                symbol: 'US 10Y Treasury',
-                name: 'US 10-Year Treasury Note',
-                assetClass: 'RATES',
-                sortOrder: 1,
-                createdAt: new Date().toISOString(),
-              },
-              {
-                id: 'm3',
-                watchlistId: 'mock-1',
-                symbol: 'DE 10Y Bund',
-                name: 'Germany 10-Year Bund',
-                assetClass: 'RATES',
-                sortOrder: 2,
-                createdAt: new Date().toISOString(),
-              },
-              {
-                id: 'm4',
-                watchlistId: 'mock-1',
-                symbol: 'JP 10Y JGB',
-                name: 'Japan 10-Year JGB',
-                assetClass: 'RATES',
-                sortOrder: 3,
-                createdAt: new Date().toISOString(),
-              },
-            ],
-          },
-          {
-            id: 'mock-2',
-            name: 'Major Indices & FX',
-            description: 'Primary equity indices and currency pairs',
-            isDefault: false,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            items: [
-              {
-                id: 'm5',
-                watchlistId: 'mock-2',
-                symbol: 'S&P 500',
-                name: 'S&P 500 Index',
-                assetClass: 'EQUITY',
-                sortOrder: 0,
-                createdAt: new Date().toISOString(),
-              },
-              {
-                id: 'm6',
-                watchlistId: 'mock-2',
-                symbol: 'FTSE 100',
-                name: 'FTSE 100 Index',
-                assetClass: 'EQUITY',
-                sortOrder: 1,
-                createdAt: new Date().toISOString(),
-              },
-              {
-                id: 'm7',
-                watchlistId: 'mock-2',
-                symbol: 'GBP/USD',
-                name: 'British Pound / US Dollar',
-                assetClass: 'FX',
-                sortOrder: 2,
-                createdAt: new Date().toISOString(),
-              },
-              {
-                id: 'm8',
-                watchlistId: 'mock-2',
-                symbol: 'EUR/USD',
-                name: 'Euro / US Dollar',
-                assetClass: 'FX',
-                sortOrder: 3,
-                createdAt: new Date().toISOString(),
-              },
-            ],
-          },
-        ]
-        setWatchlists(mockDefaults)
-        if (!selectedId) setSelectedId('mock-1')
-      }
+      // No fabricated-looking fallback data here any more: a transient
+      // network failure used to render two plausible watchlists ("Global
+      // Sovereign 10Y", "Major Indices & FX") that the account never
+      // created, indistinguishable from real persisted data (T13/T20).
+      // Any failure - ApiError or otherwise - now surfaces as a real,
+      // visible error instead of silently inventing content.
+      setError(err instanceof ApiError ? err.message : 'Could not load watchlists. Please retry.')
     } finally {
       setLoading(false)
     }

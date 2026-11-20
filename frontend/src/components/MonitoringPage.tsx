@@ -24,6 +24,8 @@ import {
 import SetAlertModal from '@/components/SetAlertModal'
 import { toast } from 'sonner'
 import { useLiveMarket } from '@/hooks/useLiveMarket'
+import { useAuth } from '@/auth/AuthContext'
+import { accountScopedKey } from '@/lib/accountStorage'
 
 
 interface MonitoringPageProps {
@@ -128,39 +130,41 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
     return 'default'
   })
 
+  const { session } = useAuth()
+
   // Full universe custom alerts (active only). No seeded defaults - a new
   // account starts with none, since any hardcoded entry here would be a
   // fabricated alert nobody actually armed (2026-11-10 UAT gap analysis
-  // G11 remediation).
-  const [customAlerts, setCustomAlerts] = useState<CustomAlertTrigger[]>(() => {
+  // G11 remediation). Keyed by the signed-in account's email, not a bare
+  // `talvrin_custom_alerts*` key, so a shared browser can't show one
+  // account's armed alerts or trigger history to the next account that
+  // signs in - the same leak class as bug T10, here for alerts (T19/T20).
+  const [customAlerts, setCustomAlerts] = useState<CustomAlertTrigger[]>([])
+  const [historyAlerts, setHistoryAlerts] = useState<CustomAlertTrigger[]>([])
+
+  useEffect(() => {
     try {
-      const saved = localStorage.getItem('talvrin_custom_alerts')
-      if (saved) return JSON.parse(saved)
+      const savedAlerts = localStorage.getItem(accountScopedKey(session?.email, 'talvrin_custom_alerts'))
+      setCustomAlerts(savedAlerts ? JSON.parse(savedAlerts) : [])
     } catch {
-      // fallback
+      setCustomAlerts([])
     }
-    return []
-  })
-
-
-  // History list for touched/fulfilled alerts
-  const [historyAlerts, setHistoryAlerts] = useState<CustomAlertTrigger[]>(() => {
     try {
-      const saved = localStorage.getItem('talvrin_custom_alerts_history')
-      if (saved) return JSON.parse(saved)
+      const savedHistory = localStorage.getItem(
+        accountScopedKey(session?.email, 'talvrin_custom_alerts_history')
+      )
+      setHistoryAlerts(savedHistory ? JSON.parse(savedHistory) : [])
     } catch {
-      // fallback
+      setHistoryAlerts([])
     }
-    return []
-  })
-
+  }, [session?.email])
 
   const [modifyingAlert, setModifyingAlert] = useState<CustomAlertTrigger | null>(null)
 
   const saveAlertsToStorage = (updated: CustomAlertTrigger[]) => {
     setCustomAlerts(updated)
     try {
-      localStorage.setItem('talvrin_custom_alerts', JSON.stringify(updated))
+      localStorage.setItem(accountScopedKey(session?.email, 'talvrin_custom_alerts'), JSON.stringify(updated))
     } catch {
       // ignore
     }
@@ -169,7 +173,10 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
   const saveHistoryToStorage = (updatedHistory: CustomAlertTrigger[]) => {
     setHistoryAlerts(updatedHistory)
     try {
-      localStorage.setItem('talvrin_custom_alerts_history', JSON.stringify(updatedHistory))
+      localStorage.setItem(
+        accountScopedKey(session?.email, 'talvrin_custom_alerts_history'),
+        JSON.stringify(updatedHistory)
+      )
     } catch {
       // ignore
     }

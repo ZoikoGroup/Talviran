@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/auth/AuthContext'
 import { SubmitButton } from '@/components/ui/field'
 import { createRule, type CreateRuleInput } from '@/lib/api'
+import { accountScopedKey } from '@/lib/accountStorage'
 
 // The only instrument this modal can deterministically map onto one of the
 // two real backend-watchable metrics (monitoring/rule_engine.py's
@@ -142,10 +143,11 @@ export default function SetAlertModal({
         }
 
         try {
-          const existingRaw = localStorage.getItem('talvrin_custom_alerts')
+          const key = accountScopedKey(session?.email, 'talvrin_custom_alerts')
+          const existingRaw = localStorage.getItem(key)
           const list: CustomAlertTrigger[] = existingRaw ? JSON.parse(existingRaw) : []
           const next = list.map((a) => (a.id === existingAlert.id ? updatedAlert : a))
-          localStorage.setItem('talvrin_custom_alerts', JSON.stringify(next))
+          localStorage.setItem(key, JSON.stringify(next))
         } catch {
           // ignore
         }
@@ -173,10 +175,11 @@ export default function SetAlertModal({
 
         // Sync into local storage alerts list
         try {
-          const existingRaw = localStorage.getItem('talvrin_custom_alerts')
+          const key = accountScopedKey(session?.email, 'talvrin_custom_alerts')
+          const existingRaw = localStorage.getItem(key)
           const list: CustomAlertTrigger[] = existingRaw ? JSON.parse(existingRaw) : []
           const updated = [newAlert, ...list]
-          localStorage.setItem('talvrin_custom_alerts', JSON.stringify(updated))
+          localStorage.setItem(key, JSON.stringify(updated))
         } catch {
           // ignore
         }
