@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal, cast
 
-from fastapi import APIRouter, Header, status
+from fastapi import APIRouter, BackgroundTasks, Header, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -235,6 +235,7 @@ async def submit_support_ticket(
     req: CreateSupportTicketRequest,
     db: SessionDep,
     identity: OptionalIdentityDep,
+    background_tasks: BackgroundTasks,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> SupportTicketResponse:
     """Submit an in-app support request or report a market data discrepancy.
@@ -358,8 +359,16 @@ async def submit_support_ticket(
     # just committed above - on any failure (including a raised exception,
     # not just a non-2xx response) the row is updated to `failed` rather
     # than only logged, and the ticket itself is already durable regardless
-    # of how this goes.
-    await _dispatch_support_emails(
+    # of how this goes. Scheduled as a BackgroundTask, not awaited here:
+    # the real SMTP host this hits can take its full 10s connect timeout
+    # (twice, for desk + user receipt) before failing, and awaiting that
+    # inline made ticket submission itself look hung or failed from the
+    # caller's side even though the ticket had already committed
+    # (2026-11-20 UAT gap analysis, T16). FastAPI keeps `db` (a yield
+    # dependency) open until background tasks finish, so reusing it here
+    # is safe.
+    background_tasks.add_task(
+        _dispatch_support_emails,
         db,
         ref_code=ref_code,
         ticket_id=ticket_id,

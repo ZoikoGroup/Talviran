@@ -222,30 +222,11 @@ async def get_dashboard_overview(
         except Exception:
             pass
 
-    if not alerts_list:
-        alerts_list = [
-            DashboardAlert(
-                id="default-1",
-                title="US 10Y yield benchmark crossed 4.30%",
-                time_ago="12m ago",
-                status="NEW",
-                metric_id="yield.us10y",
-            ),
-            DashboardAlert(
-                id="default-2",
-                title="UK Gilt 10Y auction settlement reconciled",
-                time_ago="1h ago",
-                status="ACKNOWLEDGED",
-                metric_id="gilt.uk10y",
-            ),
-            DashboardAlert(
-                id="default-3",
-                title="BoE yield curve spot update published",
-                time_ago="3h ago",
-                status="NEW",
-                metric_id="curve.boe",
-            ),
-        ]
+    # No fabricated fallback: a brand-new account with no alert history
+    # gets an empty list, not three invented alerts ("US 10Y yield
+    # benchmark crossed 4.30%" etc.) that it never armed and that are
+    # indistinguishable from real account data once returned by this API
+    # (2026-11-20 UAT gap analysis, T24).
 
     # 3. Canonical Economic Calendar
     calendar_events = [
@@ -314,30 +295,10 @@ async def get_dashboard_overview(
         except Exception:
             pass
 
-    if not watchlists_list:
-        watchlists_list = [
-            DashboardWatchlistSummary(
-                id="core-bonds",
-                title="Core Sovereign Yields",
-                detail="UK, US, Bund, JGB benchmarks",
-                change="▲ 0.18%",
-                is_up=True,
-            ),
-            DashboardWatchlistSummary(
-                id="tech-global",
-                title="Global Semis & Technology",
-                detail="NVDA, TSM, ASML, ARM",
-                change="▲ 1.42%",
-                is_up=True,
-            ),
-            DashboardWatchlistSummary(
-                id="primary-markets",
-                title="Primary Issues & Mutual Funds",
-                detail="Jio IPO, Hyundai, Vanguard 500",
-                change="▲ 0.65%",
-                is_up=True,
-            ),
-        ]
+    # No fabricated fallback here either: an account with no saved
+    # watchlists gets an empty list, not three invented ones ("Core
+    # Sovereign Yields", "Global Semis & Technology" etc.) it never
+    # created (T13/T24).
 
     return DashboardOverviewResponse(
         tickers=tickers,
