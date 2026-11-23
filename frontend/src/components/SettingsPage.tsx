@@ -653,12 +653,17 @@ function TeamSection({ onNavigateToBilling }: { onNavigateToBilling: () => void 
 
           {!isMultiSeatTier && (
             <div className="mt-4 rounded-xl bg-amber-500/10 border border-amber-500/20 p-3.5 flex items-start gap-3">
-              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              {/* amber-200/90 measured ~2.2:1 against this light-amber card in
-                  light theme - well under WCAG AA's 4.5:1 for body text.
-                  amber-900 (light)/amber-100 (dark) clears it in both themes. */}
-              <div className="text-xs text-amber-900 dark:text-amber-100 leading-relaxed">
-                You are currently on the <strong className="font-semibold text-amber-950 dark:text-amber-50 capitalize">{data?.plan_tier}</strong> plan (1 seat). Upgrade to <strong className="font-semibold text-amber-950 dark:text-amber-50">Teams ($249/mo)</strong> or <strong className="font-semibold text-amber-950 dark:text-amber-50">Enterprise ($899/mo)</strong> to invite multiple analysts, share policy frameworks, and pool monthly research limits.
+              <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+              {/* The previous dark:-variant pair here never actually took
+                  effect: this app's theming toggles a `.light` class, not
+                  `.dark`, so Tailwind's `dark:` selector (which matches an
+                  ancestor `.dark`) never matches anything, and the base
+                  (non-dark-prefixed) class applied unconditionally in both
+                  themes - amber-900/950 on this card's dark background in
+                  the app's actual default (dark) theme (T12). text-foreground
+                  tracks the real theme toggle correctly in both directions. */}
+              <div className="text-xs text-foreground leading-relaxed">
+                You are currently on the <strong className="font-semibold capitalize">{data?.plan_tier}</strong> plan (1 seat). Upgrade to <strong className="font-semibold">Teams ($249/mo)</strong> or <strong className="font-semibold">Enterprise ($899/mo)</strong> to invite multiple analysts, share policy frameworks, and pool monthly research limits.
               </div>
             </div>
           )}
@@ -725,8 +730,8 @@ function TeamSection({ onNavigateToBilling }: { onNavigateToBilling: () => void 
               className={cn(
                 'rounded-xl p-3.5 border text-xs flex flex-col gap-2',
                 inviteFeedback.isError
-                  ? 'bg-rose-500/10 border-rose-500/20 text-rose-300'
-                  : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                  ? 'bg-rose-500/10 border-rose-500/20 text-foreground'
+                  : 'bg-emerald-500/10 border-emerald-500/20 text-foreground'
               )}
             >
               <div className="flex items-center gap-2 font-medium">
