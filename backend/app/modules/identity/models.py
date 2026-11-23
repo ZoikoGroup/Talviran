@@ -20,11 +20,14 @@ class Account(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     name: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(32), default="ACTIVE")
+    # Every new account starts on the free Explorer tier. Paid tiers are only
+    # granted by a verified Stripe checkout / explicit downgrade-resistant
+    # plan change — never by the schema default (bug: signups became paid).
     plan_tier: Mapped[str] = mapped_column(
-        String(32), default="professional", server_default="professional"
+        String(32), default="explorer", server_default="explorer"
     )
     billing_cadence: Mapped[str] = mapped_column(
-        String(32), default="annual", server_default="annual"
+        String(32), default="monthly", server_default="monthly"
     )
     seat_count: Mapped[int] = mapped_column(default=1, server_default="1")
     current_period_end: Mapped[dt.datetime | None] = mapped_column(default=None, nullable=True)

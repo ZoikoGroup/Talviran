@@ -5,9 +5,7 @@ import {
   ArrowRight,
   Bell,
   ChevronRight,
-  BarChart3,
   FileText,
-  Bookmark,
   Layers,
   Settings,
   Plus,
@@ -460,43 +458,16 @@ const AVAILABLE_TIMEZONES = [
       }))
     : defaultCalendar
 
-  const defaultResearch = [
-    {
-      id: '',
-      title: 'Compare the 10Y gilt and 10Y Treasury',
-      time: 'Last edited 2 hours ago',
-      icon: BarChart3,
-    },
-    {
-      id: '',
-      title: 'NVIDIA - latest financial performance',
-      time: 'Last edited 5 hours ago',
-      icon: FileText,
-    },
-    {
-      id: '',
-      title: 'UK inflation analysis',
-      time: 'Last edited 1 day ago',
-      icon: BarChart3,
-    },
-    {
-      id: '',
-      title: 'Global central bank policy comparison',
-      time: 'Last edited 2 days ago',
-      icon: Bookmark,
-    },
-  ]
-
-  // Map real user chats from Sidebar/App state if available
+  // Map real user chats from Sidebar/App state. No fabricated fallback: an
+  // account with zero chats sees an honest empty state, not invented
+  // "Compare the 10Y gilt..." entries it never created (T24).
   const activeChats = chats.filter((c) => c.title && c.title !== 'New Research')
-  const recentResearch = activeChats.length > 0
-    ? activeChats.slice(0, 4).map((c) => ({
-        id: c.id,
-        title: c.title,
-        time: 'Active investigation',
-        icon: FileText,
-      }))
-    : defaultResearch
+  const recentResearch = activeChats.slice(0, 4).map((c) => ({
+    id: c.id,
+    title: c.title,
+    time: 'Active investigation',
+    icon: FileText,
+  }))
 
   // Real user watchlists from DB. No fabricated fallback: an account with
   // no saved watchlists sees an honest empty state, not an invented "Core
@@ -1185,6 +1156,11 @@ const AVAILABLE_TIMEZONES = [
             </div>
 
             <div className="mt-3 space-y-2">
+              {recentResearch.length === 0 && (
+                <p className="py-2 text-[12px] text-muted-foreground">
+                  No research yet. Start a new investigation to see it here.
+                </p>
+              )}
               {recentResearch.map((item, idx) => (
                 <div
                   key={idx}

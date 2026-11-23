@@ -26,12 +26,12 @@ def upgrade() -> None:
     """Upgrade schema."""
     op.add_column(
         "account",
-        sa.Column("plan_tier", sa.String(length=32), server_default="professional", nullable=False),
+        sa.Column("plan_tier", sa.String(length=32), server_default="explorer", nullable=False),
         schema="identity",
     )
     op.add_column(
         "account",
-        sa.Column("billing_cadence", sa.String(length=32), server_default="annual", nullable=False),
+        sa.Column("billing_cadence", sa.String(length=32), server_default="monthly", nullable=False),
         schema="identity",
     )
     op.add_column(

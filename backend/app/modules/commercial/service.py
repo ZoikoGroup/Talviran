@@ -274,26 +274,28 @@ async def resolve_account_entitlement(
         await db.commit()
         plan_tier = PlanTier.EXPLORER
     else:
+        # An absent or unrecognised stored tier must never silently grant a
+        # paid plan. New accounts are Explorer until a real upgrade happens.
         plan_tier_val = (
-            acc_row.plan_tier if acc_row and acc_row.plan_tier else PlanTier.PROFESSIONAL
+            acc_row.plan_tier if acc_row and acc_row.plan_tier else PlanTier.EXPLORER
         )
         try:
             plan_tier = PlanTier(plan_tier_val)
         except ValueError:
-            plan_tier = PlanTier.PROFESSIONAL
+            plan_tier = PlanTier.EXPLORER
 
     cadence_val = (
         acc_row.billing_cadence
         if acc_row and acc_row.billing_cadence
-        else BillingCadence.ANNUAL
+        else BillingCadence.MONTHLY
     )
     try:
         cadence = BillingCadence(cadence_val)
     except ValueError:
-        cadence = BillingCadence.ANNUAL
+        cadence = BillingCadence.MONTHLY
 
     seat_count = acc_row.seat_count if acc_row and acc_row.seat_count else 1
-    plan_def = PRICE_BOOK.get(plan_tier, PRICE_BOOK[PlanTier.PROFESSIONAL])
+    plan_def = PRICE_BOOK.get(plan_tier, PRICE_BOOK[PlanTier.EXPLORER])
 
     usage = AccountUsage(
         watchlists_count=int(watchlists_count),
@@ -305,7 +307,9 @@ async def resolve_account_entitlement(
     if acc_row and acc_row.current_period_end:
         period_end = acc_row.current_period_end.isoformat()
     else:
-        period_end = (month_start + dt.timedelta(days=365)).isoformat()
+        # Free-tier accounts have no paid billing cycle; don't imply a
+        # year-long paid term just because no period end was ever stored.
+        period_end = (now_utc + dt.timedelta(days=30)).isoformat()
 
     from app.core.config import get_settings
     is_stripe_configured = bool(get_settings().stripe_secret_key)
@@ -740,11 +744,12 @@ async def cancel_subscription_self_serve(
         )
     ).first()
 
-    current_tier_str = acc_row.plan_tier if acc_row and acc_row.plan_tier else "professional"
+    # Never claim paid benefits for an account whose tier can't be established.
+    current_tier_str = acc_row.plan_tier if acc_row and acc_row.plan_tier else "explorer"
     try:
         active_plan = PlanTier(current_tier_str)
     except ValueError:
-        active_plan = PlanTier.PROFESSIONAL
+        active_plan = PlanTier.EXPLORER
 
     # Determine renewal/end date
     now = dt.datetime.now(dt.UTC)

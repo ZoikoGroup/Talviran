@@ -196,7 +196,7 @@ function AccountSection({ onNavigateToBilling }: { onNavigateToBilling?: () => v
     }
   }
 
-  const currentPlan = (entitlement?.plan_tier || 'free').toUpperCase()
+  const currentPlan = (entitlement?.plan_tier || 'explorer').toUpperCase()
 
   return (
     <Panel title="Account" description="Who you are signed in as on this device.">
@@ -1366,7 +1366,7 @@ function BillingSection() {
     void loadInvoices()
   }, [])
 
-  const activePlanTier = entitlement?.plan_tier || 'professional'
+  const activePlanTier = entitlement?.plan_tier || 'explorer'
   const isTeamOrEnterprise = activePlanTier === 'teams' || activePlanTier === 'enterprise'
   const [planAudience, setPlanAudience] = useState<'individual' | 'team'>(isTeamOrEnterprise ? 'team' : 'individual')
   const activePlanName = formatPlanTier(activePlanTier)
@@ -1420,7 +1420,7 @@ function BillingSection() {
       setErrorMessage(null)
       await api.updateAccountPlan({
         plan_tier: targetTier,
-        billing_cadence: entitlement?.billing_cadence || 'annual',
+        billing_cadence: entitlement?.billing_cadence || 'monthly',
       })
       await refreshEntitlement()
       setSuccessMessage(`Account plan successfully updated to ${formatPlanTier(targetTier)} Tier.`)

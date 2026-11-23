@@ -114,6 +114,23 @@ async def test_signup_creates_an_account_and_signs_in(client: AsyncClient) -> No
     assert client.cookies.get(SESSION_COOKIE_NAME)
 
 
+async def test_new_signup_starts_on_free_explorer_tier(client: AsyncClient) -> None:
+    """A brand-new account must not inherit the paid Professional plan.
+
+    The schema default used to be "professional", so simply omitting plan_tier
+    at signup silently granted paid quotas to every new user.
+    """
+    assert (await _signup(client, _email())).status_code == 201
+
+    r = await client.get("/api/v1/commercial/entitlement")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["plan_tier"] == "explorer"
+    assert body["billing_cadence"] == "monthly"
+    assert body["quotas"]["watchlists"] == 2
+    assert body["quotas"]["verified_research_runs_per_month"] == 10
+
+
 async def test_signup_rejects_a_weak_password(client: AsyncClient) -> None:
     r = await _signup(client, _email(), "short")
     assert r.status_code == 422

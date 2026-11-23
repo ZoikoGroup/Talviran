@@ -21,28 +21,31 @@ interface EntitlementContextValue {
 
 const EntitlementContext = createContext<EntitlementContextValue | undefined>(undefined)
 
+// Shown only until the live entitlement loads (and if it cannot be loaded).
+// Must never advertise a paid plan or invented usage to a brand-new account:
+// Explorer is the free tier every signup starts on.
 const DEFAULT_FALLBACK_ENTITLEMENT: AccountEntitlement = {
   account_id: 'default',
-  plan_tier: 'professional',
-  billing_cadence: 'annual',
+  plan_tier: 'explorer',
+  billing_cadence: 'monthly',
   is_active: true,
-  current_period_end: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
-  seat_count: 5,
+  current_period_end: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+  seat_count: 1,
   quotas: {
-    watchlists: 'unlimited',
-    active_monitoring_rules: 125,
-    verified_research_runs_per_month: 400,
-    evidence_dossier_exports_per_month: 125,
-    filing_history_years: 'unlimited',
-    tick_level_realtime: true,
+    watchlists: 2,
+    active_monitoring_rules: 3,
+    verified_research_runs_per_month: 10,
+    evidence_dossier_exports_per_month: 2,
+    filing_history_years: 1,
+    tick_level_realtime: false,
     team_workspaces: false,
     seat_count: 1,
   },
   usage: {
-    watchlists_count: 2,
-    active_rules_count: 4,
-    research_runs_this_month: 14,
-    evidence_exports_this_month: 3,
+    watchlists_count: 0,
+    active_rules_count: 0,
+    research_runs_this_month: 0,
+    evidence_exports_this_month: 0,
   },
 }
 
@@ -59,7 +62,7 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
       const data = await getAccountEntitlement()
       setEntitlement(data)
     } catch (err: unknown) {
-      console.warn('Failed to load live account entitlement, using institutional default', err)
+      console.warn('Failed to load live account entitlement, using free Explorer default', err)
       setError(err instanceof Error ? err.message : 'Failed to load entitlement')
       // Fallback remains active for uninterrupted demo experience
     } finally {
@@ -126,7 +129,7 @@ export function useEntitlement() {
 }
 
 export function formatPlanTier(tier?: PlanTier): string {
-  if (!tier) return 'Professional'
+  if (!tier) return 'Explorer'
   switch (tier) {
     case 'explorer':
       return 'Explorer'
