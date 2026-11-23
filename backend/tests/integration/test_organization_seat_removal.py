@@ -228,6 +228,8 @@ def test_remove_member_endpoint_declares_no_content_response() -> None:
     frontend's `api.removeMember` actually expects - in one place, since
     every functional test above calls `remove_member` directly rather than
     through the router."""
+    from fastapi.routing import APIRoute
+
     from app.modules.api.v1.organization import router
 
     remove_route = next(
@@ -236,4 +238,8 @@ def test_remove_member_endpoint_declares_no_content_response() -> None:
         if getattr(r, "path", None) == "/organization/members/{member_id}"
         and "DELETE" in getattr(r, "methods", set())
     )
+    # router.routes is typed as the generic Starlette BaseRoute, which has no
+    # status_code - every route FastAPI actually registers is an APIRoute,
+    # so this narrows the type instead of asserting/ignoring it past mypy.
+    assert isinstance(remove_route, APIRoute)
     assert remove_route.status_code == 204

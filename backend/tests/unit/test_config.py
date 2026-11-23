@@ -15,16 +15,26 @@ from pydantic import ValidationError
 
 from app.core.config import Settings
 
-REQUIRED = {"supabase_url": "https://example.supabase.co", "supabase_anon_key": "test-anon-key"}
+# Passed as explicit keyword arguments at each call site below, not splatted
+# from a dict - Settings' __init__ signature (pydantic-settings' generated
+# constructor) has many internal _cli_*/_secrets_dir-style parameters with
+# specific non-str types, and `**dict[str, str]` makes mypy check a bare str
+# value against every one of them, which it can never satisfy.
+SUPABASE_URL = "https://example.supabase.co"
+SUPABASE_ANON_KEY = "test-anon-key"
 
 
 def test_localhost_frontend_url_is_fine_in_development() -> None:
-    settings = Settings(**REQUIRED, environment="development")
+    settings = Settings(
+        supabase_url=SUPABASE_URL, supabase_anon_key=SUPABASE_ANON_KEY, environment="development"
+    )
     assert settings.frontend_url == "http://localhost:5173"
 
 
 def test_localhost_frontend_url_is_fine_in_test() -> None:
-    settings = Settings(**REQUIRED, environment="test")
+    settings = Settings(
+        supabase_url=SUPABASE_URL, supabase_anon_key=SUPABASE_ANON_KEY, environment="test"
+    )
     assert settings.frontend_url == "http://localhost:5173"
 
 
@@ -33,11 +43,19 @@ def test_localhost_frontend_url_is_fine_in_test() -> None:
 )
 def test_localhost_frontend_url_fails_closed_outside_development(url: str) -> None:
     with pytest.raises(ValidationError, match="frontend_url is still a localhost default"):
-        Settings(**REQUIRED, environment="production", frontend_url=url)
+        Settings(
+            supabase_url=SUPABASE_URL,
+            supabase_anon_key=SUPABASE_ANON_KEY,
+            environment="production",
+            frontend_url=url,
+        )
 
 
 def test_a_real_origin_boots_fine_in_production() -> None:
     settings = Settings(
-        **REQUIRED, environment="production", frontend_url="https://app.talvrin.com"
+        supabase_url=SUPABASE_URL,
+        supabase_anon_key=SUPABASE_ANON_KEY,
+        environment="production",
+        frontend_url="https://app.talvrin.com",
     )
     assert settings.frontend_url == "https://app.talvrin.com"

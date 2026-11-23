@@ -95,6 +95,7 @@ async def test_an_anonymous_visitor_can_submit_a_ticket(
         )
     ).scalar_one()
     assert row.actor_principal_id is None
+    assert row.payload is not None
     assert row.payload["account_id"] is None
     assert row.payload["principal_id"] is None
 
