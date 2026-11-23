@@ -39,9 +39,24 @@ export function LiveMarketProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let active = true
-    // Exponential backoff: starts at 2 s, doubles on each failure, caps at 30 s.
-    // Reset to the base value when the connection opens successfully.
-    let retryDelay = 2000
+    let attempt = 0
+    const BASE_BACKOFF_MS = 1500
+    const MAX_BACKOFF_MS = 30000
+
+    const scheduleReconnect = () => {
+      if (!active) return
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+
+      // Exponential backoff: BASE * 1.5^attempt capped at 30s, plus 25% random
+      // jitter so many clients reconnecting after a shared outage don't all
+      // retry in lockstep and flood the server the moment it comes back.
+      const expDelay = Math.min(BASE_BACKOFF_MS * Math.pow(1.5, attempt), MAX_BACKOFF_MS)
+      const jitter = expDelay * 0.25 * (Math.random() * 2 - 1)
+      const delay = Math.max(1000, Math.round(expDelay + jitter))
+
+      attempt++
+      reconnectTimer = setTimeout(connect, delay)
+    }
 
     const connect = () => {
       if (!active) return
@@ -58,9 +73,8 @@ export function LiveMarketProvider({ children }: { children: React.ReactNode }) 
 
         ws.onopen = () => {
           if (!active) return
-          // Successful connection — reset backoff to base interval.
-          retryDelay = 2000
           setIsConnected(true)
+          attempt = 0 // Reset backoff counter on successful connection
         }
 
         ws.onmessage = (event) => {
@@ -91,21 +105,14 @@ export function LiveMarketProvider({ children }: { children: React.ReactNode }) 
         ws.onclose = () => {
           if (!active) return
           setIsConnected(false)
-          // Back off exponentially so repeated failures do not flood the server.
-          reconnectTimer = setTimeout(() => {
-            retryDelay = Math.min(retryDelay * 2, 30000)
-            connect()
-          }, retryDelay)
+          scheduleReconnect()
         }
 
         ws.onerror = () => {
           ws.close()
         }
       } catch {
-        reconnectTimer = setTimeout(() => {
-          retryDelay = Math.min(retryDelay * 2, 30000)
-          connect()
-        }, retryDelay)
+        scheduleReconnect()
       }
     }
 

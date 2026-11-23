@@ -185,31 +185,45 @@ export default function SetAlertModal({
         }
 
         // Register a continuous rule in the real backend monitoring engine
-        // (MON-001) only when this instrument deterministically maps onto
-        // one of the two metrics that engine actually watches - never a
-        // hardcoded guess, and never silently swallowed either way.
+        // (MON-001): a precise UK-gilt-tenor regex match (never a loose
+        // "contains GILT/TREASURY/10Y" guess, which would misclassify e.g.
+        // "US 10Y Treasury" as a UK gilt) resolves the curve metric; any
+        // other symbol falls back to a ticker-based equity price rule
+        // instead of being silently marked unavailable, now that the
+        // backend resolves EQUITY_EOD_PRICE rules by ticker.
         const tenorYears = resolveWatchableTenorYears(symbol)
-        if (tenorYears !== null) {
-          try {
-            const input: CreateRuleInput = {
-              metricId: 'UK_GILT_NOMINAL_SPOT_CURVE',
-              predicate,
-              thresholdValue: threshold.replace(/[^0-9.]/g, ''),
-              tenorYears,
-              notifyEmail: notifyEmail && userEmail.trim() ? userEmail.trim() : undefined,
-            }
-            const rule = await createRule(input)
+        // Preserve a leading negative sign (negative yields/basis spreads) -
+        // a bare digit/decimal-point strip would silently drop it.
+        const trimmedThreshold = threshold.trim()
+        const isNegativeThreshold = trimmedThreshold.startsWith('-')
+        const cleanThreshold =
+          (isNegativeThreshold ? '-' : '') + trimmedThreshold.replace(/[^0-9.]/g, '')
+        const sharedNotifyEmail =
+          notifyEmail && userEmail.trim() ? userEmail.trim() : undefined
+        try {
+          const input: CreateRuleInput = tenorYears !== null
+            ? {
+                metricId: 'UK_GILT_NOMINAL_SPOT_CURVE',
+                predicate,
+                thresholdValue: cleanThreshold,
+                tenorYears,
+                notifyEmail: sharedNotifyEmail,
+              }
+            : {
+                metricId: 'EQUITY_EOD_PRICE',
+                predicate,
+                thresholdValue: cleanThreshold,
+                instrumentTicker: symbol,
+                notifyEmail: sharedNotifyEmail,
+              }
+          const rule = await createRule(input)
+          if (rule && rule.id) {
             newAlert.ruleId = rule.id
             setBackendRuleState('created')
-          } catch (err) {
-            console.error('Failed to register backend monitoring rule', err)
-            setBackendRuleState('failed')
           }
-        } else {
-          // No ISIN or supported metric mapping is available for this
-          // instrument yet - this stays a local-only reminder rather than
-          // a false claim of continuous server-side monitoring.
-          setBackendRuleState('unavailable')
+        } catch (err) {
+          console.error('Failed to register backend monitoring rule', err)
+          setBackendRuleState('failed')
         }
 
         if (

@@ -35,6 +35,7 @@ import {
   type ResearchJob,
 } from '@/lib/api'
 import { useEntitlement } from '@/context/EntitlementContext'
+import { useAlertSurveillance } from '@/hooks/useAlertSurveillance'
 import brandIcon from '@/assets/brand/talvrin-icon.svg'
 import wordmarkOnDark from '@/assets/brand/talvrin-wordmark-on-dark.svg'
 import wordmarkOnLight from '@/assets/brand/talvrin-wordmark-on-light.svg'
@@ -197,6 +198,7 @@ export default function App() {
   const [marketsInitialSymbol, setMarketsInitialSymbol] = useState<string | null>(null)
   const [taggedAsset, setTaggedAsset] = useState<TaggedAsset | null>(null)
   const { checkLimit } = useEntitlement()
+  useAlertSurveillance()
 
   // Internal view navigation helper that syncs with browser history, hash and storage
   const navigateToView = useCallback((nextView: NavView, replace = false) => {
@@ -423,6 +425,9 @@ export default function App() {
           )
         )
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return
+        }
         if (err instanceof ApiError && err.code === 'UNAUTHENTICATED') {
           navigate('/login', { replace: true })
           return
@@ -544,6 +549,17 @@ export default function App() {
           messageId: answer.messageId,
         })
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          appendAssistantMessage(chatId, {
+            role: 'assistant',
+            model: effectiveModel,
+            text: '_Research generation stopped by user._',
+            facts: null,
+            citations: [],
+            note: null,
+          })
+          return
+        }
         if (err instanceof ApiError && err.code === 'UNAUTHENTICATED') {
           navigate('/login', { replace: true })
           return
@@ -810,7 +826,7 @@ export default function App() {
       {/* Painted first so the sidebar's backdrop-filter samples it. */}
       <div aria-hidden className="app-ambient" />
       
-      <Toaster position="top-center" theme={theme === 'dark' ? 'dark' : 'light'} />
+      <Toaster position="top-center" theme={theme === 'dark' ? 'dark' : 'light'} closeButton richColors />
 
       <Sidebar
         collapsed={collapsed}
@@ -889,12 +905,14 @@ export default function App() {
               handleGoBack()
             }}
             initialRuleSymbol={monitoringInitialSymbol}
+            onOpenPricing={handleOpenPricing}
           />
         ) : showMarkets ? (
           <MarketsPage
             initialSymbol={marketsInitialSymbol}
             onBack={handleGoBack}
             onStartResearch={handleStartResearch}
+            onOpenPricing={handleOpenPricing}
             onOpenMonitoringForRule={(symbol) => {
               setMarketsInitialSymbol(null)
               setMonitoringInitialSymbol(symbol)
@@ -1035,6 +1053,8 @@ export default function App() {
               value={draft}
               onChange={setDraft}
               onSend={() => send()}
+              onCancel={cancelActiveResearch}
+              isGenerating={thinking}
               disabled={thinking}
               attachments={attachments}
               onAttach={(files) => setAttachments((prev) => [...prev, ...files])}

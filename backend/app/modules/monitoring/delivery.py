@@ -10,10 +10,12 @@ from dataclasses import dataclass
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.modules.monitoring.models import (
+    ALERT_TYPE_CROSSING,
     DELIVERY_ATTEMPT_DELIVERED,
     DELIVERY_ATTEMPT_FAILED,
     STATUS_ALERT_DELIVERED,
@@ -35,6 +37,21 @@ class DeliverySkipped:
 @dataclass(frozen=True)
 class Delivered:
     alert_id: uuid.UUID
+
+
+async def _next_attempt_number(
+    session: AsyncSession, *, alert_id: uuid.UUID, transport: str
+) -> int:
+    """Computes the sequential attempt number for (alert_id, transport)."""
+    current_max = (
+        await session.execute(
+            select(func.max(AlertDeliveryAttempt.attempt_number)).where(
+                AlertDeliveryAttempt.alert_id == alert_id,
+                AlertDeliveryAttempt.transport == transport,
+            )
+        )
+    ).scalar_one_or_none()
+    return (current_max or 0) + 1
 
 
 def _send_resend_email(
@@ -166,22 +183,40 @@ async def deliver_alert(
     if alert.status == STATUS_ALERT_SUPPRESSED:
         return DeliverySkipped(reason=f"alert {alert_id} is suppressed, not deliverable")
 
-    # 1. In-App delivery attempt
-    session.add(
-        AlertDeliveryAttempt(
-            account_id=alert.account_id,
-            alert_id=alert.id,
-            transport=TRANSPORT_IN_APP,
-            attempt_number=1,
-            status=DELIVERY_ATTEMPT_DELIVERED,
+    # 1. In-App delivery attempt: only add if not already delivered
+    existing_in_app = (
+        await session.execute(
+            select(AlertDeliveryAttempt).where(
+                AlertDeliveryAttempt.alert_id == alert.id,
+                AlertDeliveryAttempt.transport == TRANSPORT_IN_APP,
+                AlertDeliveryAttempt.status == DELIVERY_ATTEMPT_DELIVERED,
+            )
         )
-    )
+    ).scalar_one_or_none()
 
-    # 2. Email delivery, only when the firing rule version asked for it.
-    # Goes through send_transactional_email - the same SMTP-preferred,
-    # Resend-fallback entry point support.py's ticket receipts use - never
-    # a bespoke second mail path with its own transport-selection logic.
-    if recipient_email:
+    if existing_in_app is None:
+        in_app_attempt = await _next_attempt_number(
+            session, alert_id=alert.id, transport=TRANSPORT_IN_APP
+        )
+        session.add(
+            AlertDeliveryAttempt(
+                account_id=alert.account_id,
+                alert_id=alert.id,
+                transport=TRANSPORT_IN_APP,
+                attempt_number=in_app_attempt,
+                status=DELIVERY_ATTEMPT_DELIVERED,
+            )
+        )
+
+    # 2. Email delivery: only dispatch for actual threshold CROSSING alerts
+    # (INITIAL_STATE represents the benchmark baseline when a rule was first
+    # evaluated, not a crossing worth emailing about), and only when the
+    # firing rule version asked for it. Goes through send_transactional_email
+    # - the same SMTP-preferred, Resend-fallback entry point support.py's
+    # ticket receipts use - never a bespoke second mail path with its own
+    # transport-selection logic (a bare settings.resend_api_key gate here
+    # would silently skip EMAIL delivery in an SMTP-only environment).
+    if recipient_email and alert.alert_type == ALERT_TYPE_CROSSING:
         subject = f"[Talvrin Alert] {alert.metric_id} threshold crossed"
         metric_str = alert.metric_id
         thresh_str = str(alert.threshold_value)
@@ -213,12 +248,15 @@ async def deliver_alert(
             to_email=recipient_email, subject=subject, html_content=html
         )
 
+        email_attempt = await _next_attempt_number(
+            session, alert_id=alert.id, transport=TRANSPORT_EMAIL
+        )
         session.add(
             AlertDeliveryAttempt(
                 account_id=alert.account_id,
                 alert_id=alert.id,
                 transport=TRANSPORT_EMAIL,
-                attempt_number=1,
+                attempt_number=email_attempt,
                 status=DELIVERY_ATTEMPT_DELIVERED if success else DELIVERY_ATTEMPT_FAILED,
             )
         )

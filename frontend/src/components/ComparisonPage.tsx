@@ -307,7 +307,42 @@ export function ComparisonPage({
     ).slice(0, 6)
   }, [searchQuery, selectedSymbols])
 
-  const { checkLimit } = useEntitlement()
+  const { checkLimit, filingHistoryYears } = useEntitlement()
+
+  // Helper to format date with selected user timezone
+  const getBriefFormattedTime = () => {
+    let zone = 'UTC'
+    let zoneLabel = 'UTC'
+    try {
+      const saved = localStorage.getItem('talvrin_user_clocks')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].timeZone) {
+          zone = parsed[0].timeZone
+          zoneLabel = parsed[0].label ? `${parsed[0].label} (${zone})` : zone
+        }
+      }
+    } catch {
+      // fallback
+    }
+
+    const now = new Date()
+    try {
+      const formatted = new Intl.DateTimeFormat('en-GB', {
+        timeZone: zone,
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZoneName: 'short',
+      }).format(now)
+      return { formatted, zoneLabel, isoUtc: now.toISOString() }
+    } catch {
+      return { formatted: now.toISOString(), zoneLabel: 'UTC', isoUtc: now.toISOString() }
+    }
+  }
 
   // Generate clean Markdown brief
   const exportBriefMarkdown = () => {
@@ -321,10 +356,11 @@ export function ComparisonPage({
       return
     }
 
-    const timestamp = new Date().toISOString()
+    const timeInfo = getBriefFormattedTime()
 
-    let md = `# TALVRIN™ Asset Comparison Export\n\n`
-    md += `- **Date & Time (UTC):** ${timestamp}\n`
+    let md = `# TALVRIN™ INSTITUTIONAL ASSET & EVIDENCE COMPARISON BRIEF\n\n`
+    md += `- **Date & Time:** ${timeInfo.formatted} (${timeInfo.zoneLabel})\n`
+    md += `- **Timestamp (UTC ISO):** \`${timeInfo.isoUtc}\`\n`
     md += `- **Universe:** ${loadedAssets.map(a => a.symbol).join(', ')}\n`
     md += `- **Anchor Base Asset:** ${activeChartSymbol}\n`
     md += `- **Note:** Fundamental ratios below are not yet computed by Talvrin for any instrument and are shown as Not available rather than invented.\n\n`
@@ -411,7 +447,7 @@ export function ComparisonPage({
             <div class="subtitle">Not a solicitation or investment recommendation</div>
           </div>
           <div class="meta">
-            <div><strong>Date:</strong> ${new Date().toLocaleDateString('en-GB')}</div>
+            <div><strong>Date & Time:</strong> ${getBriefFormattedTime().formatted} (${getBriefFormattedTime().zoneLabel})</div>
             <div><strong>Universe:</strong> ${loadedAssets.map(a => a.symbol).join(', ')}</div>
           </div>
         </div>
@@ -1261,6 +1297,39 @@ export function ComparisonPage({
                   <span className={evidenceDrawerAsset.bitemporalRange === 'UNVERIFIED' ? 'text-amber-400' : 'text-emerald-400'}>
                     {evidenceDrawerAsset.bitemporalRange}
                   </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground/80 block text-[10px] uppercase">Filing History Entitlement</span>
+                  <div className="flex items-center justify-between mt-0.5">
+                    <span className="text-foreground">
+                      {typeof filingHistoryYears === 'number' ? `${filingHistoryYears} Year Archive Window` : 'Full Historical Corpus (15+ Years)'}
+                    </span>
+                    {typeof filingHistoryYears === 'number' && filingHistoryYears <= 5 && onOpenPricing && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEvidenceDrawerAsset(null)
+                          onOpenPricing()
+                        }}
+                        className="text-[11px] text-amber-400 font-semibold underline hover:text-amber-300"
+                      >
+                        Expand History
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-muted-foreground/80 block text-[10px] uppercase">Reconciliation Status</span>
+                  {/* Never an unconditional "PASSED" - that would be exactly
+                      the fabricated-trust-signal defect the 2026-11-13
+                      cleanup removed elsewhere on this page. Only a
+                      genuinely reconciled/canonical fact clears this gate;
+                      an unverified instrument says so instead. */}
+                  {evidenceDrawerAsset.bitemporalRange === 'CANONICAL' || evidenceDrawerAsset.bitemporalRange === 'RECONCILED' ? (
+                    <span className="text-emerald-400">PASSED (Deterministic GiST Zero-Overlap Gate)</span>
+                  ) : (
+                    <span className="text-amber-400">Not independently verified by Talvrin</span>
+                  )}
                 </div>
               </div>
 

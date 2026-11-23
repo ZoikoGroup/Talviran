@@ -4,8 +4,9 @@
  * Written from the specification estate rather than invented: PRD-001 §11
  * (what Talvrin may and may not answer), EVID-001 (evidence and provenance),
  * DATA-002 (reconciliation and conflict states), RIGHTS-001 (sources, export),
- * AI-001 (the model only explains pre-computed evidence) and FIN-001
- * (deterministic calculations).
+ * AI-001 (the model only explains pre-computed evidence), FIN-001
+ * (deterministic calculations), MON-001 (rule-based monitoring) and the
+ * commercial module's own real plan/quota definitions.
  */
 
 export interface Article {
@@ -19,6 +20,8 @@ export interface Article {
 export type Category =
   | 'Getting started'
   | 'Sources and evidence'
+  | 'Monitoring & Alerts'
+  | 'Teams & Organizations'
   | 'What Talvrin will not do'
   | 'Organising research'
   | 'Account'
@@ -26,6 +29,8 @@ export type Category =
 export const CATEGORIES: Category[] = [
   'Getting started',
   'Sources and evidence',
+  'Monitoring & Alerts',
+  'Teams & Organizations',
   'What Talvrin will not do',
   'Organising research',
   'Account',
@@ -75,8 +80,17 @@ export const ARTICLES: Article[] = [
     category: 'Sources and evidence',
     question: 'Where does Talvrin’s information come from?',
     answer: [
-      'Only from approved sources. For a government bond that means the debt management office or central bank; for a listed company, the exchange it trades on and the company’s own filings; for rules and conventions, the regulator or the market’s own published methodology.',
+      'Only from approved sources. For a government bond that means the debt management office or central bank; for a listed company, the exchange it trades on and the company’s own filings; for foreign exchange and international macroeconomics, named rate-setting and statistical authorities; for rules and conventions, the regulator or the market’s own published methodology.',
       'Blogs, forums, news commentary and analyst opinion are not sources. They cannot become facts in Talvrin, which is why the product cannot tell you why a price moved on a given day — that explanation lives in commentary, not in the record.',
+    ],
+  },
+  {
+    id: 'citations',
+    category: 'Sources and evidence',
+    question: 'How do citations work?',
+    answer: [
+      'Every factual claim or metric carries a numbered citation. Opening it shows the source document or dataset, the exact passage or observation it came from, and the as-of time.',
+      'Where the source is a public filing or bulletin with a stable URL, the citation links directly to it.',
     ],
   },
   {
@@ -107,12 +121,75 @@ export const ARTICLES: Article[] = [
     ],
   },
   {
+    id: 'bitemporal',
+    category: 'Sources and evidence',
+    question: 'What is bitemporality and why does it matter?',
+    answer: [
+      'In financial markets, when something became true in the world (valid time) is often different from when the platform learned about it (knowledge time).',
+      'Talvrin records both for every accepted fact, enforced by a database-level constraint that rejects two overlapping versions of the same fact. That is what lets a correction update the current view without silently rewriting what an earlier answer said at the time.',
+    ],
+  },
+  {
     id: 'conflict',
     category: 'Sources and evidence',
     question: 'Why does it sometimes say a figure is unavailable or in conflict?',
     answer: [
       'When two sources disagree and no accepted value can be resolved between them, Talvrin shows that conflict explicitly instead of quietly picking one.',
       'It is deliberate. Choosing a number arbitrarily would look more polished and be less trustworthy — you would have no way to know a disagreement existed.',
+    ],
+  },
+
+  {
+    id: 'monitoring-shortcuts',
+    category: 'Monitoring & Alerts',
+    question: 'How do I arm an alert?',
+    answer: [
+      'Click "Alert" next to an instrument — from a Watchlist row, the Markets screener, or an asset you have open — and the Set Alert panel opens pre-filled with its current price.',
+      'Choose a direction (rises above / falls below) and a threshold. An alert only becomes continuously monitored server-side when the instrument maps to a metric the monitoring engine actually watches; the panel tells you plainly if an alert is a local reminder instead.',
+    ],
+  },
+  {
+    id: 'monitoring-channels',
+    category: 'Monitoring & Alerts',
+    question: 'How will I receive a notification when a rule fires?',
+    answer: [
+      'In-app, always — a fired alert shows up in Alerts > Trigger History as soon as you are back in the product.',
+      'By email, only if you opted into that channel when arming the alert and the environment has a mail transport configured — sent to the address you provided, not a separate marketing list.',
+    ],
+  },
+  {
+    id: 'monitoring-daemon',
+    category: 'Monitoring & Alerts',
+    question: 'Does Talvrin check my alerts even when I am not looking at the app?',
+    answer: [
+      'Armed rules are evaluated by a background worker process on a short recurring sweep, independent of whether your browser tab is open — not just when you happen to refresh the page.',
+      'A separate process watches that worker’s own heartbeat, on the documented principle that an evaluator cannot be trusted to report its own death.',
+    ],
+  },
+
+  {
+    id: 'team-seats',
+    category: 'Teams & Organizations',
+    question: 'How do team seats and quotas work?',
+    answer: [
+      'Teams and Enterprise plans support more than one named seat on a single organization account. An administrator invites colleagues and allocates seats up to the plan’s limit.',
+      'Quotas (watchlists, monitoring rules, research runs, exports) are pooled across the organization’s seats, not granted separately to each member.',
+    ],
+  },
+  {
+    id: 'team-roles',
+    category: 'Teams & Organizations',
+    question: 'What roles are available for team members?',
+    answer: [
+      'Admin: billing, member invitations, seat changes and member removal, in addition to full research access. Analyst: full research, monitoring and watchlist access, without billing or membership controls. Viewer: read-only access to shared research and watchlists.',
+    ],
+  },
+  {
+    id: 'team-invites',
+    category: 'Teams & Organizations',
+    question: 'How do colleague invitations work?',
+    answer: [
+      'An administrator invites a colleague by email from Settings > Team & Organization. The recipient follows the link to create or sign in to their own account, and is attached only to the inviting organization — never to any other tenant’s data.',
     ],
   },
 
@@ -153,6 +230,15 @@ export const ARTICLES: Article[] = [
     ],
   },
   {
+    id: 'compare-tool',
+    category: 'Organising research',
+    question: 'How does the Compare page work?',
+    answer: [
+      'Open Compare in the sidebar and search for up to six instruments across equities, sovereign debt and other covered asset classes.',
+      'The page lines them up on the metrics you choose, so you can see them side by side rather than one at a time.',
+    ],
+  },
+  {
     id: 'export',
     category: 'Organising research',
     question: 'Can I export or share what I find?',
@@ -188,12 +274,30 @@ export const ARTICLES: Article[] = [
     ],
   },
   {
+    id: 'commercial-billing',
+    category: 'Account',
+    question: 'How do subscription tiers and cancellation work?',
+    answer: [
+      'Talvrin offers Explorer (free), Research, Professional, Teams and Enterprise tiers, each with its own limits on watchlists, monitoring rules, research runs and exports — shown in Settings > Billing against your actual current usage.',
+      'Upgrades go through Stripe Checkout where Stripe is configured for the environment. Cancelling an active subscription keeps your paid entitlements through the end of the current billing period rather than cutting access off immediately.',
+    ],
+  },
+  {
+    id: 'security-rls',
+    category: 'Account',
+    question: 'How is one organization’s data kept separate from another’s?',
+    answer: [
+      'Every row that belongs to an account — rules, alerts, watchlists, invitations — is scoped to that account at the database level via PostgreSQL row-level security, not only by application code checking who is asking.',
+      'A query running under the wrong account’s context simply returns no rows for data it is not scoped to, rather than relying on every call site remembering to filter correctly.',
+    ],
+  },
+  {
     id: 'prototype',
     category: 'Account',
     question: 'Is this the finished product?',
     answer: [
       'No, but it is not a disconnected demo either. Talvrin runs on real connectors — UK DMO gilts, the Bank of England yield curve, Frankfurter FX rates, DBnomics macro series and Twelve Data equities — reconciled into the platform’s own record, and sign-in is checked by a real authentication provider.',
-      'Coverage is still bounded by which sources are connected, and some planned capabilities — such as exporting a research dossier — are not built yet. Where a figure or capability is not available, the product says so rather than guessing.',
+      'Coverage is still bounded by which sources are connected. Where a figure or capability is not available, the product says so rather than guessing.',
     ],
   },
 ]
