@@ -177,9 +177,11 @@ async def deliver_alert(
         )
     )
 
-    # 2. Resend Email delivery if configured
-    settings = get_settings()
-    if settings.resend_api_key and recipient_email:
+    # 2. Email delivery, only when the firing rule version asked for it.
+    # Goes through send_transactional_email - the same SMTP-preferred,
+    # Resend-fallback entry point support.py's ticket receipts use - never
+    # a bespoke second mail path with its own transport-selection logic.
+    if recipient_email:
         subject = f"[Talvrin Alert] {alert.metric_id} threshold crossed"
         metric_str = alert.metric_id
         thresh_str = str(alert.threshold_value)
@@ -207,12 +209,8 @@ async def deliver_alert(
             notice_reference="TAL-EML-MO-MONITOR_MATCH",
         )
 
-        success = _send_resend_email(
-            to_email=recipient_email,
-            subject=subject,
-            html_content=html,
-            api_key=settings.resend_api_key,
-            from_email=settings.alerts_from_email,
+        success = send_transactional_email(
+            to_email=recipient_email, subject=subject, html_content=html
         )
 
         session.add(

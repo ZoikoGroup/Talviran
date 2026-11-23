@@ -84,7 +84,9 @@ async def _sweep_account(
             session, rule_evaluation_id=evaluation.rule_evaluation_id
         )
         if isinstance(alert, AlertCreated):
-            await deliver_alert(session, alert_id=alert.alert_id)
+            await deliver_alert(
+                session, alert_id=alert.alert_id, recipient_email=rule_version.notify_email
+            )
 
         await session.commit()
         await apply_rls_context(session, account_id=account_id, principal_id=principal_id)

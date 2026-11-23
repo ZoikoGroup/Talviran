@@ -2,7 +2,7 @@ import datetime as dt
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 class AlertOut(BaseModel):
@@ -35,6 +35,8 @@ class RuleIn(BaseModel):
     rearm_threshold: Decimal | None = None
     #: MON-001 §8 debounce. 0 means no debounce.
     debounce_seconds: int = 0
+    #: MON-001 §14 EMAIL transport, opt-in. None/omitted means IN_APP only.
+    notify_email: EmailStr | None = None
 
 
 class RuleOut(BaseModel):
@@ -53,5 +55,6 @@ class RuleOut(BaseModel):
     threshold_value: Decimal
     rearm_threshold: Decimal | None
     debounce_seconds: int
+    notify_email: str | None
     effective_from: dt.datetime
     created_at: dt.datetime

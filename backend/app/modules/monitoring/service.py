@@ -132,6 +132,7 @@ async def create_rule(
     tenor_years: Decimal | None,
     rearm_threshold: Decimal | None,
     debounce_seconds: int,
+    notify_email: str | None = None,
 ) -> MonitoringRuleVersion | RuleRejected:
     """Creates a rule, already ARMED (MON-001 §4) - this slice has no
     separate draft/activate flow, so a rule stuck in DRAFT would just be a
@@ -201,6 +202,7 @@ async def create_rule(
         threshold_value=threshold_value,
         rearm_threshold=rearm_threshold,
         debounce_seconds=debounce_seconds,
+        notify_email=notify_email,
         effective_from=dt.datetime.now(dt.UTC),
         created_by_principal_id=principal_id,
     )

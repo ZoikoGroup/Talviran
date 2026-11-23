@@ -196,6 +196,7 @@ export default function SetAlertModal({
               predicate,
               thresholdValue: threshold.replace(/[^0-9.]/g, ''),
               tenorYears,
+              notifyEmail: notifyEmail && userEmail.trim() ? userEmail.trim() : undefined,
             }
             const rule = await createRule(input)
             newAlert.ruleId = rule.id
@@ -271,7 +272,10 @@ export default function SetAlertModal({
             {!isEditing && backendRuleState === 'created' && (
               <p className="text-xs text-muted-foreground mt-1">
                 Backed by continuous server-side monitoring - you&apos;ll be notified when
-                {' '}{symbol} crosses {threshold}, even while this app is closed.
+                {' '}{symbol} crosses {threshold}, even while this app is closed
+                {notifyEmail && userEmail.trim()
+                  ? ` (in-app and by email to ${userEmail.trim()}).`
+                  : ' (in-app only - no email channel was selected).'}
               </p>
             )}
             {!isEditing && backendRuleState === 'unavailable' && (

@@ -213,6 +213,67 @@ async def test_create_instrument_rule_by_isin_succeeds(
     assert body["subject_id"] == str(instrument.id)
 
 
+async def test_create_rule_with_notify_email_stores_it(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    await _seed_pdp_prerequisites(db_session)
+
+    async with make_client() as client:
+        await _signed_in(client)
+        response = await client.post(
+            "/api/v1/monitoring-rules",
+            json={
+                "metric_id": METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+                "predicate": "CROSSES_ABOVE",
+                "threshold_value": "5.0",
+                "tenor_years": "10",
+                "notify_email": "analyst@example.com",
+            },
+        )
+    assert response.status_code == 201, response.text
+    assert response.json()["notify_email"] == "analyst@example.com"
+
+
+async def test_create_rule_without_notify_email_leaves_it_none(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    await _seed_pdp_prerequisites(db_session)
+
+    async with make_client() as client:
+        await _signed_in(client)
+        response = await client.post(
+            "/api/v1/monitoring-rules",
+            json={
+                "metric_id": METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+                "predicate": "CROSSES_ABOVE",
+                "threshold_value": "5.0",
+                "tenor_years": "10",
+            },
+        )
+    assert response.status_code == 201, response.text
+    assert response.json()["notify_email"] is None
+
+
+async def test_create_rule_with_malformed_notify_email_is_rejected(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    await _seed_pdp_prerequisites(db_session)
+
+    async with make_client() as client:
+        await _signed_in(client)
+        response = await client.post(
+            "/api/v1/monitoring-rules",
+            json={
+                "metric_id": METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+                "predicate": "CROSSES_ABOVE",
+                "threshold_value": "5.0",
+                "tenor_years": "10",
+                "notify_email": "not-an-email",
+            },
+        )
+    assert response.status_code == 422, response.text
+
+
 async def test_create_rule_with_unknown_metric_is_rejected(
     make_client: ClientFactory, db_session: AsyncSession
 ) -> None:

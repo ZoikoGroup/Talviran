@@ -550,6 +550,7 @@ interface RuleWire {
   threshold_value: string
   rearm_threshold: string | null
   debounce_seconds: number
+  notify_email: string | null
   effective_from: string
   created_at: string
 }
@@ -564,6 +565,7 @@ export interface Rule {
   thresholdValue: string
   rearmThreshold: string | null
   debounceSeconds: number
+  notifyEmail: string | null
   effectiveFrom: string
   createdAt: string
 }
@@ -578,6 +580,7 @@ const toRule = (r: RuleWire): Rule => ({
   thresholdValue: r.threshold_value,
   rearmThreshold: r.rearm_threshold,
   debounceSeconds: r.debounce_seconds,
+  notifyEmail: r.notify_email,
   effectiveFrom: r.effective_from,
   createdAt: r.created_at,
 })
@@ -590,6 +593,7 @@ export interface CreateRuleInput {
   tenorYears?: string
   rearmThreshold?: string
   debounceSeconds?: number
+  notifyEmail?: string
 }
 
 export const createRule = (input: CreateRuleInput): Promise<Rule> =>
@@ -603,6 +607,7 @@ export const createRule = (input: CreateRuleInput): Promise<Rule> =>
       tenor_years: input.tenorYears ?? null,
       rearm_threshold: input.rearmThreshold ?? null,
       debounce_seconds: input.debounceSeconds ?? 0,
+      notify_email: input.notifyEmail ?? null,
     }),
   }).then(toRule)
 
