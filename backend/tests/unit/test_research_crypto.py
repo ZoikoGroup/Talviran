@@ -92,13 +92,23 @@ def test_a_short_master_key_is_rejected() -> None:
 def test_production_refuses_a_locally_held_key() -> None:
     """A deployment that is not development must wrap with KMS."""
     with pytest.raises(KeyConfigurationError):
-        build_key_wrapper(Settings(environment="production", kms_key_name=None))
+        build_key_wrapper(
+            Settings(
+                environment="production",
+                kms_key_name=None,
+                frontend_url="https://app.talvrin.com",
+            )
+        )
 
 
 def test_staging_refuses_the_shipped_development_key() -> None:
     with pytest.raises(KeyConfigurationError):
         build_key_wrapper(
-            Settings(environment="staging", content_master_key=DEV_KEY)
+            Settings(
+                environment="staging",
+                content_master_key=DEV_KEY,
+                frontend_url="https://staging.talvrin.com",
+            )
         )
 
 
