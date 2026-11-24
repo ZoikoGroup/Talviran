@@ -84,13 +84,17 @@ async def _sweep_account(
             session, rule_evaluation_id=evaluation.rule_evaluation_id
         )
         if isinstance(alert, AlertCreated):
-            # Resolve owner's email address to deliver offline alerts via Resend
-            recipient_email = None
-            owner_principal_id = rule_version.created_by_principal_id or principal_id
-            if owner_principal_id:
-                principal_row = await session.get(Principal, owner_principal_id)
-                if principal_row and principal_row.email:
-                    recipient_email = principal_row.email
+            # An explicit per-rule notify_email (set when the alert was
+            # created, MON-001 §14) takes precedence; otherwise fall back to
+            # the account owner's own profile email, so offline alert
+            # delivery still works for rules that never set one explicitly.
+            recipient_email = rule_version.notify_email
+            if not recipient_email:
+                owner_principal_id = rule_version.created_by_principal_id or principal_id
+                if owner_principal_id:
+                    principal_row = await session.get(Principal, owner_principal_id)
+                    if principal_row and principal_row.email:
+                        recipient_email = principal_row.email
 
             await deliver_alert(
                 session,

@@ -34,6 +34,12 @@ import {
 import { useEntitlement } from '@/context/EntitlementContext'
 import { toast } from 'sonner'
 import type { TaggedAsset } from '@/data/mockReply'
+import {
+  GLOBAL_MARKET_ASSETS,
+  UNVERIFIED_SOURCE_LABEL,
+  UNVERIFIED_FRESHNESS_LABEL,
+  UNVERIFIED_STATUS_LABEL,
+} from '@/data/globalAssets'
 
 interface WatchlistsPageProps {
   onBack?: () => void
@@ -42,7 +48,6 @@ interface WatchlistsPageProps {
   onOpenPricing?: () => void
 }
 
-// Live simulated pricing & market state mapped to instruments
 interface MarketQuote {
   last: string
   change: string
@@ -51,103 +56,46 @@ interface MarketQuote {
   sparkline: number[]
   source: string
   freshness: string
-  bitemporalStatus: 'RECONCILED' | 'CANONICAL'
+  bitemporalStatus: string
 }
 
-const LIVE_QUOTES: Record<string, MarketQuote> = {
-  'UK 10Y Gilt': {
-    last: '4.216%',
-    change: '-2.4 bps',
-    pctChange: '-0.57%',
-    direction: 'down',
-    sparkline: [4.24, 4.235, 4.23, 4.225, 4.22, 4.216],
-    source: 'Bank of England',
-    freshness: '12m ago',
-    bitemporalStatus: 'CANONICAL',
-  },
-  'US 10Y Treasury': {
-    last: '4.327%',
-    change: '+1.1 bps',
-    pctChange: '+0.25%',
-    direction: 'up',
-    sparkline: [4.31, 4.315, 4.32, 4.322, 4.325, 4.327],
-    source: 'Federal Reserve / US Treasury',
-    freshness: '5m ago',
-    bitemporalStatus: 'CANONICAL',
-  },
-  'DE 10Y Bund': {
-    last: '2.441%',
-    change: '+0.8 bps',
-    pctChange: '+0.33%',
-    direction: 'up',
-    sparkline: [2.42, 2.425, 2.43, 2.435, 2.438, 2.441],
-    source: 'Deutsche Bundesbank',
-    freshness: '20m ago',
-    bitemporalStatus: 'CANONICAL',
-  },
-  'JP 10Y JGB': {
-    last: '0.845%',
-    change: '-0.2 bps',
-    pctChange: '-0.24%',
-    direction: 'down',
-    sparkline: [0.85, 0.849, 0.848, 0.846, 0.845, 0.845],
-    source: 'Ministry of Finance Japan',
-    freshness: '1h ago',
-    bitemporalStatus: 'CANONICAL',
-  },
-  'S&P 500': {
-    last: '6,589.34',
-    change: '+40.6',
-    pctChange: '+0.62%',
-    direction: 'up',
-    sparkline: [6540, 6555, 6562, 6570, 6580, 6589.34],
-    source: 'Cboe / S&P Dow Jones',
-    freshness: 'Real-time',
-    bitemporalStatus: 'RECONCILED',
-  },
-  'FTSE 100': {
-    last: '8,261.40',
-    change: '+23.1',
-    pctChange: '+0.28%',
-    direction: 'up',
-    sparkline: [8230, 8240, 8245, 8250, 8255, 8261.4],
-    source: 'London Stock Exchange',
-    freshness: 'Real-time',
-    bitemporalStatus: 'RECONCILED',
-  },
-  'GBP/USD': {
-    last: '1.2984',
-    change: '-0.0012',
-    pctChange: '-0.09%',
-    direction: 'down',
-    sparkline: [1.301, 1.2995, 1.299, 1.2988, 1.2984, 1.2984],
-    source: 'Bank of England FX Fix',
-    freshness: '3m ago',
-    bitemporalStatus: 'CANONICAL',
-  },
-  'EUR/USD': {
-    last: '1.0872',
-    change: '+0.0005',
-    pctChange: '+0.05%',
-    direction: 'up',
-    sparkline: [1.086, 1.0865, 1.0868, 1.087, 1.0871, 1.0872],
-    source: 'ECB Reference Rate',
-    freshness: '15m ago',
-    bitemporalStatus: 'CANONICAL',
-  },
-}
-
+// 2026-11-12 P0 remediation: this used to be its own separate, parallel
+// hardcoded-quote dict (9 entries) PLUS a fallback for any other watched
+// symbol that invented a flat "100.00" price labeled "Authoritative Market
+// Observation" / "RECONCILED" - a fabricated source name on a fabricated
+// number, for literally any instrument a user watchlisted that wasn't one
+// of those 9 (including AAPL/MSFT/etc., which DO have a real connector
+// elsewhere in this app). Replaced with a lookup against the single,
+// now-honestly-labeled GLOBAL_MARKET_ASSETS catalog (see globalAssets.ts's
+// own remediation comment) so a watchlisted instrument shows exactly the
+// same source/freshness/bitemporal-status honesty as everywhere else in
+// the app, instead of a second, independently-fabricated opinion of it.
 function getQuoteFor(symbol: string): MarketQuote {
-  if (LIVE_QUOTES[symbol]) return LIVE_QUOTES[symbol]
+  const asset = GLOBAL_MARKET_ASSETS.find((a) => a.symbol === symbol)
+  if (asset) {
+    return {
+      last: asset.price,
+      change: asset.change,
+      pctChange: asset.pctChange,
+      direction: asset.direction,
+      sparkline: asset.sparkline,
+      source: asset.source,
+      freshness: asset.freshness,
+      bitemporalStatus: asset.bitemporalStatus,
+    }
+  }
+  // Genuinely not in the catalog at all (shouldn't normally happen - items
+  // are only ever added to a watchlist by selecting a real catalog search
+  // result) - an honest unavailable state, never an invented number.
   return {
-    last: '100.00',
-    change: '+0.00',
-    pctChange: '0.00%',
+    last: '—',
+    change: '—',
+    pctChange: '—',
     direction: 'flat',
-    sparkline: [100, 100, 100, 100, 100, 100],
-    source: 'Authoritative Market Observation',
-    freshness: 'Active',
-    bitemporalStatus: 'RECONCILED',
+    sparkline: [],
+    source: UNVERIFIED_SOURCE_LABEL,
+    freshness: UNVERIFIED_FRESHNESS_LABEL,
+    bitemporalStatus: UNVERIFIED_STATUS_LABEL,
   }
 }
 
@@ -233,107 +181,13 @@ export default function WatchlistsPage({
         setSelectedId(data[0].id)
       }
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message)
-      } else {
-        // Offline or demo fallback
-        const mockDefaults: Watchlist[] = [
-          {
-            id: 'mock-1',
-            name: 'Global Sovereign 10Y',
-            description: 'Key sovereign benchmark 10-year yields and benchmark debt',
-            isDefault: true,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            items: [
-              {
-                id: 'm1',
-                watchlistId: 'mock-1',
-                symbol: 'UK 10Y Gilt',
-                name: 'UK 10-Year Benchmark Gilt',
-                assetClass: 'RATES',
-                sortOrder: 0,
-                createdAt: new Date().toISOString(),
-              },
-              {
-                id: 'm2',
-                watchlistId: 'mock-1',
-                symbol: 'US 10Y Treasury',
-                name: 'US 10-Year Treasury Note',
-                assetClass: 'RATES',
-                sortOrder: 1,
-                createdAt: new Date().toISOString(),
-              },
-              {
-                id: 'm3',
-                watchlistId: 'mock-1',
-                symbol: 'DE 10Y Bund',
-                name: 'Germany 10-Year Bund',
-                assetClass: 'RATES',
-                sortOrder: 2,
-                createdAt: new Date().toISOString(),
-              },
-              {
-                id: 'm4',
-                watchlistId: 'mock-1',
-                symbol: 'JP 10Y JGB',
-                name: 'Japan 10-Year JGB',
-                assetClass: 'RATES',
-                sortOrder: 3,
-                createdAt: new Date().toISOString(),
-              },
-            ],
-          },
-          {
-            id: 'mock-2',
-            name: 'Major Indices & FX',
-            description: 'Primary equity indices and currency pairs',
-            isDefault: false,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            items: [
-              {
-                id: 'm5',
-                watchlistId: 'mock-2',
-                symbol: 'S&P 500',
-                name: 'S&P 500 Index',
-                assetClass: 'EQUITY',
-                sortOrder: 0,
-                createdAt: new Date().toISOString(),
-              },
-              {
-                id: 'm6',
-                watchlistId: 'mock-2',
-                symbol: 'FTSE 100',
-                name: 'FTSE 100 Index',
-                assetClass: 'EQUITY',
-                sortOrder: 1,
-                createdAt: new Date().toISOString(),
-              },
-              {
-                id: 'm7',
-                watchlistId: 'mock-2',
-                symbol: 'GBP/USD',
-                name: 'British Pound / US Dollar',
-                assetClass: 'FX',
-                sortOrder: 2,
-                createdAt: new Date().toISOString(),
-              },
-              {
-                id: 'm8',
-                watchlistId: 'mock-2',
-                symbol: 'EUR/USD',
-                name: 'Euro / US Dollar',
-                assetClass: 'FX',
-                sortOrder: 3,
-                createdAt: new Date().toISOString(),
-              },
-            ],
-          },
-        ]
-        setWatchlists(mockDefaults)
-        if (!selectedId) setSelectedId('mock-1')
-      }
+      // No fabricated-looking fallback data here any more: a transient
+      // network failure used to render two plausible watchlists ("Global
+      // Sovereign 10Y", "Major Indices & FX") that the account never
+      // created, indistinguishable from real persisted data (T13/T20).
+      // Any failure - ApiError or otherwise - now surfaces as a real,
+      // visible error instead of silently inventing content.
+      setError(err instanceof ApiError ? err.message : 'Could not load watchlists. Please retry.')
     } finally {
       setLoading(false)
     }
@@ -471,7 +325,7 @@ export default function WatchlistsPage({
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-background p-6 md:p-8">
       {/* Header */}
-      <div className="mx-auto flex w-full max-w-7xl items-start justify-between gap-4 pb-6 border-b border-border">
+      <div className="mx-auto flex w-full max-w-7xl flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-border">
         <div>
           <div className="flex items-center gap-2.5">
             {onBack && (
@@ -494,10 +348,10 @@ export default function WatchlistsPage({
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
           <Link
             to="/guides?topic=platform-surfaces"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border/80 bg-background px-3 py-2 text-[12.5px] font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border/80 bg-background px-3 py-2 text-[12.5px] font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition-colors w-full sm:w-auto"
             title="Read documentation on portfolio watchlists & canonical reconciliation"
           >
             <BookOpen className="h-4 w-4 text-primary" />
@@ -506,7 +360,7 @@ export default function WatchlistsPage({
 
           <button
             onClick={() => setShowNewWatchlist(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-[13px] font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 active:scale-95"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-[13px] font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 active:scale-95 w-full sm:w-auto"
           >
             <FolderPlus className="h-4 w-4" />
             <span>New Watchlist</span>
@@ -564,6 +418,7 @@ export default function WatchlistsPage({
                 <button
                   onClick={() => handleDeleteWatchlist(currentList.id)}
                   title="Delete Watchlist"
+                  aria-label={`Delete watchlist ${currentList.name}`}
                   className="rounded-lg p-1.5 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-400 transition"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -592,15 +447,15 @@ export default function WatchlistsPage({
               )}
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="relative">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <div className="relative min-w-0 flex-1 sm:flex-none">
                 <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <input
                   type="text"
                   placeholder="Filter instruments..."
                   value={tableSearch}
                   onChange={(e) => setTableSearch(e.target.value)}
-                  className="h-8 w-48 rounded-lg border border-border bg-background pl-8 pr-3 text-[12.5px] text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="h-8 w-full min-w-0 rounded-lg border border-border bg-background pl-8 pr-3 text-[12.5px] text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-primary sm:w-48"
                 />
               </div>
 
@@ -615,10 +470,11 @@ export default function WatchlistsPage({
 
               <button
                 onClick={() => setShowAddItem(true)}
+                title="Add instrument to watchlist"
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-[12.5px] font-medium text-foreground hover:bg-accent transition shadow-sm"
               >
                 <Plus className="h-3.5 w-3.5" />
-                <span>Add Instrument</span>
+                <span className="hidden sm:inline">Add Instrument</span>
               </button>
             </div>
           </div>
@@ -797,6 +653,7 @@ export default function WatchlistsPage({
                             <button
                               onClick={() => handleRemoveItem(item.id)}
                               title="Remove from watchlist"
+                              aria-label={`Remove ${item.symbol} from watchlist`}
                               className="rounded-lg p-1 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-400 transition"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -823,25 +680,21 @@ export default function WatchlistsPage({
                 Create a custom portfolio or observation basket to track across global markets.
               </p>
               <form onSubmit={handleCreateWatchlist} className="mt-5 space-y-4">
-                <Field label="Watchlist Name">
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. European Inflation & Sovereign Debt"
-                    value={newWatchlistName}
-                    onChange={(e) => setNewWatchlistName(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13.5px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </Field>
-                <Field label="Description (optional)">
-                  <input
-                    type="text"
-                    placeholder="Brief description of portfolio scope"
-                    value={newWatchlistDesc}
-                    onChange={(e) => setNewWatchlistDesc(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13.5px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </Field>
+                <Field
+                  label="Watchlist Name"
+                  type="text"
+                  required
+                  placeholder="e.g. European Inflation & Sovereign Debt"
+                  value={newWatchlistName}
+                  onChange={(e) => setNewWatchlistName(e.target.value)}
+                />
+                <Field
+                  label="Description (optional)"
+                  type="text"
+                  placeholder="Brief description of portfolio scope"
+                  value={newWatchlistDesc}
+                  onChange={(e) => setNewWatchlistDesc(e.target.value)}
+                />
                 <div className="mt-6 flex justify-end gap-2.5">
                   <button
                     type="button"
@@ -868,28 +721,31 @@ export default function WatchlistsPage({
                 Track a benchmark rate, sovereign bond, index, or currency pair.
               </p>
               <form onSubmit={handleAddItem} className="mt-5 space-y-4">
-                <Field label="Symbol / Ticker">
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. UK 5Y Gilt, EUR/GBP, NASDAQ 100"
-                    value={itemSymbol}
-                    onChange={(e) => setItemSymbol(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13.5px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </Field>
-                <Field label="Instrument Name">
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. United Kingdom 5-Year Sovereign Benchmark"
-                    value={itemName}
-                    onChange={(e) => setItemName(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13.5px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                </Field>
-                <Field label="Asset Class">
+                <Field
+                  label="Symbol / Ticker"
+                  type="text"
+                  required
+                  placeholder="e.g. UK 5Y Gilt, EUR/GBP, NASDAQ 100"
+                  value={itemSymbol}
+                  onChange={(e) => setItemSymbol(e.target.value)}
+                />
+                <Field
+                  label="Instrument Name"
+                  type="text"
+                  required
+                  placeholder="e.g. United Kingdom 5-Year Sovereign Benchmark"
+                  value={itemName}
+                  onChange={(e) => setItemName(e.target.value)}
+                />
+                <div>
+                  <label
+                    htmlFor="add-item-asset-class"
+                    className="mb-2 block text-[13px] font-medium leading-none"
+                  >
+                    Asset Class
+                  </label>
                   <select
+                    id="add-item-asset-class"
                     value={itemAssetClass}
                     onChange={(e) => setItemAssetClass(e.target.value)}
                     className="w-full rounded-xl border border-border bg-background px-3 py-2 text-[13.5px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -899,7 +755,7 @@ export default function WatchlistsPage({
                     <option value="FX">Foreign Exchange (FX)</option>
                     <option value="COMMODITY">Commodity (COMMODITY)</option>
                   </select>
-                </Field>
+                </div>
                 <div className="mt-6 flex justify-end gap-2.5">
                   <button
                     type="button"

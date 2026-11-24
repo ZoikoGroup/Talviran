@@ -5,12 +5,16 @@
  * calls the real /api/v1/auth/* surface (Supabase-backed) via @/lib/api,
  * wired through AuthContext. Identity itself comes from the backend — the
  * session cookie is HttpOnly and this file never touches it (SEC-001 §41).
- * What lives here is purely cosmetic and client-only: deriving a display
- * name from an email, and a local override for it, since there is no
- * backend profile/display-name endpoint yet.
+ *
+ * Display name used to be purely client-side: derived from the email and
+ * optionally overridden in a single, NOT account-scoped localStorage key
+ * (bug T10). On a shared browser that let one account's chosen name leak
+ * into whichever account signed in next, and it was wiped on sign-out, so a
+ * fresh login always looked like the rename had reverted. Display name is
+ * now a real column (identity.principal.display_name) returned by every
+ * signup/login/me/display-name response — see PATCH /api/v1/auth/
+ * display-name and AuthContext.rename.
  */
-
-const DISPLAY_NAME_KEY = 'talvrin-display-name'
 
 /** Deliberately generous — this is a format hint, not a validation authority. */
 export const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.trim())
@@ -21,37 +25,4 @@ export const passwordProblem = (v: string): string | null => {
   if (v.length < 8) return 'Use at least 8 characters.'
   if (!/[0-9]/.test(v)) return 'Include at least one number.'
   return null
-}
-
-/** Derives a display name from an email local part: "vignesh.k" -> "Vignesh K". */
-export const nameFromEmail = (email: string) =>
-  email
-    .split('@')[0]
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-    .join(' ') || 'There'
-
-export const getDisplayNameOverride = (): string | null => {
-  try {
-    return localStorage.getItem(DISPLAY_NAME_KEY)
-  } catch {
-    return null
-  }
-}
-
-export const setDisplayNameOverride = (name: string) => {
-  try {
-    localStorage.setItem(DISPLAY_NAME_KEY, name.trim())
-  } catch {
-    // Private mode — the rename just won't survive a reload.
-  }
-}
-
-export const clearDisplayNameOverride = () => {
-  try {
-    localStorage.removeItem(DISPLAY_NAME_KEY)
-  } catch {
-    // Nothing to clean up if storage is unavailable.
-  }
 }

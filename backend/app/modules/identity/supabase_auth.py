@@ -227,6 +227,47 @@ async def update_password(
     return SupabaseUser(id=uuid.UUID(body["id"]), email=body["email"])
 
 
+async def change_password(
+    client: httpx.AsyncClient,
+    *,
+    email: str,
+    current_password: str,
+    new_password: str,
+    settings: Settings,
+) -> SupabaseUser:
+    """Changes an already-signed-in user's password (Settings → Security →
+    Change password), re-verifying the current password the same way login
+    does rather than trusting the caller's existing session cookie alone -
+    that cookie proves *a* session is valid, not that its holder still
+    knows the current credential, and a stolen cookie should not be able to
+    silently rotate the password out from under its owner.
+    """
+    try:
+        resp = await client.post(
+            f"{settings.supabase_url}/auth/v1/token",
+            params={"grant_type": "password"},
+            json={"email": email, "password": current_password},
+            headers=_headers(settings),
+        )
+    except httpx.HTTPError as exc:
+        raise SupabaseUnavailable(f"sign-in request failed: {exc}") from exc
+
+    body = resp.json() if resp.content else {}
+    if resp.status_code >= 400:
+        code, _ = _error_fields(body)
+        if code == "email_not_confirmed":
+            raise EmailNotConfirmed
+        raise InvalidCredentials
+
+    access_token = body.get("access_token")
+    if not isinstance(access_token, str) or not access_token:
+        raise SupabaseUnavailable(f"sign-in returned no access token: {body}")
+
+    return await update_password(
+        client, access_token=access_token, new_password=new_password, settings=settings
+    )
+
+
 async def request_password_reset(
     client: httpx.AsyncClient,
     *,

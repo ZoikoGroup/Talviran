@@ -173,6 +173,26 @@ async def test_alerts_requires_a_session(make_client: ClientFactory) -> None:
     assert response.status_code == 401
 
 
+async def test_trigger_endpoint_no_longer_exists(make_client: ClientFactory) -> None:
+    """POST /api/v1/alerts/trigger used to accept a caller-supplied
+    asset_symbol/threshold_value/observed_value/recipient_email with no
+    verification against any real Alert/MonitoringRule row and unconditionally
+    send a real email claiming a "verified" threshold event (2026-11-10 UAT
+    gap analysis G11 remediation). It must not come back.
+    """
+    async with make_client() as client:
+        response = await client.post(
+            "/api/v1/alerts/trigger",
+            json={
+                "asset_symbol": "NVIDIA (NVDA)",
+                "threshold_value": "100",
+                "observed_value": "101",
+                "recipient_email": "attacker@example.com",
+            },
+        )
+    assert response.status_code in (404, 405)
+
+
 async def test_denies_before_governance_is_seeded(
     make_client: ClientFactory, db_session: AsyncSession
 ) -> None:

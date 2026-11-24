@@ -13,6 +13,24 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/auth/AuthContext'
 import { SubmitButton } from '@/components/ui/field'
 import { createRule, type CreateRuleInput } from '@/lib/api'
+import { accountScopedKey } from '@/lib/accountStorage'
+
+// The only instrument this modal can deterministically map onto one of the
+// two real backend-watchable metrics (monitoring/rule_engine.py's
+// SCALAR_VALUE_KEYS) is a UK gilt curve point - "UK 10Y Gilt" etc. are the
+// exact symbol strings globalAssets.ts uses for them. Everything else
+// (equities, FX, commodities, crypto, non-UK sovereigns) has no ISIN
+// plumbed through to this modal at all, so MODEL_IMPLIED_CLEAN_PRICE is
+// never reachable here - that is missing wiring, not something to fake
+// (2026-11-10 UAT gap analysis G11 remediation: this used to hardcode
+// every alert, regardless of symbol, as a UK_GILT_NOMINAL_SPOT_CURVE/10Y
+// rule and silently discard the result either way).
+const UK_GILT_TENOR_PATTERN = /^UK\s+(\d+(?:\.\d+)?)Y\s+Gilt$/i
+
+function resolveWatchableTenorYears(symbol: string): string | null {
+  const match = UK_GILT_TENOR_PATTERN.exec(symbol.trim())
+  return match ? match[1] : null
+}
 import { useEntitlement } from '@/context/EntitlementContext'
 import { toast } from 'sonner'
 
@@ -76,6 +94,13 @@ export default function SetAlertModal({
   )
   const [busy, setBusy] = useState(false)
   const [savedSuccess, setSavedSuccess] = useState(false)
+  //: Whether a real backend MonitoringRule now backs this alert - `null`
+  //: while unknown/not applicable yet. Shown honestly in the success
+  //: screen instead of a blanket "Alert Armed Successfully" regardless of
+  //: what actually happened server-side.
+  const [backendRuleState, setBackendRuleState] = useState<
+    'created' | 'unavailable' | 'failed' | null
+  >(null)
   const { checkLimit } = useEntitlement()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -118,10 +143,11 @@ export default function SetAlertModal({
         }
 
         try {
-          const existingRaw = localStorage.getItem('talvrin_custom_alerts')
+          const key = accountScopedKey(session?.email, 'talvrin_custom_alerts')
+          const existingRaw = localStorage.getItem(key)
           const list: CustomAlertTrigger[] = existingRaw ? JSON.parse(existingRaw) : []
           const next = list.map((a) => (a.id === existingAlert.id ? updatedAlert : a))
-          localStorage.setItem('talvrin_custom_alerts', JSON.stringify(next))
+          localStorage.setItem(key, JSON.stringify(next))
         } catch {
           // ignore
         }
@@ -149,41 +175,55 @@ export default function SetAlertModal({
 
         // Sync into local storage alerts list
         try {
-          const existingRaw = localStorage.getItem('talvrin_custom_alerts')
+          const key = accountScopedKey(session?.email, 'talvrin_custom_alerts')
+          const existingRaw = localStorage.getItem(key)
           const list: CustomAlertTrigger[] = existingRaw ? JSON.parse(existingRaw) : []
           const updated = [newAlert, ...list]
-          localStorage.setItem('talvrin_custom_alerts', JSON.stringify(updated))
+          localStorage.setItem(key, JSON.stringify(updated))
         } catch {
           // ignore
         }
 
-        // Register continuous rule in the backend monitoring engine (MON-001)
+        // Register a continuous rule in the real backend monitoring engine
+        // (MON-001): a precise UK-gilt-tenor regex match (never a loose
+        // "contains GILT/TREASURY/10Y" guess, which would misclassify e.g.
+        // "US 10Y Treasury" as a UK gilt) resolves the curve metric; any
+        // other symbol falls back to a ticker-based equity price rule
+        // instead of being silently marked unavailable, now that the
+        // backend resolves EQUITY_EOD_PRICE rules by ticker.
+        const tenorYears = resolveWatchableTenorYears(symbol)
+        // Preserve a leading negative sign (negative yields/basis spreads) -
+        // a bare digit/decimal-point strip would silently drop it.
+        const trimmedThreshold = threshold.trim()
+        const isNegativeThreshold = trimmedThreshold.startsWith('-')
+        const cleanThreshold =
+          (isNegativeThreshold ? '-' : '') + trimmedThreshold.replace(/[^0-9.]/g, '')
+        const sharedNotifyEmail =
+          notifyEmail && userEmail.trim() ? userEmail.trim() : undefined
         try {
-          const isGilt = symbol.toUpperCase().includes('GILT') || symbol.toUpperCase().includes('TREASURY') || symbol.includes('10Y')
-          // Preserve leading negative signs for negative yields or basis spreads
-          const trimmed = threshold.trim()
-          const isNegative = trimmed.startsWith('-')
-          const numericPart = trimmed.replace(/[^0-9.]/g, '')
-          const cleanThreshold = (isNegative ? '-' : '') + numericPart
-          const input: CreateRuleInput = isGilt
+          const input: CreateRuleInput = tenorYears !== null
             ? {
                 metricId: 'UK_GILT_NOMINAL_SPOT_CURVE',
                 predicate,
                 thresholdValue: cleanThreshold,
-                tenorYears: '10',
+                tenorYears,
+                notifyEmail: sharedNotifyEmail,
               }
             : {
                 metricId: 'EQUITY_EOD_PRICE',
                 predicate,
                 thresholdValue: cleanThreshold,
                 instrumentTicker: symbol,
+                notifyEmail: sharedNotifyEmail,
               }
           const rule = await createRule(input)
           if (rule && rule.id) {
             newAlert.ruleId = rule.id
+            setBackendRuleState('created')
           }
-        } catch {
-          // fallback
+        } catch (err) {
+          console.error('Failed to register backend monitoring rule', err)
+          setBackendRuleState('failed')
         }
 
         if (
@@ -214,7 +254,7 @@ export default function SetAlertModal({
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 p-2 sm:p-4 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto">
-      <div className="relative my-auto flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl border border-border bg-[#0e1218] p-4 sm:p-5 shadow-2xl text-foreground animate-in zoom-in-95 duration-150">
+      <div className="relative my-auto flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-2xl text-foreground animate-in zoom-in-95 duration-150">
         <div className="flex shrink-0 items-center justify-between border-b border-border/60 pb-2.5">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary border border-primary/20">
@@ -241,11 +281,35 @@ export default function SetAlertModal({
               <Check className="h-6 w-6" />
             </div>
             <h4 className="text-sm font-semibold text-foreground">
-              {isEditing ? 'Alert Updated Successfully' : 'Alert Armed Successfully'}
+              {isEditing ? 'Alert Updated' : 'Alert Saved'}
             </h4>
-            <p className="text-xs text-muted-foreground mt-1">
-              You will be notified when {symbol} crosses {threshold}.
-            </p>
+            {!isEditing && backendRuleState === 'created' && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Backed by continuous server-side monitoring - you&apos;ll be notified when
+                {' '}{symbol} crosses {threshold}, even while this app is closed
+                {notifyEmail && userEmail.trim()
+                  ? ` (in-app and by email to ${userEmail.trim()}).`
+                  : ' (in-app only - no email channel was selected).'}
+              </p>
+            )}
+            {!isEditing && backendRuleState === 'unavailable' && (
+              <p className="text-xs text-amber-400 mt-1">
+                Continuous server-side monitoring isn&apos;t available for {symbol} yet, so this
+                is a local reminder only - it will check while this app is open, but won&apos;t
+                fire if you close it.
+              </p>
+            )}
+            {!isEditing && backendRuleState === 'failed' && (
+              <p className="text-xs text-amber-400 mt-1">
+                We couldn&apos;t register this with server-side monitoring, so it&apos;s saved as
+                a local reminder only for now.
+              </p>
+            )}
+            {isEditing && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Your alert for {symbol} at {threshold} has been updated.
+              </p>
+            )}
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="mt-3 flex flex-1 flex-col min-h-0 overflow-hidden">
@@ -294,7 +358,7 @@ export default function SetAlertModal({
                   <div className="text-[10px] font-semibold tracking-wider text-emerald-400 uppercase">
                     Live Market Price / Yield
                   </div>
-                  <div className="font-mono text-base font-bold text-white tracking-tight">
+                  <div className="font-mono text-base font-bold text-foreground tracking-tight">
                     {currentPrice}
                   </div>
                 </div>

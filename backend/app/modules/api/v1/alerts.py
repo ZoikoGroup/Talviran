@@ -12,8 +12,8 @@ from fastapi import APIRouter, Query
 from app.core.errors import ErrorCode, TalvrinAPIError
 from app.core.pagination import PageOut
 from app.modules.api.v1.deps import IdentityDep, SessionDep
-from app.modules.monitoring import delivery, service
-from app.modules.monitoring.schemas import AlertOut, TriggerAlertIn
+from app.modules.monitoring import service
+from app.modules.monitoring.schemas import AlertOut
 
 router = APIRouter(prefix="/alerts", tags=["monitoring"])
 
@@ -58,29 +58,15 @@ async def get_alert(
     return AlertOut.model_validate(alert)
 
 
-@router.post("/trigger")
-async def trigger_and_dispatch_alert(
-    body: TriggerAlertIn,
-    identity: IdentityDep,
-) -> dict[str, str | bool]:
-    """Receives touched alert from active surveillance, dispatches email to user account,
-    and returns delivery confirmation.
-    """
-    recipient = body.recipient_email or identity.email
-    email_dispatched = False
-    if recipient:
-        email_dispatched = delivery.send_market_alert_email(
-            recipient_email=recipient,
-            asset_symbol=body.asset_symbol,
-            asset_name=body.asset_name,
-            threshold_value=body.threshold_value,
-            observed_value=body.observed_value,
-            predicate=body.predicate,
-        )
-
-    return {
-        "status": "triggered",
-        "email_dispatched": email_dispatched,
-        "recipient": recipient,
-        "asset_symbol": body.asset_symbol,
-    }
+# A POST /trigger endpoint used to live here: it accepted a caller-supplied
+# asset_symbol/threshold_value/observed_value/recipient_email with no
+# verification against any real MonitoringRule or Alert row, and
+# unconditionally sent a real Resend email captioned "Verified threshold
+# event... using an entitled, validated price observation" - a false claim
+# every time, to any recipient_email the caller named. Its only caller
+# anywhere in the codebase was the frontend's fabricated client-side
+# crossing-detection (MonitoringPage.tsx, removed 2026-11-10 UAT gap
+# analysis G11 remediation). The genuine delivery path - monitoring.
+# delivery.deliver_alert, driven entirely by a real Alert row the real
+# evaluator produced from a real rule + real observation - is untouched
+# and remains the only way an alert email is ever sent.

@@ -20,11 +20,14 @@ class Account(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     name: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(32), default="ACTIVE")
+    # Every new account starts on the free Explorer tier. Paid tiers are only
+    # granted by a verified Stripe checkout / explicit downgrade-resistant
+    # plan change — never by the schema default (bug: signups became paid).
     plan_tier: Mapped[str] = mapped_column(
-        String(32), default="professional", server_default="professional"
+        String(32), default="explorer", server_default="explorer"
     )
     billing_cadence: Mapped[str] = mapped_column(
-        String(32), default="annual", server_default="annual"
+        String(32), default="monthly", server_default="monthly"
     )
     seat_count: Mapped[int] = mapped_column(default=1, server_default="1")
     current_period_end: Mapped[dt.datetime | None] = mapped_column(default=None, nullable=True)
@@ -57,6 +60,11 @@ class Principal(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     role: Mapped[str] = mapped_column(String(32), default="admin", server_default="admin")
     totp_secret: Mapped[str | None] = mapped_column(String(128), default=None, nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    # Settings -> Account -> Display name (bug T10). Null means "not
+    # customised yet" - service.default_display_name derives one from the
+    # email in that case, rather than every existing principal needing a
+    # backfilled value.
+    display_name: Mapped[str | None] = mapped_column(String(120), default=None, nullable=True)
 
 
 class OrganizationInvitation(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

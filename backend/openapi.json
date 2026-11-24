@@ -412,6 +412,28 @@
         "title": "CancelSubscriptionResponse",
         "type": "object"
       },
+      "ChangePasswordIn": {
+        "properties": {
+          "current_password": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "ChangePasswordIn",
+        "type": "object"
+      },
       "CheckoutSessionRequest": {
         "properties": {
           "additional_seats": {
@@ -1680,6 +1702,18 @@
             "title": "Id",
             "type": "string"
           },
+          "reassessment_correction_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reassessment Correction Id"
+          },
           "role": {
             "title": "Role",
             "type": "string"
@@ -2027,6 +2061,11 @@
             "title": "Email",
             "type": "string"
           },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
           "principal_id": {
             "title": "Principal Id",
             "type": "string"
@@ -2205,6 +2244,115 @@
         "title": "ResearchIn",
         "type": "object"
       },
+      "ResearchJobIn": {
+        "properties": {
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "query": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "query"
+        ],
+        "title": "ResearchJobIn",
+        "type": "object"
+      },
+      "ResearchJobOut": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "conversation_id": {
+            "format": "uuid",
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResearchOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status",
+          "conversation_id",
+          "created_at",
+          "started_at",
+          "completed_at",
+          "result",
+          "error"
+        ],
+        "title": "ResearchJobOut",
+        "type": "object"
+      },
       "ResearchOut": {
         "properties": {
           "allowed_output_type": {
@@ -2338,6 +2486,18 @@
             "title": "Metric Id",
             "type": "string"
           },
+          "notify_email": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notify Email"
+          },
           "predicate": {
             "title": "Predicate",
             "type": "string"
@@ -2419,6 +2579,17 @@
             "title": "Metric Id",
             "type": "string"
           },
+          "notify_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notify Email"
+          },
           "predicate": {
             "title": "Predicate",
             "type": "string"
@@ -2464,6 +2635,7 @@
           "threshold_value",
           "rearm_threshold",
           "debounce_seconds",
+          "notify_email",
           "effective_from",
           "created_at"
         ],
@@ -2671,6 +2843,11 @@
           "provider": {
             "title": "Provider",
             "type": "string"
+          },
+          "simulated": {
+            "default": false,
+            "title": "Simulated",
+            "type": "boolean"
           },
           "status": {
             "title": "Status",
@@ -2897,54 +3074,19 @@
         "title": "TradingViewAlertPayload",
         "type": "object"
       },
-      "TriggerAlertIn": {
+      "UpdateDisplayNameIn": {
         "properties": {
-          "asset_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Asset Name"
-          },
-          "asset_symbol": {
-            "title": "Asset Symbol",
-            "type": "string"
-          },
-          "observed_value": {
-            "title": "Observed Value",
-            "type": "string"
-          },
-          "predicate": {
-            "default": "CROSSES_ABOVE",
-            "title": "Predicate",
-            "type": "string"
-          },
-          "recipient_email": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Recipient Email"
-          },
-          "threshold_value": {
-            "title": "Threshold Value",
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
             "type": "string"
           }
         },
         "required": [
-          "asset_symbol",
-          "threshold_value",
-          "observed_value"
+          "name"
         ],
-        "title": "TriggerAlertIn",
+        "title": "UpdateDisplayNameIn",
         "type": "object"
       },
       "UpdateMemberRoleRequest": {
@@ -3330,59 +3472,6 @@
         ]
       }
     },
-    "/api/v1/alerts/trigger": {
-      "post": {
-        "description": "Receives touched alert from active surveillance, dispatches email to user account,\nand returns delivery confirmation.",
-        "operationId": "trigger_and_dispatch_alert_api_v1_alerts_trigger_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TriggerAlertIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "boolean"
-                      }
-                    ]
-                  },
-                  "title": "Response Trigger And Dispatch Alert Api V1 Alerts Trigger Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Trigger And Dispatch Alert",
-        "tags": [
-          "monitoring"
-        ]
-      }
-    },
     "/api/v1/alerts/{alert_id}": {
       "get": {
         "operationId": "get_alert_api_v1_alerts__alert_id__get",
@@ -3524,6 +3613,83 @@
           }
         },
         "summary": "Setup Two Factor",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/change-password": {
+      "post": {
+        "description": "Settings \u2192 Security \u2192 Change password, for the signed-in principal.\n\nDistinct from /forgot-password + /reset-password (that pair is for a\nuser who is locked out and proves identity via a mailbox link instead);\nthis one re-verifies current_password with Supabase before accepting\nnew_password, same as login does - see identity.service.change_password.",
+        "operationId": "change_password_api_v1_auth_change_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/display-name": {
+      "patch": {
+        "description": "Settings -> Account -> Display name (bug T10). Scoped to the\nsigned-in principal only - the request body carries no id, so there is\nno way to rename anyone else.",
+        "operationId": "update_display_name_api_v1_auth_display_name_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDisplayNameIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Display Name",
         "tags": [
           "auth"
         ]
@@ -5262,6 +5428,146 @@
         ]
       }
     },
+    "/api/v1/research/jobs": {
+      "post": {
+        "description": "Quota is checked here, once, at job creation - not re-checked by the\nworker - matching the synchronous endpoint's own placement (before any\nreal work starts) and avoiding a queued job that's guaranteed to fail\nquota the moment a worker picks it up.",
+        "operationId": "create_research_job_api_v1_research_jobs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchJobIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Research Job",
+        "tags": [
+          "research"
+        ]
+      }
+    },
+    "/api/v1/research/jobs/{job_id}": {
+      "get": {
+        "operationId": "get_research_job_api_v1_research_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Research Job",
+        "tags": [
+          "research"
+        ]
+      }
+    },
+    "/api/v1/research/jobs/{job_id}/cancel": {
+      "post": {
+        "description": "Idempotent, per jobs_service.request_cancel's own contract: a job\nthat already finished is returned unchanged, with its real final\nstatus, never an error - a canceled browser subscription is not proof\nthe server job stopped (UAT gap-analysis G15's own wording), so this\nendpoint can only ever express a request, not a guarantee.\n\nDeliberately does not commit and then re-fetch: research.research_job\nruns under FORCE ROW LEVEL SECURITY, and a commit ends the transaction\nholding app.account_id (SET LOCAL is transaction-scoped) - an earlier\nversion of this endpoint did exactly that and its own second lookup\nthen failed closed on every call, returning 404 even though the\ncancel itself had already succeeded (caught live, not by a test:\ncurl showed the job really was CANCEL_REQUESTED on a follow-up GET\nfrom a fresh request, while this endpoint's own response claimed not\nfound). request_cancel's only possible effects are the status\ntransition itself - result_message_id/error_message/completed_at are\nuntouched by a cancel request, only the worker's mark_* functions set\nthose - so the already-fetched `job` plus the new status is the\ncomplete, correct response with no second query needed.",
+        "operationId": "cancel_research_job_api_v1_research_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Research Job",
+        "tags": [
+          "research"
+        ]
+      }
+    },
     "/api/v1/research/{message_id}/evidence": {
       "get": {
         "description": "404 for both \"no such message\" and \"not yours\" - RLS (applied per\nrequest via identity's session context) already makes those\nindistinguishable, same principle as chats.py's _not_found(). A message\nthat exists and IS the caller's own but simply has no evidence bundle\n(e.g. an advice-redirect reply) is not an error - it returns an empty\nitem list.",
@@ -5387,8 +5693,26 @@
     },
     "/api/v1/support/tickets": {
       "post": {
-        "description": "Submit an in-app support request or report a market data discrepancy.",
+        "description": "Submit an in-app support request or report a market data discrepancy.\n\n/contact is a public page (main.tsx has no RequireAuth wrapper on it), so\na visitor who isn't signed in must be able to reach this too - it\npreviously required IdentityDep and 401'd for anyone logged out, which\nthe frontend's error handling then silently turned into a mailto: popup\ninstead of a real ticket (the actual cause of the reported \"Submit\nTicket to Desk opens Outlook\" bug, not a mailto-only implementation).\nAn anonymous ticket is recorded honestly as having no account/principal\nrather than attributing it to whichever session happened to be nearby.\n\nIdempotency-Key is an optional header (standard convention, not a new\nTalvrin-specific one) - today's frontend sends nothing, which must keep\nbehaving exactly as before (every call creates a new ticket). When a\ncaller does send one, a repeat within 24h of the same key (scoped to\nthis account, or to the shared anonymous bucket when signed out - see\nsupport/models.py's Ticket docstring) returns the ORIGINAL ticket's\nresponse rather than creating a second ticket/second set of emails.",
         "operationId": "submit_support_ticket_api_v1_support_tickets_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5517,7 +5841,7 @@
     },
     "/api/v1/sync/trigger": {
       "post": {
-        "description": "Manual or Cron-driven trigger to pull latest data from providers.",
+        "description": "Manual or Cron-driven trigger to pull latest data from providers.\n\nThe AMFI/Twelve Data rows below are hardcoded sample data, not a real\nprovider call - there is no AMFI or Twelve Data real-time integration\nwired to this endpoint. They were previously returned unconditionally,\nlabeled with real-sounding provenance (\"AMFI Statutory Daily NAV\",\n\"Twelve Data / NASDAQ\", \"EOD Reconciled\", bitemporal_status=\"CANONICAL\")\nin every environment - a direct fail-closed-doctrine violation (2026-11-10\nUAT gap analysis G06/G11 remediation). In production this endpoint now\nreturns no fabricated rows at all; outside production it still returns\nthem for local UI development, with `simulated=True` so no consumer can\nmistake them for real data regardless of environment.",
         "operationId": "trigger_external_sync_api_v1_sync_trigger_post",
         "requestBody": {
           "content": {

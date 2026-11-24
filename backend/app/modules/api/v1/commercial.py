@@ -155,9 +155,19 @@ async def stripe_webhook(
                 detail="Missing Stripe-Signature header on production webhook payload.",
             )
         try:
+            # stripe-python returns a `stripe.Event` StripeObject here, not a
+            # plain dict - handle_stripe_webhook_event does event_data.get(...)
+            # (dict-only; StripeObject.__getattr__ raises AttributeError for
+            # dict methods, by design, see stripe._stripe_object), so this
+            # must be converted before being passed on. .to_dict() recurses
+            # by default, so nested `data.object`/`metadata` come back as
+            # plain dicts too, not just the top level. Found via a real
+            # signed-webhook test (G16), not assumed from docs: the
+            # unconverted StripeObject path 500s on every real production
+            # webhook call, signature verification included.
             event = stripe.Webhook.construct_event(
                 payload, stripe_signature, settings.stripe_webhook_secret
-            )
+            ).to_dict()
         except stripe.error.SignatureVerificationError as err:
             from fastapi import HTTPException
             raise HTTPException(

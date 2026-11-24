@@ -12,8 +12,21 @@ interface TradingViewWidgetProps {
   symbol: string
   theme?: 'dark' | 'light'
   interval?: string
+  // TradingView's own date-range selector value (e.g. '1D','5D','1M','3M',
+  // '12M','60M','ALL') - controls which window of history is visible on
+  // open, independent of `interval` (the bar/candle size). Without this,
+  // every interval beyond the shortest one left the widget showing
+  // whatever its own default history window happened to be, so switching
+  // timeframe buttons past "1D" had no visible effect.
+  range?: string
   timezone?: string
   onFallbackToNative?: () => void
+  //: Fired once the embed has taken more than 4s to paint, in addition to
+  //: this widget's own "taking longer than expected" message - lets a
+  //: caller that has no legitimate fallback to offer (production, where
+  //: there is no real OHLC source besides this embed) show an explicit
+  //: unavailable state instead of leaving the spinner up indefinitely.
+  onTimeout?: () => void
 }
 
 /**
@@ -23,14 +36,24 @@ interface TradingViewWidgetProps {
 export function mapToTradingViewSymbol(symbol: string): string {
   const s = symbol.trim().toUpperCase()
 
-  // Sovereign Fixed Income (Official TVC benchmarks)
+  // Sovereign Fixed Income (Official TVC benchmarks). Only tenors confirmed
+  // live to actually resolve on TradingView are mapped - a guessed symbol
+  // that doesn't exist renders a wrong/misleading chart, whereas falling
+  // through to the "no chart feed" state (below) is an honest result.
   if (s.includes('UK 10Y') || s.includes('GILT 10Y') || s === 'UK10Y' || s === 'GB10Y') return 'TVC:GB10Y'
   if (s.includes('UK 2Y') || s.includes('GILT 2Y') || s === 'UK02Y' || s === 'GB02Y') return 'TVC:GB02Y'
+  if (s.includes('UK 5Y') || s.includes('GILT 5Y') || s === 'UK05Y' || s === 'GB05Y') return 'TVC:GB05Y'
   if (s.includes('UK 30Y') || s.includes('GILT 30Y') || s === 'UK30Y' || s === 'GB30Y') return 'TVC:GB30Y'
   if (s.includes('US 10Y') || s.includes('TREASURY 10Y') || s === 'US10Y') return 'TVC:US10Y'
   if (s.includes('US 2Y') || s.includes('TREASURY 2Y') || s === 'US02Y') return 'TVC:US02Y'
+  if (s.includes('US 5Y') || s.includes('TREASURY 5Y') || s === 'US05Y') return 'TVC:US05Y'
+  if (s.includes('US 20Y') || s.includes('TREASURY 20Y') || s === 'US20Y') return 'TVC:US20Y'
   if (s.includes('US 30Y') || s.includes('TREASURY 30Y') || s === 'US30Y') return 'TVC:US30Y'
   if (s.includes('DE 10Y') || s.includes('BUND') || s === 'DE10Y') return 'TVC:DE10Y'
+  if (s.includes('DE 2Y') || s.includes('SCHATZ') || s === 'DE02Y') return 'TVC:DE02Y'
+  if (s.includes('DE 30Y') || s === 'DE30Y') return 'TVC:DE30Y'
+  if (s.includes('FR 10Y') || s.includes('OAT') || s === 'FR10Y') return 'TVC:FR10Y'
+  if (s.includes('IT 10Y') || s.includes('BTP') || s === 'IT10Y') return 'TVC:IT10Y'
   if (s.includes('JP 10Y') || s.includes('JGB') || s === 'JP10Y') return 'TVC:JP10Y'
   if (s.includes('IN 10Y') || s.includes('G-SEC') || s === 'IN10Y') return 'TVC:IN10Y'
 
@@ -171,8 +194,10 @@ export default function TradingViewWidget({
   symbol,
   theme = 'dark',
   interval = 'D',
+  range,
   timezone = 'Etc/UTC',
   onFallbackToNative,
+  onTimeout,
 }: TradingViewWidgetProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const tvSymbol = mapToTradingViewSymbol(symbol)
@@ -202,12 +227,23 @@ export default function TradingViewWidget({
       autosize: true,
       symbol: tvSymbol,
       interval,
+      ...(range ? { range } : {}),
       timezone,
       theme,
       style: '1',
       locale: 'en',
       enable_publishing: false,
-      allow_symbol_change: true,
+      // 2026-11-12 P0 remediation: `true` here let a user change the
+      // displayed symbol from INSIDE the TradingView iframe's own search UI,
+      // entirely independent of this app's selected-instrument state - our
+      // header (driven by React props) would keep showing the original
+      // instrument while the embedded chart silently showed whatever the
+      // user searched for inside it. Confirmed as the root cause of a P0
+      // header/chart identity mismatch (NIFTY 50 header, AAPL chart data)
+      // found while live-testing the chart-switching fix in
+      // TradingViewModal.tsx. False makes this app the only way to change
+      // what's displayed, so header and chart can never disagree.
+      allow_symbol_change: false,
       calendar: false,
       support_host: 'https://www.tradingview.com',
     })
@@ -221,13 +257,14 @@ export default function TradingViewWidget({
 
     const timer = setTimeout(() => {
       setLoadTimedOut(true)
+      onTimeout?.()
     }, 4000)
 
     return () => {
       clearTimeout(timer)
       container.innerHTML = ''
     }
-  }, [tvSymbol, theme, interval, timezone])
+  }, [tvSymbol, theme, interval, range, timezone, onTimeout])
 
   return (
     <div className="relative h-full w-full min-h-0 overflow-hidden rounded-xl bg-[#090b0e]">

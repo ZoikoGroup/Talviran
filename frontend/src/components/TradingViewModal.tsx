@@ -9,6 +9,7 @@ import {
   LineChart,
   CandlestickChart,
   ExternalLink,
+  AlertTriangle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import InstitutionalChart from '@/components/InstitutionalChart'
@@ -36,6 +37,42 @@ interface TradingViewModalProps {
 type Timeframe = '1D' | '1W' | '1M' | '3M' | '1Y' | '5Y' | 'ALL'
 type ChartMode = 'candles' | 'area'
 
+// Maps each timeframe button to TradingView's own `range` (the visible
+// history window - '1D','5D','1M','3M','12M','60M','ALL' are its actual
+// date-range-selector values; it has no native '1W'/'1Y'/'5Y' spelling) and
+// a matching bar `interval`. Previously only `interval` was set, and it
+// collapsed to 'D' for every timeframe except '1D' - so every button past
+// "1D" sent an identical config and TradingView just showed its own
+// default history window regardless of which button was clicked. Live
+// Playwright-verified across all 7 buttons before relying on this mapping.
+const TIMEFRAME_TO_TV: Record<Timeframe, { range: string; interval: string }> = {
+  '1D': { range: '1D', interval: '5' },
+  '1W': { range: '5D', interval: '30' },
+  '1M': { range: '1M', interval: '60' },
+  '3M': { range: '3M', interval: '120' },
+  '1Y': { range: '12M', interval: 'D' },
+  '5Y': { range: '60M', interval: 'W' },
+  ALL: { range: 'ALL', interval: 'M' },
+}
+
+// Sovereign yield-curve points (this app's only real SOVEREIGN-class
+// instruments: UK Gilts, US Treasuries) are served through a synthetic
+// TVC vendor symbol (TVC:GB10Y etc.), not a tradable security with real
+// intraday ticks. Live-verified: TradingView's embed rejects this symbol
+// type outright - "This symbol is only available on TradingView" -
+// whenever ANY date-range feature is requested (the `range` config key,
+// or even just `withdateranges: true`), and separately rejects any
+// interval finer than daily. Only `interval: 'D'` with no range-related
+// key at all resolves successfully. There is no TradingView-side window
+// to change for this instrument, so the timeframe buttons are disabled
+// for it below rather than presented as functional when they can't do
+// anything - the same vendor-data symptom likely explains the "Apple
+// Inc" legend seen under a "UK 10Y Gilt" header: TradingView's own
+// broken-symbol dialog offers a "Change symbol" escape hatch, which (pre
+// allow_symbol_change:false) a user or a stray interaction could have
+// clicked through to land on an unrelated instrument.
+const YIELD_CURVE_ASSET_CLASSES = new Set(['SOVEREIGN'])
+
 interface HoverQuote {
   time: string
   open: number
@@ -60,18 +97,29 @@ export default function TradingViewModal({
   onStartResearch,
   onOpenMonitoring: _onOpenMonitoring,
 }: TradingViewModalProps) {
-  const isSovereign = assetClass === 'SOVEREIGN' || symbol.toLowerCase().includes('gilt') || symbol.toLowerCase().includes('treasury') || symbol.toLowerCase().includes('bund') || symbol.toLowerCase().includes('jgb')
-  
+  // TradingView's embed genuinely covers sovereign yields too (TVC:GB10Y
+  // etc. - see mapToTradingViewSymbol), so there is no real reason to force
+  // every sovereign instrument onto the fabricated native chart - that was
+  // the core of the G06 chart-integrity defect (2026-11-10 UAT gap
+  // analysis remediation): real TradingView is now the default for every
+  // instrument, and the native canvas survives only as an explicitly
+  // labeled, dev-only fallback.
   const [timeframe, setTimeframe] = useState<Timeframe>('1M')
   const [chartMode, setChartMode] = useState<ChartMode>('candles')
-  const [useTradingViewEmbed, setUseTradingViewEmbed] = useState(false)
+  const [useTradingViewEmbed, setUseTradingViewEmbed] = useState(true)
+  const [chartUnavailable, setChartUnavailable] = useState(false)
   const [isMaximized, setIsMaximized] = useState(false)
   const [hoverQuote, setHoverQuote] = useState<HoverQuote | null>(null)
   const [showSetAlert, setShowSetAlert] = useState(false)
+  const isProdBuild = import.meta.env.PROD
 
   const isUp = direction === 'up'
   const isDown = direction === 'down'
   const tvSymbol = mapToTradingViewSymbol(symbol)
+  const isYieldCurveAsset = YIELD_CURVE_ASSET_CLASSES.has(assetClass)
+  const tvChartConfig = isYieldCurveAsset
+    ? { interval: 'D', range: undefined }
+    : TIMEFRAME_TO_TV[timeframe]
 
   const handleAskTalvrin = () => {
     // Closes modal and redirects to Talvrin chat with the active product/asset tagged and query populated
@@ -171,6 +219,7 @@ export default function TradingViewModal({
 
             <button
               onClick={onClose}
+              aria-label="Close chart"
               className="grid h-8 w-8 place-items-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground transition"
             >
               <X className="h-5 w-5" />
@@ -180,23 +229,27 @@ export default function TradingViewModal({
 
         {/* Toolbar: Timeframe & Engine / Chart Style */}
         <div className="flex shrink-0 items-center justify-between border-b border-border/60 bg-[#0f1217] px-3 py-1.5 sm:px-5 sm:py-2 gap-2 overflow-x-auto scrollbar-none">
-          {/* Timeframe Selectors */}
-          <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
-            {(['1D', '1W', '1M', '3M', '1Y', '5Y', 'ALL'] as Timeframe[]).map((tf) => (
-              <button
-                key={tf}
-                onClick={() => setTimeframe(tf)}
-                className={cn(
-                  'rounded-lg px-2 sm:px-2.5 py-1 text-[11px] sm:text-[12px] font-semibold transition',
-                  timeframe === tf
-                    ? 'bg-primary text-primary-foreground shadow-xs'
-                    : 'text-muted-foreground hover:bg-white/5 hover:text-white'
-                )}
-              >
-                {tf}
-              </button>
-            ))}
-          </div>
+          {/* Timeframe Selectors - no chart is rendered at all for
+              sovereign yield-curve instruments (see the Main Chart Canvas
+              branch below), so there's nothing for these to control. */}
+          {!isYieldCurveAsset && (
+            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+              {(['1D', '1W', '1M', '3M', '1Y', '5Y', 'ALL'] as Timeframe[]).map((tf) => (
+                <button
+                  key={tf}
+                  onClick={() => setTimeframe(tf)}
+                  className={cn(
+                    'rounded-lg px-2 sm:px-2.5 py-1 text-[11px] sm:text-[12px] font-semibold transition',
+                    timeframe === tf
+                      ? 'bg-primary text-primary-foreground shadow-xs'
+                      : 'text-muted-foreground hover:bg-white/5 hover:text-white'
+                  )}
+                >
+                  {tf}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Style Controls */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
@@ -204,6 +257,7 @@ export default function TradingViewModal({
               <div className="flex rounded-lg border border-border/80 bg-background/50 p-0.5 text-[11px]">
                 <button
                   onClick={() => setChartMode('candles')}
+                  aria-label="Switch to candlestick chart style"
                   className={cn(
                     'inline-flex items-center gap-1.5 rounded-md px-2 sm:px-2.5 py-1 font-medium transition text-[11px]',
                     chartMode === 'candles' ? 'bg-primary text-white shadow-xs' : 'text-muted-foreground hover:text-white'
@@ -214,6 +268,7 @@ export default function TradingViewModal({
                 </button>
                 <button
                   onClick={() => setChartMode('area')}
+                  aria-label="Switch to area line chart style"
                   className={cn(
                     'inline-flex items-center gap-1.5 rounded-md px-2 sm:px-2.5 py-1 font-medium transition text-[11px]',
                     chartMode === 'area' ? 'bg-primary text-white shadow-xs' : 'text-muted-foreground hover:text-white'
@@ -225,8 +280,12 @@ export default function TradingViewModal({
               </div>
             ) : null}
 
-            {/* If asset is non-sovereign, allow toggling between Live TradingView Engine & Native Canvas */}
-            {!isSovereign && (
+            {/* Dev-only: let an engineer compare against the simulated native
+                canvas. There is no legitimate reason to offer this switch in
+                production - TradingView is the only real chart source. Never
+                shown for yield-curve assets either - "TradingView Live"
+                would be false for an instrument we never attempt to embed. */}
+            {!isProdBuild && !chartUnavailable && !isYieldCurveAsset && (
               <button
                 onClick={() => setUseTradingViewEmbed((prev) => !prev)}
                 className={cn(
@@ -234,7 +293,7 @@ export default function TradingViewModal({
                   useTradingViewEmbed ? 'bg-blue-600/20 text-blue-400 border-blue-500/30' : 'bg-card/60 text-muted-foreground hover:text-white'
                 )}
               >
-                <span>{useTradingViewEmbed ? '● TradingView Live' : 'TradingView Live'}</span>
+                <span>{useTradingViewEmbed ? '● TradingView Live' : 'Simulated (dev only)'}</span>
               </button>
             )}
 
@@ -272,21 +331,84 @@ export default function TradingViewModal({
           )}
 
           <div className="relative h-full w-full min-h-0 flex-1">
-            {useTradingViewEmbed && !isSovereign ? (
+            {isYieldCurveAsset ? (
+              // Live-verified (repeatedly, across fresh sessions): TradingView's
+              // Advanced Chart embed never resolves this symbol family
+              // (TVC:GB10Y, TVC:US10Y - this app's only two real
+              // SOVEREIGN-class instruments), in any interval/range
+              // combination - it's a permanent vendor/widget limitation, not
+              // a transient outage, so a "Retry" would be misleading. Worse,
+              // dismissing TradingView's own "symbol not available" dialog
+              // makes the widget silently fall back to ITS OWN demo symbol
+              // (Apple Inc) with no visible error at all - confirmed as the
+              // actual cause of an "Apple Inc" chart legend seen under a
+              // "UK 10Y Gilt" header. Never attempting the embed for this
+              // asset class closes that off entirely rather than racing it.
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center px-6">
+                <AlertTriangle className="h-6 w-6 text-amber-400" />
+                <span className="text-[13px] font-semibold text-white">No chart feed available for this instrument</span>
+                <span className="max-w-sm text-[11.5px] text-muted-foreground">
+                  TradingView doesn&apos;t carry a working live chart for {symbol} as a sovereign
+                  yield instrument. The yield figure above and its history are still real,
+                  sourced facts from {source} - just not chartable via this embed.
+                </span>
+              </div>
+            ) : chartUnavailable ? (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center">
+                <AlertTriangle className="h-6 w-6 text-amber-400" />
+                <span className="text-[13px] font-semibold text-white">Chart data unavailable</span>
+                <span className="max-w-xs text-[11.5px] text-muted-foreground">
+                  Talvrin couldn&apos;t reach the live TradingView feed for {symbol}. No historical
+                  chart is shown rather than an invented one.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setChartUnavailable(false)}
+                  className="mt-1 rounded-lg border border-border/70 bg-card/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-white transition"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : useTradingViewEmbed ? (
               <TradingViewWidget
+                // Force a full remount (fresh DOM container) per symbol -
+                // TradingView's external embed script manages its own iframe
+                // outside React's control and (per TradingView's own docs)
+                // requires re-initializing the whole widget on any change,
+                // not just a prop/attribute update. Without this key, the
+                // chart could keep showing a PREVIOUS instrument's real data
+                // under a NEW instrument's header - confirmed reproducible
+                // via HomeDashboard.tsx's search box: handleSearchSubmit
+                // never blurs it after a selection, so it keeps keyboard
+                // focus underneath this modal's full-screen overlay: typing
+                // a second query and pressing Enter again calls
+                // handleSelectAsset -> setSelectedAssetForChart on the SAME
+                // mounted modal instance, swapping `symbol` without ever
+                // unmounting - a real-data mislabeling bug, not a
+                // fabrication one, but just as misleading.
+                key={symbol}
                 symbol={symbol}
                 theme="dark"
-                interval={timeframe === '1D' ? '60' : timeframe === '1W' ? 'D' : 'D'}
-                onFallbackToNative={() => setUseTradingViewEmbed(false)}
+                interval={tvChartConfig.interval}
+                range={tvChartConfig.range}
+                onFallbackToNative={isProdBuild ? undefined : () => setUseTradingViewEmbed(false)}
+                onTimeout={isProdBuild ? () => setChartUnavailable(true) : undefined}
               />
             ) : (
-              <InstitutionalChart
-                symbol={symbol}
-                baseValueStr={last}
-                timeframe={timeframe}
-                chartMode={chartMode}
-                onHoverQuote={setHoverQuote}
-              />
+              <div className="relative h-full w-full">
+                {/* Never shown in production - see the toggle button above,
+                    which is itself hidden outside dev. */}
+                <div className="absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-[10.5px] font-semibold tracking-wide text-amber-300">
+                  SIMULATED CHART — DEVELOPMENT ONLY, NOT REAL MARKET DATA
+                </div>
+                <InstitutionalChart
+                  symbol={symbol}
+                  baseValueStr={last}
+                  timeframe={timeframe}
+                  chartMode={chartMode}
+                  onHoverQuote={setHoverQuote}
+                />
+              </div>
             )}
           </div>
         </div>
@@ -303,7 +425,9 @@ export default function TradingViewModal({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="hidden sm:inline">Authoritative Source:</span>
+            <span className="hidden sm:inline">
+              {bitemporalStatus === 'UNVERIFIED' ? 'Data Source:' : 'Authoritative Source:'}
+            </span>
             <span className="font-semibold text-white">{source}</span>
           </div>
         </div>

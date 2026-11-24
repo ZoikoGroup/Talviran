@@ -14,18 +14,26 @@ interface LiveMarketContextType {
   livePrices: Record<string, LiveTick>
   isConnected: boolean
   lastUpdated: string | null
+  //: True once a TICK frame with `simulated: true` has been received - the
+  //: backend only ever sends this outside production (sync.py's
+  //: live_market_websocket refuses to serve simulated ticks in production
+  //: at all). Consumers must show prices as simulated, not live, whenever
+  //: this is true, and must never treat them as grounds for a real alert.
+  isSimulated: boolean
 }
 
 const LiveMarketContext = createContext<LiveMarketContextType>({
   livePrices: {},
   isConnected: false,
   lastUpdated: null,
+  isSimulated: false,
 })
 
 export function LiveMarketProvider({ children }: { children: React.ReactNode }) {
   const [livePrices, setLivePrices] = useState<Record<string, LiveTick>>({})
   const [isConnected, setIsConnected] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
+  const [isSimulated, setIsSimulated] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
@@ -39,7 +47,9 @@ export function LiveMarketProvider({ children }: { children: React.ReactNode }) 
       if (!active) return
       if (reconnectTimer) clearTimeout(reconnectTimer)
 
-      // Exponential backoff: BASE * 2^attempt capped at 30s, plus 25% random jitter
+      // Exponential backoff: BASE * 1.5^attempt capped at 30s, plus 25% random
+      // jitter so many clients reconnecting after a shared outage don't all
+      // retry in lockstep and flood the server the moment it comes back.
       const expDelay = Math.min(BASE_BACKOFF_MS * Math.pow(1.5, attempt), MAX_BACKOFF_MS)
       const jitter = expDelay * 0.25 * (Math.random() * 2 - 1)
       const delay = Math.max(1000, Math.round(expDelay + jitter))
@@ -80,6 +90,12 @@ export function LiveMarketProvider({ children }: { children: React.ReactNode }) 
                 return next
               })
               setLastUpdated(data.timestamp || new Date().toISOString())
+              setIsSimulated(Boolean(data.simulated))
+            } else if (data.type === 'UNAVAILABLE') {
+              // Production: the backend has no real feed to serve and is
+              // about to close the socket. Don't let onclose's reconnect
+              // loop briefly flash a "LIVE" state in the meantime.
+              setIsConnected(false)
             }
           } catch {
             // ignore JSON parse issue
@@ -110,7 +126,7 @@ export function LiveMarketProvider({ children }: { children: React.ReactNode }) 
   }, [])
 
   return (
-    <LiveMarketContext.Provider value={{ livePrices, isConnected, lastUpdated }}>
+    <LiveMarketContext.Provider value={{ livePrices, isConnected, lastUpdated, isSimulated }}>
       {children}
     </LiveMarketContext.Provider>
   )

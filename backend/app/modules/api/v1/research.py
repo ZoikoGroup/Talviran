@@ -11,12 +11,29 @@ wired into a real endpoint for the first time here): a retried request with
 the same key and body replays the stored response rather than appending the
 turn twice; the same key with a different body is a 409, never a silent
 overwrite.
+
+The idempotency cache key is scoped by account_id (2026-11-15 UAT gap
+analysis G10 remediation): core/idempotency.py's own docstring flagged this
+as a known gap when it was first built ("scope should be widened to include
+principal_id once real auth exists") and real auth has existed since P2, but
+the call site here was never updated. Without this, the Redis record is
+keyed only on the client-supplied Idempotency-Key header + a hash of the
+raw request body — nothing about the authenticated caller — so a second
+tenant who ever replayed the exact same header value against the exact same
+request bytes (e.g. a leaked/guessed key, a shared proxy cache, a replayed
+request) would get back the FIRST tenant's stored research answer straight
+from Redis, with no RLS or PDP check in that path at all: `run_idempotent`
+returns the cached body before `_handler` (where every permission check
+lives) ever runs. Folding account_id into `scope` makes that collision
+structurally impossible — two tenants now write into disjoint key spaces no
+matter what Idempotency-Key value or body either of them chooses.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import datetime as dt
+import json
 import logging
 import re
 import uuid
@@ -238,6 +255,118 @@ def _fx_unit_contradicts(
     return False
 
 
+#: 2026-11-02, 205-query battery: the same "composed prose contradicted the
+#: accepted facts" defect class as F5, now for three deterministic claims the
+#: platform already knows exactly:
+#:   - day count: the fact and curated text say ACT/ACT (ICMA), but a composed
+#:     answer said 30/360 (line 15, reproduced across five runs);
+#:   - ex-dividend: the DMO rule is seven business days before the coupon, but
+#:     a composed answer said "the day before settlement" (line 14);
+#:   - inventory completeness: the platform holds 70 gilts with reference
+#:     terms, but composed answers claimed "a single UK gilt" on list questions
+#:     (lines 76-80, 144-145).
+#: None of these needs a second LLM call: each has a canonical token/phrase in
+#: the deterministic answer and a known contradiction pattern, so a model that
+#: departs from it is rejected exactly like a declination.
+_DAY_COUNT_QUERY_PATTERN = re.compile(
+    r"day[- ]?count|daycount|act/act|actual/actual", re.I
+)
+_DAY_COUNT_CANONICAL_PATTERN = re.compile(
+    r"ACT/ACT\s*\(ICMA\)|ACTUAL/ACTUAL\s*\(ICMA\)", re.I
+)
+_DAY_COUNT_CONTRADICTION_PATTERN = re.compile(
+    r"30/360|actual/360|30/actual", re.I
+)
+_EX_DIVIDEND_QUERY_PATTERN = re.compile(r"ex[- ]?div(?:idend)?|\bxd\b", re.I)
+_EX_DIVIDEND_CANONICAL_PATTERN = re.compile(
+    r"(?:seven|7)\s+business\s+days", re.I
+)
+_EX_DIVIDEND_CONTRADICTION_PATTERN = re.compile(
+    r"day\s+(?:before|prior\s+to)\s+(?:the\s+)?(?:settlement|coupon|dividend)"
+    r"|one\s+day\s+before",
+    re.I,
+)
+_SINGLE_GILT_CLAIM_PATTERN = re.compile(
+    r"\b(?:only|single)\s+(?:onboarded\s+|available\s+|UK\s+)?"
+    r"(?:gilt|instrument|bond|Treasury\s+(?:Stock|Gilt))\b"
+    r"|\bno additional gilts?\b"
+    r"|\bthe current onboarded gilt\b"
+    r"|\b(?:only|single)\s+(?:\d[\d.\u00bc\u00bd\u00be/ ]*%\s+)?Treasury\s+(?:Stock|Gilt)\b",
+    re.I,
+)
+_MULTIPLE_INSTRUMENT_CLAIM_PATTERN = re.compile(
+    r"\b(?:two|three|four|multiple|several)\s+(?:distinct\s+)?"
+    r"(?:gilt|bond|treasury|instrument)s?\b",
+    re.I,
+)
+_RANKING_SUPERLATIVE_PATTERN = re.compile(
+    r"\b(?:highest|lowest|best|worst|most attractive|top[- ]yielding|top performer)\b",
+    re.I,
+)
+_COMPARISON_QUERY_PATTERN = re.compile(
+    r"\b(?:compare|comparison|vs\.?|versus|spread|difference)\b", re.I
+)
+
+
+def _convention_contradicts(query_text: str, text: str) -> bool:
+    """True when composed `text` contradicts a deterministic convention
+    answer for `query_text`. Checked only for queries that actually ask
+    about the convention, so unrelated answers are untouched.
+    """
+    if _DAY_COUNT_QUERY_PATTERN.search(query_text):
+        if _DAY_COUNT_CONTRADICTION_PATTERN.search(text) or not (
+            _DAY_COUNT_CANONICAL_PATTERN.search(text)
+        ):
+            return True
+    if _EX_DIVIDEND_QUERY_PATTERN.search(query_text):
+        if _EX_DIVIDEND_CONTRADICTION_PATTERN.search(text) or not (
+            _EX_DIVIDEND_CANONICAL_PATTERN.search(text)
+        ):
+            return True
+    return False
+
+
+def _completeness_contradicts(text: str) -> bool:
+    """True when composed prose claims the platform holds only one gilt (or
+    no additional gilts). The platform's reference data holds 70, so this is
+    a factual completeness claim that is never acceptable regardless of the
+    question that prompted it.
+    """
+    return bool(_SINGLE_GILT_CLAIM_PATTERN.search(text))
+
+
+def _instrument_count_contradicts(
+    facts: evidence_service.FactTable | None, text: str
+) -> bool:
+    """True when a single-instrument answer's composed prose claims multiple
+    instruments. The facts table is the deterministic record of how many
+    instruments the answer covers; a model that turns one into "two gilt
+    instruments" is inventing a second instrument (observed live on the
+    2026 maturity question, 2026-11-02 re-run).
+    """
+    if facts is None or facts.title != "Instrument facts":
+        return False
+    return bool(_MULTIPLE_INSTRUMENT_CLAIM_PATTERN.search(text))
+
+
+def _ranking_superlative_leaks(query_text: str, text: str) -> bool:
+    """True when composed prose introduces a best/highest/top-yielding
+    ranking the user did not ask for. Comparison questions are exempt:
+    "compare the 2032 and 2036 gilts" legitimately needs comparative prose.
+    """
+    if _COMPARISON_QUERY_PATTERN.search(query_text):
+        return False
+    if not _RANKING_SUPERLATIVE_PATTERN.search(text):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:gilt|bond|treasury|instrument|dataset|listed|onboarded)\b",
+            text,
+            re.I,
+        )
+    )
+
+
 async def _try_ai_composed_text(
     db: AsyncSession,
     *,
@@ -264,6 +393,21 @@ async def _try_ai_composed_text(
     the same way (see _AI_DECLINATION_PATTERN).
     """
     if answer.evidence_bundle_id is None:
+        return answer
+
+    if answer.facts is not None and answer.facts.title.startswith("Onboarded UK gilts"):
+        # Inventory answers are already a complete, deterministic list; a
+        # model summarising a 70-row table can drop rows or state a wrong
+        # count (the 205-query battery's 2040s answer claimed "two distinct
+        # issues" for a 13-row decade). Keep the rule-based inventory text
+        # and its full facts table unchanged.
+        return answer
+
+    if answer.note is not None and answer.note.startswith("Deterministic convention answer"):
+        # Day-count and ex-dividend answers are correctness-critical and
+        # have already been contradicted by composition (30/360, "day
+        # before settlement"). Keep the deterministic prose while still
+        # carrying the DMO EvidenceBundle/Citation attached above.
         return answer
 
     conversation = await research_service.get_conversation(
@@ -320,8 +464,126 @@ async def _try_ai_composed_text(
             # answer rather than publishing a materially wrong sentence
             # next to a correct facts table.
             return answer
+        if _convention_contradicts(query_text, outcome.text):
+            # Day-count / ex-dividend composition contradicted the
+            # deterministic convention answer (2026-11-02 battery).
+            return answer
+        if _completeness_contradicts(outcome.text):
+            # Composition claimed a single/only gilt when the platform
+            # holds a whole universe of them.
+            return answer
+        if _instrument_count_contradicts(answer.facts, outcome.text):
+            # Composition turned one instrument's facts into "two gilt
+            # instruments" - an invented second instrument.
+            return answer
+        if _ranking_superlative_leaks(query_text, outcome.text):
+            # Composition volunteered a best/highest/top-yielding ranking
+            # the user did not ask for (the "Top yielding gilt?" leak).
+            return answer
         return dataclasses.replace(answer, text=outcome.text)
     return answer
+
+
+async def compose_and_persist_research_answer(
+    db: AsyncSession,
+    *,
+    account_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    query: str,
+    model: str | None,
+    dek: bytes,
+    http: httpx.AsyncClient,
+    request_id: str,
+) -> ResearchOut:
+    """The actual research work - everything POST /api/v1/research and
+    scripts/run_research_worker.py both need, factored out once (UAT gap-
+    analysis G15) rather than duplicated. Appends the user's message,
+    composes the answer, appends the assistant's reply, links the evidence
+    bundle - and deliberately does NOT commit, so a caller that needs one
+    more check before committing (the worker's cancellation re-check, see
+    jobs_service.is_cancel_requested) still can. The synchronous endpoint
+    below commits unconditionally right after calling this, same as
+    before this refactor.
+    """
+    try:
+        await research_service.append_message(
+            db,
+            account_id=account_id,
+            conversation_id=conversation_id,
+            role=research_service.ROLE_USER,
+            content=query,
+            dek=dek,
+        )
+    except research_service.NotFound as exc:
+        raise _not_found() from exc
+    except research_service.ContentTooLong as exc:
+        raise _too_long(exc) from exc
+
+    answer = await evidence_service.assemble_research_answer(
+        db,
+        query_text=query,
+        principal_id=principal_id,
+        account_id=account_id,
+        http=http,
+    )
+    answer = await _try_ai_composed_text(
+        db,
+        answer=answer,
+        query_text=query,
+        conversation_id=conversation_id,
+        principal_id=principal_id,
+        account_id=account_id,
+        dek=dek,
+        http=http,
+        model=model,
+    )
+
+    full_content = answer.text
+    metadata: dict[str, Any] = {}
+    if answer.facts is not None:
+        metadata["facts"] = {"title": answer.facts.title, "rows": answer.facts.rows}
+    if answer.citations:
+        metadata["citations"] = [
+            {"label": c.label, "meta": c.meta, "pill": c.pill, "kind": c.kind, "url": c.url}
+            for c in answer.citations
+        ]
+    if metadata:
+        full_content += f"\n\n<!--METADATA\n{json.dumps(metadata)}\n-->"
+
+    assistant_message = await research_service.append_message(
+        db,
+        account_id=account_id,
+        conversation_id=conversation_id,
+        role=research_service.ROLE_ASSISTANT,
+        content=full_content,
+        dek=dek,
+    )
+
+    if answer.evidence_bundle_id is not None:
+        bundle = await db.get(EvidenceBundle, answer.evidence_bundle_id)
+        assert bundle is not None  # just flushed in this same transaction
+        bundle.research_message_id = assistant_message.id
+        bundle.status = "READY"
+
+    return ResearchOut(
+        request_id=request_id,
+        generated_at=dt.datetime.now(dt.UTC),
+        evidence_bundle_id=answer.evidence_bundle_id,
+        allowed_output_type=answer.allowed_output_type.value,
+        message_id=assistant_message.id,
+        text=answer.text,
+        facts=(
+            FactTableOut(title=answer.facts.title, rows=answer.facts.rows)
+            if answer.facts is not None
+            else None
+        ),
+        citations=[
+            CitationOut(label=c.label, meta=c.meta, pill=c.pill, kind=c.kind, url=c.url)
+            for c in answer.citations
+        ],
+        note=answer.note,
+    )
 
 
 @router.post("/research", status_code=status.HTTP_201_CREATED, response_model=ResearchOut)
@@ -349,93 +611,24 @@ async def create_research_answer(
         except QuotaExceededError as exc:
             raise TalvrinAPIError(code=ErrorCode.RIGHTS_RESTRICTED, message=str(exc)) from exc
 
-        try:
-            await research_service.append_message(
-                db,
-                account_id=identity.account_id,
-                conversation_id=body.conversation_id,
-                role=research_service.ROLE_USER,
-                content=body.query,
-                dek=dek,
-            )
-        except research_service.NotFound as exc:
-            raise _not_found() from exc
-        except research_service.ContentTooLong as exc:
-            raise _too_long(exc) from exc
-
-        answer = await evidence_service.assemble_research_answer(
+        response = await compose_and_persist_research_answer(
             db,
-            query_text=body.query,
-            principal_id=identity.principal_id,
             account_id=identity.account_id,
-            http=http,
-        )
-        answer = await _try_ai_composed_text(
-            db,
-            answer=answer,
-            query_text=body.query,
+            principal_id=identity.principal_id,
             conversation_id=body.conversation_id,
-            principal_id=identity.principal_id,
-            account_id=identity.account_id,
-            dek=dek,
-            http=http,
+            query=body.query,
             model=body.model,
-        )
-
-        import json
-        full_content = answer.text
-        metadata: dict[str, Any] = {}
-        if answer.facts is not None:
-            metadata["facts"] = {"title": answer.facts.title, "rows": answer.facts.rows}
-        if answer.citations:
-            metadata["citations"] = [
-                {"label": c.label, "meta": c.meta, "pill": c.pill, "kind": c.kind, "url": c.url}
-                for c in answer.citations
-            ]
-        if metadata:
-            full_content += f"\n\n<!--METADATA\n{json.dumps(metadata)}\n-->"
-
-        assistant_message = await research_service.append_message(
-            db,
-            account_id=identity.account_id,
-            conversation_id=body.conversation_id,
-            role=research_service.ROLE_ASSISTANT,
-            content=full_content,
             dek=dek,
-        )
-
-        if answer.evidence_bundle_id is not None:
-            bundle = await db.get(EvidenceBundle, answer.evidence_bundle_id)
-            assert bundle is not None  # just flushed in this same transaction
-            bundle.research_message_id = assistant_message.id
-            bundle.status = "READY"
-
-        await db.commit()
-
-        response = ResearchOut(
+            http=http,
             request_id=get_request_id(),
-            generated_at=dt.datetime.now(dt.UTC),
-            evidence_bundle_id=answer.evidence_bundle_id,
-            allowed_output_type=answer.allowed_output_type.value,
-            message_id=assistant_message.id,
-            text=answer.text,
-            facts=(
-                FactTableOut(title=answer.facts.title, rows=answer.facts.rows)
-                if answer.facts is not None
-                else None
-            ),
-            citations=[
-                CitationOut(label=c.label, meta=c.meta, pill=c.pill, kind=c.kind, url=c.url)
-                for c in answer.citations
-            ],
-            note=answer.note,
         )
+        await db.commit()
         return status.HTTP_201_CREATED, response.model_dump(mode="json")
 
     try:
         result = await run_idempotent(
             redis,
-            scope=_IDEMPOTENCY_SCOPE,
+            scope=f"{_IDEMPOTENCY_SCOPE}:{identity.account_id}",
             idempotency_key=idempotency_key,
             request_body=raw_body,
             handler=_handler,

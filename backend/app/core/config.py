@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -115,10 +116,43 @@ class Settings(BaseSettings):
     support_inbox_email: str = "talvrin@zoikogroup.com"
     support_from_email: str = "support@app.talvrin.com"
 
+    #: Direct SMTP transport (e.g. a real hosted mailbox) for transactional
+    #: email - checked before Resend in send_transactional_email() so a
+    #: configured mailbox is used in preference to a third-party API key.
+    #: Optional: only required when that mailbox is actually the transport.
+    smtp_host: str | None = None
+    smtp_port: int = 465
+    smtp_user: str | None = None
+    smtp_pass: str | None = None
+    smtp_from: str | None = None
+
     #: Stripe billing configuration
     stripe_secret_key: str | None = None
     stripe_publishable_key: str | None = None
     stripe_webhook_secret: str | None = None
+
+    @model_validator(mode="after")
+    def _frontend_url_not_localhost_in_production(self) -> "Settings":
+        """Password-reset links, organization-invite links and Stripe
+        checkout return URLs are all built from frontend_url
+        (identity/service.py, organization.py, commercial/service.py). A
+        production deploy that forgot to set FRONTEND_URL would otherwise
+        silently keep the localhost default and mail real users a link to
+        their own machine - confirmed as bug T9's "reset link opens
+        localhost" symptom. Mirrors CookiePolicy.for_environment's same
+        fail-closed rule: anything not explicitly development/test must not
+        get the development-only default.
+        """
+        if self.environment.lower() not in {"development", "test"}:
+            host = self.frontend_url.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+            if host in {"localhost", "127.0.0.1", "0.0.0.0"}:
+                raise ValueError(
+                    "frontend_url is still a localhost default "
+                    f"({self.frontend_url!r}) outside development/test "
+                    f"(environment={self.environment!r}). Set FRONTEND_URL to "
+                    "this deployment's real origin (e.g. https://app.talvrin.com)."
+                )
+        return self
 
 
 @lru_cache

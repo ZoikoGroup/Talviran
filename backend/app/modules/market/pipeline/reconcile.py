@@ -24,6 +24,7 @@ from app.modules.market.models import (
     OutboxEvent,
     ReconciliationDecision,
 )
+from app.modules.market.pipeline.correction_propagation import record_correction_and_propagate
 from app.modules.market.pipeline.reconciliation_policy import (
     CONFLICT_ACTION_PREFER_ORDER,
     ReconciliationPolicy,
@@ -321,6 +322,13 @@ async def reconcile_and_publish(
 
     if current is not None:
         current.superseded_by_id = new_fact.id
+        if _value_key(current.value) != _value_key(candidate_value):
+            # UAT gap-analysis G12: a genuine value-change correction, not
+            # an agreeing-source republish of the same value (that case
+            # has nothing to reassess - no answer's actual content
+            # changed). record_correction_and_propagate decides materiality
+            # itself and only flags saved research/alerts when it's real.
+            await record_correction_and_propagate(session, old_fact=current, new_fact=new_fact)
 
     for observation_id in observation_ids:
         session.add(

@@ -112,6 +112,10 @@ class MessageOut(BaseModel):
     role: str
     content: str
     created_at: dt.datetime
+    #: UAT gap-analysis G12 - non-null means a fact this message's evidence
+    #: cited has since been materially corrected; see
+    #: GET /research/{message_id}/evidence for what changed.
+    reassessment_correction_id: uuid.UUID | None = None
 
 
 class ConversationDetailOut(ConversationOut):
@@ -163,7 +167,12 @@ def _conversation_out(c: service.Conversation) -> ConversationOut:
 
 def _message_out(m: service.Message) -> MessageOut:
     return MessageOut(
-        id=m.id, seq=m.seq, role=m.role, content=m.content, created_at=m.created_at
+        id=m.id,
+        seq=m.seq,
+        role=m.role,
+        content=m.content,
+        created_at=m.created_at,
+        reassessment_correction_id=m.reassessment_correction_id,
     )
 
 

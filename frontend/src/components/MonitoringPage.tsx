@@ -19,7 +19,6 @@ import {
   type Alert as ApiAlert,
   listAlerts,
   deleteRule,
-  dispatchTriggeredAlert,
 } from '@/lib/api'
 
 import SetAlertModal from '@/components/SetAlertModal'
@@ -28,6 +27,7 @@ import { useLiveMarket } from '@/hooks/useLiveMarket'
 import { useEntitlement } from '@/context/EntitlementContext'
 import { Clock } from 'lucide-react'
 import { useAuth } from '@/auth/AuthContext'
+import { accountScopedKey } from '@/lib/accountStorage'
 
 
 interface MonitoringPageProps {
@@ -121,7 +121,6 @@ function DirectionBadge({ predicate }: { predicate: string }) {
 export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRuleSymbol, onOpenPricing }: MonitoringPageProps) {
   const { isRealtimePermitted } = useEntitlement()
   const navigate = useNavigate()
-  const { session } = useAuth()
   const [tab, setTab] = useState<Tab>('active_alerts')
   const [backendAlerts, setBackendAlerts] = useState<ApiAlert[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -135,52 +134,34 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
     return 'default'
   })
 
-  // Full universe custom alerts (active only)
-  const [customAlerts, setCustomAlerts] = useState<CustomAlertTrigger[]>(() => {
+  const { session } = useAuth()
+
+  // Full universe custom alerts (active only). No seeded defaults - a new
+  // account starts with none, since any hardcoded entry here would be a
+  // fabricated alert nobody actually armed (2026-11-10 UAT gap analysis
+  // G11 remediation). Keyed by the signed-in account's email, not a bare
+  // `talvrin_custom_alerts*` key, so a shared browser can't show one
+  // account's armed alerts or trigger history to the next account that
+  // signs in - the same leak class as bug T10, here for alerts (T19/T20).
+  const [customAlerts, setCustomAlerts] = useState<CustomAlertTrigger[]>([])
+  const [historyAlerts, setHistoryAlerts] = useState<CustomAlertTrigger[]>([])
+
+  useEffect(() => {
     try {
-      const saved = localStorage.getItem('talvrin_custom_alerts')
-      if (saved) return JSON.parse(saved)
+      const savedAlerts = localStorage.getItem(accountScopedKey(session?.email, 'talvrin_custom_alerts'))
+      setCustomAlerts(savedAlerts ? JSON.parse(savedAlerts) : [])
     } catch {
-      // fallback
+      setCustomAlerts([])
     }
-    return [
-      {
-        id: 'live-test-1',
-        assetSymbol: 'NVIDIA (NVDA)',
-        assetName: 'NVIDIA Corporation',
-        direction: 'CROSSES_ABOVE',
-        threshold: '$135.60',
-        channels: { inApp: true, browserNotification: true, email: true },
-        createdAt: new Date().toISOString(),
-        status: 'ACTIVE',
-        currentPrice: '$135.58',
-      },
-      {
-        id: 'live-test-2',
-        assetSymbol: 'UK 10Y Gilt',
-        assetName: 'United Kingdom 10-Year Benchmark Gilt',
-        direction: 'CROSSES_ABOVE',
-        threshold: '4.220%',
-        channels: { inApp: true, browserNotification: true, email: true },
-        createdAt: new Date().toISOString(),
-        status: 'ACTIVE',
-        currentPrice: '4.216%',
-      },
-    ]
-  })
-
-
-  // History list for touched/fulfilled alerts
-  const [historyAlerts, setHistoryAlerts] = useState<CustomAlertTrigger[]>(() => {
     try {
-      const saved = localStorage.getItem('talvrin_custom_alerts_history')
-      if (saved) return JSON.parse(saved)
+      const savedHistory = localStorage.getItem(
+        accountScopedKey(session?.email, 'talvrin_custom_alerts_history')
+      )
+      setHistoryAlerts(savedHistory ? JSON.parse(savedHistory) : [])
     } catch {
-      // fallback
+      setHistoryAlerts([])
     }
-    return []
-  })
-
+  }, [session?.email])
 
   const [modifyingAlert, setModifyingAlert] = useState<CustomAlertTrigger | null>(null)
 
@@ -212,7 +193,7 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
   const saveAlertsToStorage = (updated: CustomAlertTrigger[]) => {
     setCustomAlerts(updated)
     try {
-      localStorage.setItem('talvrin_custom_alerts', JSON.stringify(updated))
+      localStorage.setItem(accountScopedKey(session?.email, 'talvrin_custom_alerts'), JSON.stringify(updated))
     } catch {
       // ignore
     }
@@ -221,7 +202,10 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
   const saveHistoryToStorage = (updatedHistory: CustomAlertTrigger[]) => {
     setHistoryAlerts(updatedHistory)
     try {
-      localStorage.setItem('talvrin_custom_alerts_history', JSON.stringify(updatedHistory))
+      localStorage.setItem(
+        accountScopedKey(session?.email, 'talvrin_custom_alerts_history'),
+        JSON.stringify(updatedHistory)
+      )
     } catch {
       // ignore
     }
@@ -240,118 +224,30 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
     }
   }
 
-  const { livePrices, isConnected: wsConnected } = useLiveMarket()
-  
-  // Persistently track fired alert IDs so re-crossing or price bounce back never triggers a 2nd time
-  const [firedAlertIds, setFiredAlertIds] = useState<Set<string>>(() => {
-    try {
-      const historyRaw = localStorage.getItem('talvrin_custom_alerts_history')
-      if (historyRaw) {
-        const parsed: CustomAlertTrigger[] = JSON.parse(historyRaw)
-        return new Set(parsed.map((a) => a.id))
-      }
-    } catch {
-      // ignore
-    }
-    return new Set<string>()
-  })
+  const { livePrices, isConnected: wsConnected, isSimulated: liveIsSimulated } = useLiveMarket()
 
-  // Dynamic real-time threshold crossing comparison
-  useEffect(() => {
-    customAlerts.forEach((alert) => {
-      // Only watch ACTIVE alerts
-      if (alert.status !== 'ACTIVE') return
-
-      // Strict one-time rule: If this alert was ever touched/fired, skip permanently
-      if (firedAlertIds.has(alert.id)) return
-      const alreadyInHistory = historyAlerts.some((h) => h.id === alert.id)
-      if (alreadyInHistory) return
-
-      const live = livePrices[alert.assetSymbol]
-      if (!live || !live.rawPrice) return
-
-      // Parse threshold value
-      const targetNum = parseFloat(alert.threshold.replace(/[^0-9.-]/g, ''))
-      if (isNaN(targetNum)) return
-
-      const isAbove = alert.direction === 'CROSSES_ABOVE'
-      const crossed = isAbove ? live.rawPrice >= targetNum : live.rawPrice <= targetNum
-
-      if (crossed) {
-        // 1. Immediately record in firedAlertIds so no bounce or second touch ever triggers again
-        setFiredAlertIds((prev) => new Set([...prev, alert.id]))
-        
-        const timestamp = new Date().toLocaleTimeString()
-        const triggeredAlert: CustomAlertTrigger = {
-          ...alert,
-          status: 'TRIGGERED',
-          lastTriggered: timestamp,
-          currentPrice: live.price,
-        }
-
-        // Retire backend monitoring rule so it is not evaluated offline later
-        if (alert.ruleId) {
-          deleteRule(alert.ruleId).catch(() => {})
-        }
-
-        // 2. Permanently remove from active alerts list
-        const remainingActive = customAlerts.filter((a) => a.id !== alert.id)
-        saveAlertsToStorage(remainingActive)
-
-        // 3. Move to trigger history (one-time archive)
-        const nextHistory = [
-          triggeredAlert,
-          ...historyAlerts.filter((h) => h.id !== alert.id),
-        ]
-        saveHistoryToStorage(nextHistory)
-
-
-        // 3. Dispatch Email via Resend if email channel enabled
-        const targetEmail = alert.emailAddress || session?.email
-        if (alert.channels.email && targetEmail) {
-          dispatchTriggeredAlert({
-            assetSymbol: alert.assetSymbol,
-            assetName: alert.assetName,
-            thresholdValue: alert.threshold,
-            observedValue: live.price,
-            predicate: alert.direction,
-            recipientEmail: targetEmail,
-          })
-            .then((res) => {
-              if (res.email_dispatched) {
-                toast.success(`Alert email sent to ${res.recipient}`, {
-                  description: `${alert.assetSymbol} reached ${alert.threshold} (Live: ${live.price})`,
-                })
-              }
-            })
-            .catch(() => {
-              // fallback gracefully
-            })
-        }
-
-        // 4. Native Browser Desktop Notification
-        if (
-          alert.channels.browserNotification &&
-          typeof window !== 'undefined' &&
-          'Notification' in window &&
-          Notification.permission === 'granted'
-        ) {
-          new Notification(`🚨 Market Alert Triggered: ${alert.assetSymbol}`, {
-            body: `${alert.assetSymbol} has reached your threshold ${alert.threshold} (Current: ${live.price}). Moved to history.`,
-            icon: '/favicon.ico',
-          })
-        }
-
-        // 5. In-App Toast
-        if (alert.channels.inApp) {
-          toast.error(`Target Reached: ${alert.assetSymbol} touched ${alert.threshold}!`, {
-            description: `Live quote: ${live.price} (${live.change}). Alert archived to History.`,
-            duration: 9000,
-          })
-        }
-      }
-    })
-  }, [livePrices, customAlerts, historyAlerts, firedAlertIds, session?.email])
+  // There used to be a client-side threshold-crossing useEffect here that
+  // compared this page's local `customAlerts` against `livePrices` and, on
+  // a "crossing," fired a real Resend email + browser Notification + toast
+  // and archived the alert into local trigger history - all driven by the
+  // sync.py websocket's random-walk feed, with no real MonitoringRule/Alert
+  // row behind any of it (2026-11-10 UAT gap analysis G11 remediation).
+  // That feed is now explicitly flagged `simulated: true` (surfaced above
+  // as `liveIsSimulated`) and the backend refuses to serve it at all in
+  // production, but simulated-or-not, a client-observed "crossing" was
+  // never a real monitoring event and must never again trigger a real
+  // notification. The only genuine alert-firing path is the real backend
+  // monitoring engine (monitoring.rule_engine -> monitoring.delivery.
+  // deliver_alert), surfaced below as `backendAlerts` / "Backend Audit
+  // Triggers" - untouched by this change.
+  //
+  // A merge from main (2026-11-24) tried to reintroduce exactly this
+  // mechanism - a client-side comparison against the simulated feed
+  // dispatching a real email via a dispatchTriggeredAlert() helper that no
+  // longer exists in lib/api.ts (its own removal is documented at that
+  // former call site). Dropped again for the same reason it was removed
+  // the first time; the multi-tab localStorage-sync effect above it is
+  // independent and was kept.
 
 
   const handleError = (err: unknown) => {
@@ -566,7 +462,16 @@ export default function MonitoringPage({ onBack, initialRuleSymbol: _initialRule
                                 ARMED
                               </span>
                             )}
-                            {wsConnected && (
+                            {wsConnected && liveIsSimulated && (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] text-amber-400 font-mono"
+                                title="This price feed is simulated for local development and is never served in production."
+                              >
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                SIMULATED
+                              </span>
+                            )}
+                            {wsConnected && !liveIsSimulated && (
                               <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono">
                                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
                                 LIVE

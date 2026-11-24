@@ -3,8 +3,13 @@ import { Link } from 'react-router-dom'
 import { Mail, ExternalLink, LifeBuoy, CheckCircle2, Send, ShieldAlert } from 'lucide-react'
 import PageLayout, { Section } from '@/components/layouts/PageLayout'
 import { Field, SubmitButton } from '@/components/ui/field'
-import { CONTACT_TOPICS, SUPPORT_EMAIL, mailtoLink } from '@/data/contact'
-import { submitSupportTicket, type CreateSupportTicketPayload, type SupportTicketResult } from '@/lib/api'
+import { CONTACT_TOPICS, SUPPORT_EMAIL } from '@/data/contact'
+import {
+  ApiError,
+  submitSupportTicket,
+  type CreateSupportTicketPayload,
+  type SupportTicketResult,
+} from '@/lib/api'
 
 export default function Contact() {
   const [name, setName] = useState('')
@@ -22,7 +27,15 @@ export default function Contact() {
 
   const submitDirectTicket = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!message.trim()) return setError('Please write a message describing your inquiry or discrepancy.')
+    const trimmedMessage = message.trim()
+    if (!trimmedMessage) {
+      return setError('Please write a message describing your inquiry or discrepancy.')
+    }
+    if (trimmedMessage.length < 10) {
+      return setError(
+        `Message is too short (${trimmedMessage.length}/10 characters minimum). Please add more detail.`
+      )
+    }
     setError(null)
     setSubmitting(true)
 
@@ -52,9 +65,20 @@ export default function Contact() {
 
       const res = await submitSupportTicket(payload)
       setTicketResult(res)
-    } catch {
-      // If offline or unauthenticated fallback to mailto
-      window.location.href = mailtoLink(topic, name, message)
+    } catch (err) {
+      // A real backend error (validation, outage, etc.) is shown inline so
+      // the user can fix or retry it - it used to silently redirect to a
+      // mailto: link for *any* failure, including an ordinary validation
+      // error, which looked like the button just opened Outlook instead of
+      // submitting (T7). The "Direct Desk Email" link above the form
+      // remains the deliberate, clearly-labelled fallback route.
+      if (err instanceof ApiError && err.validationIssues?.length) {
+        setError(err.validationIssues.map((i) => i.msg).join(' '))
+      } else if (err instanceof ApiError) {
+        setError(`${err.message} Please email ${SUPPORT_EMAIL} directly if this continues.`)
+      } else {
+        setError(`Failed to submit ticket. Please email ${SUPPORT_EMAIL} directly.`)
+      }
     } finally {
       setSubmitting(false)
     }

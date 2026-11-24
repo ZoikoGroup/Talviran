@@ -213,6 +213,67 @@ async def test_create_instrument_rule_by_isin_succeeds(
     assert body["subject_id"] == str(instrument.id)
 
 
+async def test_create_rule_with_notify_email_stores_it(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    await _seed_pdp_prerequisites(db_session)
+
+    async with make_client() as client:
+        await _signed_in(client)
+        response = await client.post(
+            "/api/v1/monitoring-rules",
+            json={
+                "metric_id": METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+                "predicate": "CROSSES_ABOVE",
+                "threshold_value": "5.0",
+                "tenor_years": "10",
+                "notify_email": "analyst@example.com",
+            },
+        )
+    assert response.status_code == 201, response.text
+    assert response.json()["notify_email"] == "analyst@example.com"
+
+
+async def test_create_rule_without_notify_email_leaves_it_none(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    await _seed_pdp_prerequisites(db_session)
+
+    async with make_client() as client:
+        await _signed_in(client)
+        response = await client.post(
+            "/api/v1/monitoring-rules",
+            json={
+                "metric_id": METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+                "predicate": "CROSSES_ABOVE",
+                "threshold_value": "5.0",
+                "tenor_years": "10",
+            },
+        )
+    assert response.status_code == 201, response.text
+    assert response.json()["notify_email"] is None
+
+
+async def test_create_rule_with_malformed_notify_email_is_rejected(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    await _seed_pdp_prerequisites(db_session)
+
+    async with make_client() as client:
+        await _signed_in(client)
+        response = await client.post(
+            "/api/v1/monitoring-rules",
+            json={
+                "metric_id": METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+                "predicate": "CROSSES_ABOVE",
+                "threshold_value": "5.0",
+                "tenor_years": "10",
+                "notify_email": "not-an-email",
+            },
+        )
+    assert response.status_code == 422, response.text
+
+
 async def test_create_rule_with_unknown_metric_is_rejected(
     make_client: ClientFactory, db_session: AsyncSession
 ) -> None:
@@ -276,3 +337,50 @@ async def test_another_signed_in_user_cannot_see_someone_elses_rule(
 
         detail = await client_b.get(f"/api/v1/monitoring-rules/{rule_id}")
         assert detail.status_code == 404
+
+
+async def test_another_signed_in_user_cannot_delete_someone_elses_rule(
+    make_client: ClientFactory, db_session: AsyncSession
+) -> None:
+    """G10 gap: list/get isolation was already proven above, but nothing
+    proved tenant B can't reach the one write endpoint this surface has
+    (DELETE /monitoring-rules/{id}) against tenant A's row. service.
+    delete_my_rule's session.get(MonitoringRule, rule_id) has no account_id
+    filter in the Python query at all - RLS (monitoring_rule_isolation) is
+    the only thing standing between "not found" and "retired someone else's
+    rule" here, so this has to be proven over real HTTP, not assumed from
+    reading the service function. Both client sessions are kept open for the
+    whole test (rather than the list/get test's pattern of closing client_a
+    before opening client_b) specifically so client_a can re-check its own
+    rule's live status afterwards, over its own session, instead of reaching
+    past the API into the database to do it.
+    """
+    await _seed_pdp_prerequisites(db_session)
+
+    async with make_client() as client_a, make_client() as client_b:
+        await _signed_in(client_a)
+        await _signed_in(client_b)
+
+        created = await client_a.post(
+            "/api/v1/monitoring-rules",
+            json={
+                "metric_id": METRIC_UK_GILT_NOMINAL_SPOT_CURVE,
+                "predicate": "CROSSES_ABOVE",
+                "threshold_value": "5.0",
+                "tenor_years": "10",
+            },
+        )
+        assert created.status_code == 201, created.text
+        rule_id = created.json()["id"]
+
+        delete = await client_b.delete(f"/api/v1/monitoring-rules/{rule_id}")
+        assert delete.status_code == 404, delete.text
+
+        # The rule itself must be untouched - still ARMED, visible to its
+        # real owner - not silently retired by the denied cross-tenant
+        # attempt (delete_my_rule retires the rule's *current version* in
+        # place, so a successful-but-silent cross-tenant delete would show
+        # up here as a 404 from the owner's own account too).
+        still_there = await client_a.get(f"/api/v1/monitoring-rules/{rule_id}")
+        assert still_there.status_code == 200, still_there.text
+        assert still_there.json()["status"] == "ARMED"

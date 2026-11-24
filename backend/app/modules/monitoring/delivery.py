@@ -1,11 +1,14 @@
 """Alert delivery (MON-001 §14) - transports: IN_APP and EMAIL via Resend."""
 
-import datetime as dt
 import json
 import logging
+import smtplib
+import ssl
 import urllib.request
 import uuid
 from dataclasses import dataclass
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,57 +87,85 @@ def _send_resend_email(
         return False
 
 
-def send_market_alert_email(
+def _send_smtp_email(
+    to_email: str,
+    subject: str,
+    html_content: str,
     *,
-    recipient_email: str,
-    asset_symbol: str,
-    asset_name: str | None,
-    threshold_value: str,
-    observed_value: str,
-    predicate: str = "CROSSES_ABOVE",
+    host: str,
+    port: int,
+    user: str,
+    password: str,
+    from_email: str,
 ) -> bool:
-    """Dispatches a market threshold alert using canonical Talvrin template design and branding."""
-    settings = get_settings()
-    if not settings.resend_api_key:
-        logger.warning("Cannot dispatch alert email: resend_api_key is not configured")
+    """Dispatches transactional email via a direct SMTP connection to a real
+    hosted mailbox (e.g. GoDaddy's smtpout.secureserver.net). Port 465 is
+    implicit TLS (SMTP_SSL); anything else is plain SMTP upgraded with
+    STARTTLS - the two connection modes a hosted mailbox actually offers.
+    """
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = from_email
+        msg["To"] = to_email
+        msg.attach(MIMEText(html_content, "html"))
+
+        context = ssl.create_default_context()
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, timeout=10, context=context) as server:
+                server.login(user, password)
+                server.sendmail(from_email, [to_email], msg.as_string())
+        else:
+            with smtplib.SMTP(host, port, timeout=10) as server:
+                server.starttls(context=context)
+                server.login(user, password)
+                server.sendmail(from_email, [to_email], msg.as_string())
+        return True
+    except Exception as exc:
+        logger.warning("Failed to dispatch email via SMTP to %s: %s", to_email, exc)
         return False
 
-    direction_str = "rises above" if predicate == "CROSSES_ABOVE" else "falls below"
-    display_title = f"{asset_symbol}" + (f" ({asset_name})" if asset_name else "")
-    subject = f"Verified threshold event: {display_title}"
-    preheader = f"Monitored threshold crossed: {asset_symbol} touched {observed_value} ({direction_str} {threshold_value})."
-    time_str = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M:%S") + " UTC"
 
-    body_text = (
-        f"A monitored price condition was met using an entitled, validated price observation on your Talvrin account.\n\n"
-        f"Asset: {display_title}\n"
-        f"Target Threshold: {threshold_value} ({direction_str})\n"
-        f"Observed / Touched Price: {observed_value}\n"
-        f"Trigger Reference Time: {time_str}\n\n"
-        f"This alert has touched its target, is now fulfilled, and has been archived into your Trigger History."
-    )
+def send_transactional_email(to_email: str, subject: str, html_content: str) -> bool:
+    """Single entry point for transactional email (ticket receipts, desk
+    notifications, etc.): a configured SMTP mailbox is used in preference to
+    Resend, so callers never need to know or care which transport is
+    actually wired up in this environment. Logs and returns False rather
+    than raising when neither transport is configured.
+    """
+    settings = get_settings()
 
-    from app.core.email_templates.engine import render_talvrin_email_html
+    if settings.smtp_host and settings.smtp_user and settings.smtp_pass:
+        return _send_smtp_email(
+            to_email,
+            subject,
+            html_content,
+            host=settings.smtp_host,
+            port=settings.smtp_port,
+            user=settings.smtp_user,
+            password=settings.smtp_pass,
+            from_email=settings.smtp_from or settings.smtp_user,
+        )
 
-    html_content = render_talvrin_email_html(
-        subject=subject,
-        preheader=preheader,
-        body_text=body_text,
-        cta_label="Inspect Price Evidence",
-        action_url="https://app.talvrin.com",
-        badge_label="Objective Alert",
-        notice_reference="TAL-EML-MO-PRICE_CROSS",
-    )
+    if settings.resend_api_key:
+        return _send_resend_email(
+            to_email=to_email,
+            subject=subject,
+            html_content=html_content,
+            api_key=settings.resend_api_key,
+            from_email=settings.support_from_email or settings.alerts_from_email,
+        )
 
-    return _send_resend_email(
-        to_email=recipient_email,
-        subject=subject,
-        html_content=html_content,
-        api_key=settings.resend_api_key,
-        from_email=settings.alerts_from_email,
-    )
+    logger.info("No email transport configured; skipping send to %s", to_email)
+    return False
 
 
+# send_market_alert_email used to live here: a caller-controlled email
+# dispatcher with no verification against any real Alert/MonitoringRule row
+# (removed alongside its only caller, api/v1/alerts.py's POST /trigger
+# endpoint - see that module's docstring, 2026-11-10 UAT gap analysis G11
+# remediation). deliver_alert below, driven entirely by a real persisted
+# Alert row, remains the only path that ever sends an alert email.
 
 
 async def deliver_alert(
@@ -177,10 +208,15 @@ async def deliver_alert(
             )
         )
 
-    # 2. Resend Email delivery: only dispatch for actual threshold CROSSING alerts
-    # (INITIAL_STATE represents the benchmark baseline when rule was first evaluated, not a crossing)
-    settings = get_settings()
-    if settings.resend_api_key and recipient_email and alert.alert_type == ALERT_TYPE_CROSSING:
+    # 2. Email delivery: only dispatch for actual threshold CROSSING alerts
+    # (INITIAL_STATE represents the benchmark baseline when a rule was first
+    # evaluated, not a crossing worth emailing about), and only when the
+    # firing rule version asked for it. Goes through send_transactional_email
+    # - the same SMTP-preferred, Resend-fallback entry point support.py's
+    # ticket receipts use - never a bespoke second mail path with its own
+    # transport-selection logic (a bare settings.resend_api_key gate here
+    # would silently skip EMAIL delivery in an SMTP-only environment).
+    if recipient_email and alert.alert_type == ALERT_TYPE_CROSSING:
         subject = f"[Talvrin Alert] {alert.metric_id} threshold crossed"
         metric_str = alert.metric_id
         thresh_str = str(alert.threshold_value)
@@ -208,12 +244,8 @@ async def deliver_alert(
             notice_reference="TAL-EML-MO-MONITOR_MATCH",
         )
 
-        success = _send_resend_email(
-            to_email=recipient_email,
-            subject=subject,
-            html_content=html,
-            api_key=settings.resend_api_key,
-            from_email=settings.alerts_from_email,
+        success = send_transactional_email(
+            to_email=recipient_email, subject=subject, html_content=html
         )
 
         email_attempt = await _next_attempt_number(

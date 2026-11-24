@@ -69,6 +69,15 @@ class SyncResponse(BaseModel):
     synced_at: str
     total_synced: int
     assets: list[SyncedAssetRecord]
+    #: True whenever `assets` includes hardcoded sample rows rather than a
+    #: real, licensed provider response - see trigger_external_sync's own
+    #: docstring (2026-11-10 UAT gap analysis G11 remediation). A consumer
+    #: must never render these as real market data, in any environment.
+    simulated: bool = False
+
+
+def _is_production() -> bool:
+    return get_settings().environment == "production"
 
 
 DYNAMIC_INGESTED_ASSETS: dict[str, dict[str, Any]] = {}
@@ -132,12 +141,26 @@ async def trigger_external_sync(
     request: ExternalSyncRequest,
     session: SessionDep,
 ) -> SyncResponse:
-    """Manual or Cron-driven trigger to pull latest data from providers."""
+    """Manual or Cron-driven trigger to pull latest data from providers.
+
+    The AMFI/Twelve Data rows below are hardcoded sample data, not a real
+    provider call - there is no AMFI or Twelve Data real-time integration
+    wired to this endpoint. They were previously returned unconditionally,
+    labeled with real-sounding provenance ("AMFI Statutory Daily NAV",
+    "Twelve Data / NASDAQ", "EOD Reconciled", bitemporal_status="CANONICAL")
+    in every environment - a direct fail-closed-doctrine violation (2026-11-10
+    UAT gap analysis G06/G11 remediation). In production this endpoint now
+    returns no fabricated rows at all; outside production it still returns
+    them for local UI development, with `simulated=True` so no consumer can
+    mistake them for real data regardless of environment.
+    """
     now_iso = datetime.now(UTC).isoformat()
     synced: list[SyncedAssetRecord] = []
+    simulated = False
 
-    # 1. AMFI statutory daily fund updates
-    if request.provider in ("all", "amfi"):
+    # 1. AMFI statutory daily fund updates (hardcoded samples - dev only)
+    if not _is_production() and request.provider in ("all", "amfi"):
+        simulated = True
         amfi_samples = [
             (
                 "HDFCBAL:IN",
@@ -174,8 +197,9 @@ async def trigger_external_sync(
                 )
             )
 
-    # 2. Twelve Data US / Global Equity & ETF updates
-    if request.provider in ("all", "twelve_data"):
+    # 2. Twelve Data US / Global Equity & ETF updates (hardcoded samples - dev only)
+    if not _is_production() and request.provider in ("all", "twelve_data"):
+        simulated = True
         twelve_samples = [
             ("ARM", "Arm Holdings plc ADR", "EQUITY", "$148.20", "Twelve Data / NASDAQ"),
             ("PLTR", "Palantir Technologies Inc.", "EQUITY", "$44.80", "Twelve Data / NYSE"),
@@ -215,6 +239,7 @@ async def trigger_external_sync(
         synced_at=now_iso,
         total_synced=len(synced),
         assets=synced,
+        simulated=simulated,
     )
 
 
@@ -243,12 +268,32 @@ _ACTIVE_WEBSOCKETS: set[WebSocket] = set()
 
 @router.websocket("/ws")
 async def live_market_websocket(websocket: WebSocket) -> None:
-    """Real-time live market ticks & alert comparison streaming WebSocket.
+    """Dev-only simulated market tick stream - every tick below is a random
+    walk over a hardcoded quote dict, not sourced from any real feed or
+    accepted_fact (2026-11-10 UAT gap analysis G06/G11 remediation: this was
+    previously served unconditionally and consumed by MonitoringPage.tsx's
+    client-side crossing-detection to fire real email/browser notifications
+    off simulated prices - that caller has been removed; this endpoint must
+    never again be wired to anything that sends a real notification).
 
-    Pushes live asset price updates, yield fluctuations, and alert checks
-    every 2 seconds to connected clients.
+    Refuses to serve simulated ticks in production - closes immediately
+    with an UNAVAILABLE frame instead. Outside production, every frame is
+    explicitly marked simulated=true so no consumer can mistake it for real
+    market data.
     """
     await websocket.accept()
+    if _is_production():
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "UNAVAILABLE",
+                    "reason": "No real-time market data feed is connected in production.",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
+        )
+        await websocket.close()
+        return
     _ACTIVE_WEBSOCKETS.add(websocket)
     try:
         # Initial welcome frame with any dynamically ingested assets
@@ -264,6 +309,7 @@ async def live_market_websocket(websocket: WebSocket) -> None:
         init_payload = {
             "type": "INIT",
             "synced_assets": initial_assets,
+            "simulated": True,
             "timestamp": datetime.now(UTC).isoformat(),
         }
         await websocket.send_text(json.dumps(init_payload))
@@ -334,6 +380,7 @@ async def live_market_websocket(websocket: WebSocket) -> None:
                 json.dumps({
                     "type": "TICK",
                     "ticks": ticks,
+                    "simulated": True,
                     "timestamp": datetime.now(UTC).isoformat(),
                 })
             )

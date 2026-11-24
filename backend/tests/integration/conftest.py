@@ -158,6 +158,7 @@ class FakeSupabaseAuth:
     def __init__(self) -> None:
         self.users_by_email: dict[str, dict[str, str]] = {}
         self._recovery_tokens: dict[str, str] = {}
+        self._login_tokens: dict[str, str] = {}
 
     async def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -195,7 +196,11 @@ class FakeSupabaseAuth:
 
     def _update_password(self, request: httpx.Request) -> httpx.Response:
         bearer = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
-        email = self._recovery_tokens.get(bearer)
+        # Real GoTrue authorises PUT /auth/v1/user with any currently-valid
+        # access token, not only a recovery-link one - identity.service.
+        # change_password (bug T11) mints an ordinary login token via /token
+        # and uses that, so this fake must recognise both token families.
+        email = self._recovery_tokens.get(bearer) or self._login_tokens.get(bearer)
         if email is None:
             return httpx.Response(
                 403,
@@ -257,10 +262,12 @@ class FakeSupabaseAuth:
                     "msg": "Invalid login credentials",
                 },
             )
+        token = f"login-{uuid.uuid4().hex}"
+        self._login_tokens[token] = email
         return httpx.Response(
             200,
             json={
-                "access_token": "fake-access-token",
+                "access_token": token,
                 "token_type": "bearer",
                 "user": {"id": existing["id"], "email": email},
             },

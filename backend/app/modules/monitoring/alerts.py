@@ -24,8 +24,9 @@ import datetime as dt
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.calculation.models import CalculationResult
@@ -275,3 +276,33 @@ async def create_alert_for_evaluation(
         await session.flush()
 
     return AlertCreated(alert_id=alert.id)
+
+
+async def mark_alerts_for_reassessment(
+    session: AsyncSession, *, evidence_bundle_ids: list[uuid.UUID], correction_event_id: uuid.UUID
+) -> int:
+    """UAT gap-analysis G12: called only by
+    market/pipeline/correction_propagation.py, immediately after a material
+    accepted_fact correction, for every alert whose own evidence_bundle_id
+    cited the now-superseded fact. monitoring.alert is this module's own
+    table, so the write happens here rather than market reaching across
+    schemas directly - matching this codebase's no-cross-module-direct-
+    writes discipline. monitoring.alert runs under FORCE ROW LEVEL
+    SECURITY, account-scoped, but a correction is detected by the
+    (account-agnostic) reconciliation pipeline and can legitimately span
+    many different accounts' alerts at once, so an ordinary ORM UPDATE
+    (which would run under whatever RLS context this session has, i.e.
+    none) would silently touch zero rows. Goes through
+    monitoring.mark_alerts_for_reassessment, a SECURITY DEFINER function
+    (migration 0039), the same pattern research.service.
+    mark_messages_for_reassessment uses for the identical problem.
+    Idempotent: re-running with the same correction_event_id just re-sets
+    the same value on the same rows.
+    """
+    if not evidence_bundle_ids:
+        return 0
+    result = await session.execute(
+        text("SELECT monitoring.mark_alerts_for_reassessment(:ids, :cid)"),
+        {"cid": correction_event_id, "ids": evidence_bundle_ids},
+    )
+    return cast(int, result.scalar_one())

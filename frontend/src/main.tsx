@@ -15,6 +15,14 @@ import ResetPassword from '@/pages/ResetPassword'
 import Privacy from '@/pages/Privacy'
 import Terms from '@/pages/Terms'
 import Contact from '@/pages/Contact'
+import Cookies from '@/pages/Cookies'
+import Disclaimers from '@/pages/Disclaimers'
+import AcceptableUse from '@/pages/AcceptableUse'
+import Accessibility from '@/pages/Accessibility'
+import DataProcessingAddendum from '@/pages/DataProcessingAddendum'
+import AiTerms from '@/pages/AiTerms'
+import DataTerms from '@/pages/DataTerms'
+import LegalNotices from '@/pages/LegalNotices'
 import Help from '@/pages/Help'
 import Guides from '@/pages/Guides'
 import Join from '@/pages/Join'
@@ -91,6 +99,14 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="/terms" element={<Terms />} />
+                <Route path="/cookies" element={<Cookies />} />
+                <Route path="/disclaimers" element={<Disclaimers />} />
+                <Route path="/acceptable-use" element={<AcceptableUse />} />
+                <Route path="/accessibility" element={<Accessibility />} />
+                <Route path="/dpa" element={<DataProcessingAddendum />} />
+                <Route path="/ai-terms" element={<AiTerms />} />
+                <Route path="/data-terms" element={<DataTerms />} />
+                <Route path="/legal-notices" element={<LegalNotices />} />
                 <Route path="/contact" element={<Contact />} />
                 <Route path="/help" element={<Help />} />
                 <Route path="/guides" element={<Guides />} />

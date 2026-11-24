@@ -179,38 +179,58 @@ function AccountSection({ onNavigateToBilling }: { onNavigateToBilling?: () => v
   const { entitlement } = useEntitlement()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(session?.name ?? '')
+  const [renaming, setRenaming] = useState(false)
+  const [renameError, setRenameError] = useState<string | null>(null)
 
-  const save = () => {
-    if (draft.trim()) rename(draft)
-    setEditing(false)
+  const save = async () => {
+    if (!draft.trim()) return
+    setRenaming(true)
+    setRenameError(null)
+    try {
+      await rename(draft)
+      setEditing(false)
+    } catch (err) {
+      setRenameError(err instanceof api.ApiError ? err.message : 'Could not save your name. Please try again.')
+    } finally {
+      setRenaming(false)
+    }
   }
 
-  const currentPlan = (entitlement?.plan_tier || 'free').toUpperCase()
+  const currentPlan = (entitlement?.plan_tier || 'explorer').toUpperCase()
 
   return (
     <Panel title="Account" description="Who you are signed in as on this device.">
       <Card>
         <Row label="Display name" hint="Used for greeting and in-app display.">
           {editing ? (
-            <div className="flex items-center gap-2">
-              <input
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') save()
-                  if (e.key === 'Escape') setEditing(false)
-                }}
-                aria-label="Display name"
-                className="w-44 rounded-lg border border-border bg-background/60 px-3 py-1.5 text-[13.5px] outline-none focus:border-ring/70"
-              />
-              <button
-                onClick={save}
-                aria-label="Save name"
-                className="grid h-8 w-8 place-items-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              >
-                <Check className="h-3.5 w-3.5" />
-              </button>
+            <div className="flex flex-col items-start gap-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  autoFocus
+                  value={draft}
+                  disabled={renaming}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') save()
+                    if (e.key === 'Escape') setEditing(false)
+                  }}
+                  aria-label="Display name"
+                  className="w-44 rounded-lg border border-border bg-background/60 px-3 py-1.5 text-[13.5px] outline-none focus:border-ring/70 disabled:opacity-50"
+                />
+                <button
+                  onClick={save}
+                  disabled={renaming}
+                  aria-label="Save name"
+                  className="grid h-8 w-8 place-items-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {renameError && (
+                <p role="alert" className="text-[11.5px] text-delayed">
+                  {renameError}
+                </p>
+              )}
             </div>
           ) : (
             <div className="flex items-center gap-3">
@@ -633,9 +653,17 @@ function TeamSection({ onNavigateToBilling }: { onNavigateToBilling: () => void 
 
           {!isMultiSeatTier && (
             <div className="mt-4 rounded-xl bg-amber-500/10 border border-amber-500/20 p-3.5 flex items-start gap-3">
-              <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-              <div className="text-xs text-amber-200/90 leading-relaxed">
-                You are currently on the <strong className="font-semibold text-amber-300 capitalize">{data?.plan_tier}</strong> plan (1 seat). Upgrade to <strong className="font-semibold text-amber-300">Teams ($249/mo)</strong> or <strong className="font-semibold text-amber-300">Enterprise (Custom quote)</strong> to invite multiple analysts, share policy frameworks, and pool monthly research limits.
+              <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+              {/* A dark:-variant pair here never actually took effect: this
+                  app's theming toggles a `.light` class, not `.dark`, so
+                  Tailwind's `dark:` selector (which matches an ancestor
+                  `.dark`) never matches anything. A single always-applied
+                  pale amber (the alternative tried in a parallel fix) has
+                  the same problem in reverse - pale-on-pale in light mode.
+                  text-foreground tracks the real theme toggle correctly in
+                  both directions (T12). */}
+              <div className="text-xs text-foreground leading-relaxed">
+                You are currently on the <strong className="font-semibold capitalize">{data?.plan_tier}</strong> plan (1 seat). Upgrade to <strong className="font-semibold">Teams ($249/mo)</strong> or <strong className="font-semibold">Enterprise (Custom quote)</strong> to invite multiple analysts, share policy frameworks, and pool monthly research limits.
               </div>
             </div>
           )}
@@ -702,8 +730,8 @@ function TeamSection({ onNavigateToBilling }: { onNavigateToBilling: () => void 
               className={cn(
                 'rounded-xl p-3.5 border text-xs flex flex-col gap-2',
                 inviteFeedback.isError
-                  ? 'bg-rose-500/10 border-rose-500/20 text-rose-300'
-                  : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                  ? 'bg-rose-500/10 border-rose-500/20 text-foreground'
+                  : 'bg-emerald-500/10 border-emerald-500/20 text-foreground'
               )}
             >
               <div className="flex items-center gap-2 font-medium">
@@ -920,6 +948,9 @@ function SecuritySection() {
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [passwordChanged, setPasswordChanged] = useState(false)
+  const [resetEmailState, setResetEmailState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
 
   // 2FA State
   const [showSetupModal, setShowSetupModal] = useState(false)
@@ -1002,7 +1033,7 @@ function SecuritySection() {
     }
   }
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     const errs: Record<string, string> = {}
     if (!current) errs.current = 'Enter your current password.'
@@ -1011,10 +1042,37 @@ function SecuritySection() {
     else if (problem) errs.next = problem
     if (confirm !== next) errs.confirm = 'Passwords do not match.'
     setErrors(errs)
-    if (Object.keys(errs).length === 0) {
-      setErrors({
-        form: 'Password change requires standard email recovery flow or an active session re-auth.',
-      })
+    setPasswordChanged(false)
+    if (Object.keys(errs).length > 0) return
+
+    setChangingPassword(true)
+    try {
+      await api.changePassword(current, next)
+      setCurrent('')
+      setNext('')
+      setConfirm('')
+      setPasswordChanged(true)
+    } catch (err) {
+      const message =
+        err instanceof api.ApiError ? err.message : 'Could not change your password. Please try again.'
+      if (err instanceof api.ApiError && err.code === 'UNAUTHENTICATED') {
+        setErrors({ current: message })
+      } else {
+        setErrors({ form: message })
+      }
+    } finally {
+      setChangingPassword(false)
+    }
+  }
+
+  const sendResetEmail = async () => {
+    if (!session?.email || resetEmailState === 'sending') return
+    setResetEmailState('sending')
+    try {
+      await api.requestPasswordReset(session.email)
+      setResetEmailState('sent')
+    } catch {
+      setResetEmailState('error')
     }
   }
 
@@ -1284,20 +1342,34 @@ function SecuritySection() {
               {errors.form}
             </p>
           )}
+          {passwordChanged && (
+            <p role="status" className="text-[12.5px] text-emerald-500">
+              Password updated. Use your new password next time you sign in.
+            </p>
+          )}
 
           <div className="pt-2 flex flex-wrap items-center gap-3">
             <button
               type="submit"
-              className="inline-flex h-10 items-center justify-center rounded-xl bg-primary px-5 text-[13.5px] font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              disabled={changingPassword}
+              className="inline-flex h-10 items-center justify-center rounded-xl bg-primary px-5 text-[13.5px] font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50"
             >
-              Update password
+              {changingPassword ? 'Updating…' : 'Update password'}
             </button>
-            <Link
-              to="/forgot-password"
-              className="text-xs text-muted-foreground hover:text-primary transition-colors underline-offset-4 hover:underline"
+            <button
+              type="button"
+              onClick={sendResetEmail}
+              disabled={resetEmailState === 'sending'}
+              className="text-xs text-muted-foreground hover:text-primary transition-colors underline-offset-4 hover:underline disabled:opacity-50"
             >
-              Send password reset email instead →
-            </Link>
+              {resetEmailState === 'sending'
+                ? 'Sending reset email…'
+                : resetEmailState === 'sent'
+                  ? 'Reset email sent - check your inbox'
+                  : resetEmailState === 'error'
+                    ? 'Could not send reset email - try again →'
+                    : 'Send password reset email instead →'}
+            </button>
           </div>
         </form>
       </Card>
@@ -1332,7 +1404,7 @@ function BillingSection() {
     void loadInvoices()
   }, [])
 
-  const activePlanTier = entitlement?.plan_tier || 'professional'
+  const activePlanTier = entitlement?.plan_tier || 'explorer'
   const isTeamOrEnterprise = activePlanTier === 'teams' || activePlanTier === 'enterprise'
   const [planAudience, setPlanAudience] = useState<'individual' | 'team'>(isTeamOrEnterprise ? 'team' : 'individual')
   const activePlanName = formatPlanTier(activePlanTier)
@@ -1386,7 +1458,7 @@ function BillingSection() {
       setErrorMessage(null)
       await api.updateAccountPlan({
         plan_tier: targetTier,
-        billing_cadence: entitlement?.billing_cadence || 'annual',
+        billing_cadence: entitlement?.billing_cadence || 'monthly',
       })
       await refreshEntitlement()
       setSuccessMessage(`Account plan successfully updated to ${formatPlanTier(targetTier)} Tier.`)

@@ -86,6 +86,13 @@ class Identity:
     email: str
     role: str = "admin"
     totp_enabled: bool = False
+    #: Always resolved - default_display_name(email) if the principal has
+    #: never set one, never the raw (possibly null) column value.
+    display_name: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.display_name:
+            object.__setattr__(self, "display_name", default_display_name(self.email))
 
 
 @dataclass(frozen=True)
@@ -95,6 +102,20 @@ class IssuedLogin:
     #: Raw token for the cookie. Never persisted, never logged.
     token: str
     absolute_expiry: dt.datetime
+
+
+def default_display_name(email: str) -> str:
+    """"vignesh.k@…" -> "Vignesh K" - the fallback shown until a principal
+    sets display_name explicitly (bug T10). Mirrors frontend/src/auth/
+    session.ts's nameFromEmail exactly, so a principal who never renames
+    themselves sees the identical name they always have; it just now comes
+    from the server (session.ts's own version is deleted as part of this
+    fix, along with the non-account-scoped localStorage override it used to
+    read from)."""
+    local_part = email.split("@", 1)[0]
+    normalised = local_part.replace(".", " ").replace("_", " ").replace("-", " ")
+    words = [w for w in normalised.split(" ") if w]
+    return " ".join(w[:1].upper() + w[1:] for w in words) or "There"
 
 
 def normalise_email(email: str) -> str:
@@ -127,7 +148,7 @@ async def _find_local_principal(
     row = (
         await session.execute(
             text(
-                "SELECT principal_id, account_id, email, status, totp_enabled, role "
+                "SELECT principal_id, account_id, email, status, totp_enabled, role, display_name "
                 "FROM identity.lookup_principal_by_supabase_id(:s)"
             ),
             {"s": supabase_user_id},
@@ -141,6 +162,7 @@ async def _find_local_principal(
         email=row.email,
         role=getattr(row, "role", "admin") or "admin",
         totp_enabled=bool(getattr(row, "totp_enabled", False)),
+        display_name=getattr(row, "display_name", None) or "",
     )
 
 
@@ -306,6 +328,61 @@ async def complete_password_reset(
     return await _issue_session(session, identity)
 
 
+async def change_password(
+    *,
+    identity: Identity,
+    current_password: str,
+    new_password: str,
+    http: httpx.AsyncClient,
+    settings: Settings | None = None,
+) -> None:
+    """Settings → Security → Change password, for an already-authenticated
+    principal. Re-verifies current_password against Supabase before
+    accepting new_password - see supabase_auth.change_password for why a
+    valid session cookie alone isn't treated as sufficient authority here.
+    The caller's existing local session is left untouched; only the
+    Supabase-side credential changes.
+    """
+    cfg = settings or get_settings()
+    try:
+        await supabase_auth.change_password(
+            http,
+            email=identity.email,
+            current_password=current_password,
+            new_password=new_password,
+            settings=cfg,
+        )
+    except supabase_auth.InvalidCredentials as exc:
+        raise InvalidCredentials from exc
+    except supabase_auth.EmailNotConfirmed as exc:
+        raise EmailNotConfirmed from exc
+    except supabase_auth.WeakPassword as exc:
+        raise WeakPassword(exc.reason) from exc
+
+
+async def update_display_name(
+    session: AsyncSession, *, identity: Identity, display_name: str
+) -> Identity:
+    """Settings -> Account -> Display name (bug T10). Scoped to the
+    authenticated principal_id only - never takes an id from the caller, so
+    one account can never rename another's. Emptiness is rejected by the
+    API layer's Pydantic field (min_length=1), not here.
+    """
+    trimmed = display_name.strip()
+    await session.execute(
+        text("UPDATE identity.principal SET display_name = :n WHERE id = :pid"),
+        {"n": trimmed[:120], "pid": identity.principal_id},
+    )
+    return Identity(
+        principal_id=identity.principal_id,
+        account_id=identity.account_id,
+        email=identity.email,
+        role=identity.role,
+        totp_enabled=identity.totp_enabled,
+        display_name=trimmed[:120],
+    )
+
+
 async def request_password_reset(
     *,
     email: str,
@@ -362,7 +439,8 @@ async def resolve_session(
         await session.execute(
             text(
                 "SELECT session_id, principal_id, account_id, email, "
-                "principal_status, expires_at, idle_expires_at, revoked_at, totp_enabled, role "
+                "principal_status, expires_at, idle_expires_at, revoked_at, totp_enabled, role, "
+                "display_name "
                 "FROM identity.lookup_session_by_token(:h)"
             ),
             {"h": tokens.hash_token(token)},
@@ -387,6 +465,7 @@ async def resolve_session(
         email=row.email,
         role=getattr(row, "role", "admin") or "admin",
         totp_enabled=bool(getattr(row, "totp_enabled", False)),
+        display_name=getattr(row, "display_name", None) or "",
     )
     await apply_rls_context(
         session, account_id=identity.account_id, principal_id=identity.principal_id

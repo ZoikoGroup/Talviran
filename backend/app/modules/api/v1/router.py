@@ -11,6 +11,7 @@ from app.modules.api.v1 import (
     issuers,
     organization,
     research,
+    research_jobs,
     rules,
     support,
     sync,
@@ -22,6 +23,7 @@ router.include_router(auth.router)
 router.include_router(organization.router)
 router.include_router(chats.router)
 router.include_router(research.router)
+router.include_router(research_jobs.router)
 router.include_router(issuers.router)
 router.include_router(instruments.router)
 router.include_router(calculations.router)

@@ -18,8 +18,13 @@ anyway — see rule_engine.py's docstring):
     positive default would silently change a rule's economic meaning,
     which §8.2 explicitly forbids doing without the user's explicit
     choice).
-  - schedule_id, delivery_profile_id (no scheduler or notification/alert
-    delivery module exists yet — those are separate later slices)
+  - schedule_id (no scheduler exists yet - a separate later slice).
+    delivery_profile_id itself stays deferred too, but RuleVersion now
+    carries one real field of what it would eventually generalize:
+    notify_email, an opt-in EMAIL address for MON-001 §14's second
+    transport (2026-11-23 UAT gap analysis, T28 - the frontend already
+    collected this and silently discarded it; delivery.py's deliver_alert
+    already implemented real EMAIL sending, just never given a recipient).
   - SUSPENDED as a RuleVersion.status value: resolved, not just deferred,
     now that coverage tracking is real (see MonitoringCoverage below).
     §12.1's own CoverageRecord.coverage_state enum lists both SUSPENDED
@@ -49,13 +54,17 @@ and alerts.py links every alert to the same accepted_fact its triggering
 evaluation used, exactly like evidence/service.py already does for
 research replies.
 
-AlertDeliveryAttempt/delivery.py (MON-001 §14) implement exactly one
-transport, IN_APP - an alert becomes "delivered" the moment it's visible
-through GET /api/v1/alerts, which needs no external provider/credentials
-at all (matching "prove it in Postgres first" applied to delivery, not
-just ingestion). Real push transports (email/SMS/webhook) and §14.2's
-retry policy are separate, later slices - QUEUED as an Alert.status value
-and retry/backoff bookkeeping on AlertDeliveryAttempt are left out
+AlertDeliveryAttempt/delivery.py (MON-001 §14) implement two transports,
+IN_APP and EMAIL - an alert becomes "delivered" the moment it's visible
+through GET /api/v1/alerts (which needs no external provider/credentials
+at all, matching "prove it in Postgres first" applied to delivery, not
+just ingestion); EMAIL is attempted alongside it whenever the firing
+rule version has a notify_email set, via the same send_transactional_email
+every other transactional mail in this codebase uses (SMTP preferred,
+Resend as fallback) - never a bespoke second mail path. Real push
+transports beyond those two (SMS/webhook) and §14.2's retry policy are
+separate, later slices - QUEUED as an Alert.status value and retry/backoff
+bookkeeping on AlertDeliveryAttempt are left out
 because nothing here needs them yet: IN_APP delivery either succeeds
 synchronously or the whole request fails, there is no in-between state to
 model. SUPPRESSED/ACKNOWLEDGED/CORRECTED need suppression rules and user
@@ -214,6 +223,14 @@ class MonitoringRuleVersion(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     # module uses knowledge_time. 0 means no debounce (the only sensible
     # default - see module docstring).
     debounce_seconds: Mapped[int] = mapped_column(default=0)
+    # Opt-in EMAIL delivery (MON-001 §14) alongside the always-on IN_APP
+    # transport. None means "no email" - the rule still fires and is
+    # visible via GET /api/v1/alerts, it just isn't also mailed. Stored per
+    # rule version (not on the account) because MON-001 §14 treats delivery
+    # as part of a rule's own definition, not a blanket account preference -
+    # the same "edit by creating a new version" discipline every other
+    # field on this row already follows.
+    notify_email: Mapped[str | None] = mapped_column(String(320), default=None)
     effective_from: Mapped[dt.datetime]
     effective_to: Mapped[dt.datetime | None] = mapped_column(default=None)
     created_by_principal_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True))
@@ -299,6 +316,15 @@ class Alert(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         PGUUID(as_uuid=True), ForeignKey("evidence.evidence_bundle.id"), default=None
     )
     status: Mapped[str] = mapped_column(String(16), default=STATUS_ALERT_CREATED)
+    # UAT gap-analysis G12: set when the accepted_fact this alert's own
+    # evidence_bundle_id cites has since been materially corrected -
+    # market/pipeline/correction_propagation.py is the only writer. NULL
+    # means "no correction has touched this alert's evidence," not "this
+    # alert was definitely never wrong" - an alert created before any
+    # evidence bundle existed can never be flagged this way.
+    reassessment_correction_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("market.correction_event.id"), default=None
+    )
 
 
 class AlertSuppression(UUIDPrimaryKeyMixin, Base):

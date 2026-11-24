@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Bell,
@@ -742,6 +742,7 @@ export default function Sidebar({
                 if (onOpenWatchlists) onOpenWatchlists()
                 onMobileClose()
               }}
+              aria-label="Navigate to Watchlists"
               className={cn(
                 'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
                 activeNav === 'watchlists'
@@ -767,6 +768,7 @@ export default function Sidebar({
                 onOpenMonitoring()
                 onMobileClose()
               }}
+              aria-label="Navigate to Alerts"
               className={cn(
                 'flex w-full items-center justify-between rounded-xl px-3 py-2 transition-colors text-left',
                 activeNav === 'monitoring'

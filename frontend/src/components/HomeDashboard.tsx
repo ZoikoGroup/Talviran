@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Search,
   ArrowRight,
   Bell,
   ChevronRight,
-  BarChart3,
   FileText,
-  Bookmark,
   Layers,
-  Cpu,
   Settings,
   Plus,
   Trash2,
@@ -132,7 +130,7 @@ export default function HomeDashboard({
   }, [searchQuery])
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [overview, setOverview] = useState<DashboardOverviewResponse | null>(null)
-  const { livePrices } = useLiveMarket()
+  const { livePrices, isConnected, lastUpdated } = useLiveMarket()
 
   useEffect(() => {
     // Load real aggregated data from backend API
@@ -309,6 +307,21 @@ const AVAILABLE_TIMEZONES = [
     }
   }
 
+  // PRD TRU-002: Format an ISO timestamp for the data-freshness indicator
+  const formatLastUpdated = (iso: string | null): string => {
+    if (!iso) return 'Awaiting data...'
+    try {
+      return new Date(iso).toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZoneName: 'short',
+      })
+    } catch {
+      return 'Live'
+    }
+  }
+
   const quickPills = [
     'Compare 10Y gilts vs 10Y Treasuries',
     'Bitcoin market cap & volume (CoinMarketCap)',
@@ -328,6 +341,14 @@ const AVAILABLE_TIMEZONES = [
     if (!Array.isArray(points) || points.length === 0) {
       return isUp ? 'M0,25 L100,5' : 'M0,5 L100,25'
     }
+    // A single real data point (e.g. only one day of history seeded for a
+    // genuinely-connected but sparse series) has no range to plot - a flat
+    // line at its own value, not points.length - 1 === 0 dividing by zero
+    // into NaN path coordinates (which a real, sparse AcceptedFact series
+    // can now reach here, unlike the old always-5-point hardcoded tickers).
+    if (points.length === 1) {
+      return 'M0,13 L100,13'
+    }
     const min = Math.min(...points)
     const max = Math.max(...points)
     const range = max - min || 1
@@ -346,64 +367,21 @@ const AVAILABLE_TIMEZONES = [
       .join(' ')
   }
 
-  const defaultTickers = [
-    {
-      title: 'UK 10Y Gilt',
-      value: '4.216%',
-      change: '▼ 2.4 bps',
-      isUp: false,
-      isBps: true,
-      sparkline: 'M0,18 C10,15 20,24 30,22 C40,20 50,26 60,18 C70,12 80,16 90,8',
-    },
-    {
-      title: 'US 10Y Treasury',
-      value: '4.327%',
-      change: '▲ 1.1 bps',
-      isUp: true,
-      isBps: true,
-      sparkline: 'M0,22 C12,24 24,18 36,19 C48,15 60,12 72,14 C84,8 90,4 100,2',
-    },
-    {
-      title: 'S&P 500',
-      value: '6,589.34',
-      change: '▲ 0.62%',
-      isUp: true,
-      sparkline: 'M0,25 C15,22 25,26 35,20 C45,16 55,22 65,14 C75,10 85,12 95,2',
-    },
-    {
-      title: 'Gold (XAU)',
-      value: '$2,735.40',
-      change: '▲ 0.67%',
-      isUp: true,
-      sparkline: 'M0,22 C12,20 24,18 36,15 48,16 60,12 72,10 84,6 90,4 100,2',
-    },
-    {
-      title: 'BTC/USD',
-      value: '$67,420',
-      change: '▲ 2.82%',
-      isUp: true,
-      sparkline: 'M0,26 C12,22 24,19 36,21 48,16 60,12 72,14 84,6 90,4 100,2',
-    },
-    {
-      title: 'FTSE 100',
-      value: '8,261.40',
-      change: '▲ 0.28%',
-      isUp: true,
-      sparkline: 'M0,24 C10,22 20,25 30,20 C40,16 50,19 60,14 C70,15 80,10 90,6',
-    },
-  ]
-
-  // Dynamic tickers derived from live API overview or fallback, merged with live WebSocket stream
-  const baseTickers = overview?.tickers && overview.tickers.length > 0
-    ? overview.tickers.map((t) => ({
-        title: t.title,
-        value: t.value,
-        change: t.change,
-        isUp: t.is_up,
-        isBps: t.is_bps,
-        sparkline: toSvgPath(t.sparkline, t.is_up),
-      }))
-    : defaultTickers
+  // 2026-11-12 P0 remediation: this used to fall back to a hardcoded
+  // defaultTickers array (S&P 500, Gold, BTC/USD, FTSE 100 included) the
+  // moment the real /api/v1/dashboard/overview response had no tickers -
+  // silently reintroducing, on the frontend, the exact fabricated values
+  // that endpoint's own backend fix just removed. There is no fallback
+  // now: an empty overview.tickers means no real market benchmark is
+  // currently available, and the ribbon says so rather than inventing one.
+  const baseTickers = (overview?.tickers ?? []).map((t) => ({
+    title: t.title,
+    value: t.value,
+    change: t.change,
+    isUp: t.is_up,
+    isBps: t.is_bps,
+    sparkline: toSvgPath(t.sparkline, t.is_up),
+  }))
 
   const tickers = baseTickers.map((t) => {
     const live = livePrices[t.title]
@@ -451,38 +429,21 @@ const AVAILABLE_TIMEZONES = [
     },
   ]
 
-  const defaultAlerts = [
-    {
-      title: 'US 10Y yield moved above 4.30%',
-      time: '12 minutes ago',
-      color: 'bg-amber-400',
-    },
-    {
-      title: 'UK CPI data released',
-      time: '2 hours ago',
-      color: 'bg-emerald-400',
-    },
-    {
-      title: 'NVIDIA filing updated (10-Q)',
-      time: '6 hours ago',
-      color: 'bg-blue-500',
-    },
-  ]
-
-  // Dynamic user alerts from real Monitoring rule events in database
-  const userAlerts = overview?.alerts && overview.alerts.length > 0
-    ? overview.alerts.map((a) => {
-        let dot = 'bg-blue-400'
-        if (a.status === 'open' || a.status === 'triggered') dot = 'bg-amber-400'
-        else if (a.status === 'acknowledged') dot = 'bg-blue-400'
-        else if (a.status === 'resolved') dot = 'bg-emerald-400'
-        return {
-          title: a.title,
-          time: a.time_ago,
-          color: dot,
-        }
-      })
-    : defaultAlerts
+  // Dynamic user alerts from real Monitoring rule events in database. No
+  // fabricated fallback here: an account with no alert history sees an
+  // honest empty state, not an invented "US 10Y yield moved above 4.30%"
+  // that it never actually armed (2026-11-20 UAT gap analysis, T19/T24).
+  const userAlerts = (overview?.alerts ?? []).map((a) => {
+    let dot = 'bg-blue-400'
+    if (a.status === 'open' || a.status === 'triggered') dot = 'bg-amber-400'
+    else if (a.status === 'acknowledged') dot = 'bg-blue-400'
+    else if (a.status === 'resolved') dot = 'bg-emerald-400'
+    return {
+      title: a.title,
+      time: a.time_ago,
+      color: dot,
+    }
+  })
 
   const defaultCalendar = [
     { date: '18 Sep', time: '13:30', flag: '🇺🇸', code: 'US', event: 'Initial Jobless Claims' },
@@ -502,90 +463,28 @@ const AVAILABLE_TIMEZONES = [
       }))
     : defaultCalendar
 
-  const defaultResearch = [
-    {
-      id: '',
-      title: 'Compare the 10Y gilt and 10Y Treasury',
-      time: 'Last edited 2 hours ago',
-      icon: BarChart3,
-    },
-    {
-      id: '',
-      title: 'NVIDIA - latest financial performance',
-      time: 'Last edited 5 hours ago',
-      icon: FileText,
-    },
-    {
-      id: '',
-      title: 'UK inflation analysis',
-      time: 'Last edited 1 day ago',
-      icon: BarChart3,
-    },
-    {
-      id: '',
-      title: 'Global central bank policy comparison',
-      time: 'Last edited 2 days ago',
-      icon: Bookmark,
-    },
-  ]
-
-  // Map real user chats from Sidebar/App state if available
+  // Map real user chats from Sidebar/App state. No fabricated fallback: an
+  // account with zero chats sees an honest empty state, not invented
+  // "Compare the 10Y gilt..." entries it never created (T24).
   const activeChats = chats.filter((c) => c.title && c.title !== 'New Research')
-  const recentResearch = activeChats.length > 0
-    ? activeChats.slice(0, 4).map((c) => ({
-        id: c.id,
-        title: c.title,
-        time: 'Active investigation',
-        icon: FileText,
-      }))
-    : defaultResearch
+  const recentResearch = activeChats.slice(0, 4).map((c) => ({
+    id: c.id,
+    title: c.title,
+    time: 'Active investigation',
+    icon: FileText,
+  }))
 
-  const defaultWatchlists = [
-    {
-      id: 'default-1',
-      title: 'Core Bonds',
-      detail: '12 instruments',
-      change: '▲ 0.18%',
-      isUp: true,
-      icon: Layers,
-    },
-    {
-      id: 'default-2',
-      title: 'Tech Leaders',
-      detail: '8 instruments',
-      change: '▲ 1.24%',
-      isUp: true,
-      icon: Cpu,
-    },
-    {
-      id: 'default-3',
-      title: 'UK Equities',
-      detail: '15 instruments',
-      change: '▲ 0.32%',
-      isUp: true,
-      icon: FileText,
-    },
-    {
-      id: 'default-4',
-      title: 'Global ETFs',
-      detail: '10 instruments',
-      change: '▼ 0.21%',
-      isUp: false,
-      icon: Layers,
-    },
-  ]
-
-  // Real user watchlists from DB
-  const savedWatchlists = overview?.watchlists && overview.watchlists.length > 0
-    ? overview.watchlists.map((w) => ({
-        id: w.id,
-        title: w.title,
-        detail: w.detail,
-        change: w.change,
-        isUp: w.is_up,
-        icon: Layers,
-      }))
-    : defaultWatchlists
+  // Real user watchlists from DB. No fabricated fallback: an account with
+  // no saved watchlists sees an honest empty state, not an invented "Core
+  // Bonds / 12 instruments" list it never created (T20/T24).
+  const savedWatchlists = (overview?.watchlists ?? []).map((w) => ({
+    id: w.id,
+    title: w.title,
+    detail: w.detail,
+    change: w.change,
+    isUp: w.is_up,
+    icon: Layers,
+  }))
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6 scrollbar-slim lg:px-10">
@@ -1012,6 +911,11 @@ const AVAILABLE_TIMEZONES = [
 
         {/* Ticker Row */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
+          {tickers.length === 0 && (
+            <div className="col-span-full flex items-center rounded-xl border border-dashed border-border/70 bg-card/30 p-3.5 text-[12px] text-muted-foreground">
+              No live market benchmark is currently available.
+            </div>
+          )}
           {tickers.map((t) => (
             <div
               key={t.title}
@@ -1077,6 +981,23 @@ const AVAILABLE_TIMEZONES = [
             <span className="text-[10.5px] text-muted-foreground font-normal">70+ global assets</span>
           </button>
         </div>
+        {/* PRD TRU-002: Data freshness indicator — distinguishes live market time
+            from platform knowledge time as required by the trust layer spec. */}
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70 px-0.5">
+          <span
+            className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
+              isConnected ? "bg-emerald-400" : "bg-amber-400"
+            }`}
+          />
+          <span>
+            {isConnected
+              ? `Live \u00b7 as of ${formatLastUpdated(lastUpdated)}`
+              : lastUpdated
+                ? `Delayed \u00b7 last update ${formatLastUpdated(lastUpdated)}`
+                : "Connecting to live feed..."}
+          </span>
+        </div>
+
 
         {/* Main Grid: Hero Banner + Key Developments + Alerts & Economic Calendar */}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
@@ -1117,7 +1038,12 @@ const AVAILABLE_TIMEZONES = [
           <div className="flex flex-col justify-between rounded-2xl border border-border/70 bg-card/70 p-5 backdrop-blur-md lg:col-span-5">
             <div>
               <div className="flex items-center justify-between pb-3 border-b border-border/50">
-                <h3 className="text-[14px] font-semibold text-foreground">Key market developments</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-[14px] font-semibold text-foreground">Key market developments</h3>
+                  <span className="rounded-md bg-secondary/80 px-1.5 py-0.5 text-[9.5px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Sample
+                  </span>
+                </div>
                 <button
                   onClick={() => onSearch('Latest market developments')}
                   className="flex items-center gap-1 text-[11.5px] font-medium text-primary hover:underline"
@@ -1125,13 +1051,16 @@ const AVAILABLE_TIMEZONES = [
                   View all <ArrowRight className="h-3 w-3" />
                 </button>
               </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Illustrative headlines, not a live news feed - no source or timestamp is real. Use
+                "View all" to ask Talvrin a real question grounded in actual evidence.
+              </p>
 
               <div className="mt-3 divide-y divide-border/40">
                 {keyDevelopments.map((item, idx) => (
                   <div
                     key={idx}
-                    onClick={() => onSearch(item.title)}
-                    className="group flex cursor-pointer items-start gap-3 py-2.5 transition-colors hover:bg-accent/30 rounded-lg px-1.5"
+                    className="flex items-start gap-3 py-2.5 rounded-lg px-1.5"
                   >
                     <span className="w-5 shrink-0 text-[11.5px] font-mono text-muted-foreground">{item.time}</span>
                     <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${item.dotColor}`} />
@@ -1171,6 +1100,11 @@ const AVAILABLE_TIMEZONES = [
               </div>
 
               <div className="mt-2 space-y-2">
+                {userAlerts.length === 0 && (
+                  <p className="py-2 text-[11.5px] text-muted-foreground">
+                    No alerts yet. Set one from a Watchlist or Markets row.
+                  </p>
+                )}
                 {userAlerts.map((a, i) => (
                   <div
                     key={i}
@@ -1240,6 +1174,11 @@ const AVAILABLE_TIMEZONES = [
             </div>
 
             <div className="mt-3 space-y-2">
+              {recentResearch.length === 0 && (
+                <p className="py-2 text-[12px] text-muted-foreground">
+                  No research yet. Start a new investigation to see it here.
+                </p>
+              )}
               {recentResearch.map((item, idx) => (
                 <div
                   key={idx}
@@ -1281,6 +1220,11 @@ const AVAILABLE_TIMEZONES = [
             </div>
 
             <div className="mt-3 space-y-2">
+              {savedWatchlists.length === 0 && (
+                <p className="py-2 text-[12px] text-muted-foreground">
+                  No saved watchlists yet. Create one from the Watchlists page.
+                </p>
+              )}
               {savedWatchlists.map((w, idx) => (
                 <div
                   key={idx}
@@ -1355,11 +1299,11 @@ const AVAILABLE_TIMEZONES = [
         <div className="flex flex-col items-center justify-between gap-3 border-t border-border/50 pt-5 text-[11px] text-muted-foreground sm:flex-row pb-6">
           <div>© 2026 Talvrin. All rights reserved.</div>
           <div className="flex items-center gap-4">
-            <span className="hover:text-foreground cursor-pointer">Terms</span>
-            <span className="hover:text-foreground cursor-pointer">Privacy</span>
-            <span className="hover:text-foreground cursor-pointer">Cookies</span>
-            <span className="hover:text-foreground cursor-pointer">Disclaimers</span>
-            <span className="hover:text-foreground cursor-pointer">Contact</span>
+            <Link to="/terms" className="hover:text-foreground">Terms</Link>
+            <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
+            <Link to="/cookies" className="hover:text-foreground">Cookies</Link>
+            <Link to="/disclaimers" className="hover:text-foreground">Disclaimers</Link>
+            <Link to="/contact" className="hover:text-foreground">Contact</Link>
           </div>
         </div>
       </div>

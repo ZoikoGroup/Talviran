@@ -13,7 +13,7 @@ export interface MarketAsset {
   bitemporalStatus: string
 }
 
-export const GLOBAL_MARKET_ASSETS: MarketAsset[] = [
+const _RAW_GLOBAL_MARKET_ASSETS: MarketAsset[] = [
 
   {
     symbol: 'UK 10Y Gilt',
@@ -3580,3 +3580,63 @@ export const GLOBAL_MARKET_ASSETS: MarketAsset[] = [
     bitemporalStatus: 'CANONICAL',
   },
 ]
+
+// 2026-11-12 P0 remediation: every one of the 237 entries above carried a
+// specific real-world provider name, a freshness timestamp, and a
+// CANONICAL/RECONCILED bitemporal-status label - the exact vocabulary this
+// platform uses for genuinely reconciled backend facts - regardless of
+// whether any real connector actually backs that instrument. Discovered
+// while investigating a NIFTY 50/AAPL chart-identity bug: NIFTY 50's
+// "25,014.60" (and ~220 other entries' prices) is a frozen literal with no
+// backend connector at all (this platform's only real connectors are UK
+// DMO gilts, the BoE yield curve, the US Treasury par yield curve,
+// Frankfurter FX for GBP/USD, Twelve Data for a 5-equity pilot list, and
+// DBnomics macro - see CLAUDE.md and seed_dev.py's PILOT_EQUITIES), yet it
+// was displayed as "National Stock Exchange of India (NSE) / TradingView"
+// / "Real-time" / "RECONCILED" - indistinguishable from a real fact.
+//
+// Fixed at the data layer, not per call-site: every consumer of
+// GLOBAL_MARKET_ASSETS (MarketsPage, HomeDashboard, SearchModal,
+// ComparisonPage, TradingViewModal) already just reads .source/.freshness/
+// .bitemporalStatus, so correcting those three fields once, here, for every
+// entry this platform cannot actually verify, propagates everywhere
+// automatically. The underlying price/sparkline/name/symbol/assetClass/
+// region fields are left untouched - this only stops the catalog from
+// LYING about where a number came from, it doesn't remove the (still
+// illustrative, still useful for search/discovery) number itself, and it
+// never touches real data for the symbols that do have one.
+const VERIFIED_LIVE_SYMBOLS: ReadonlySet<string> = new Set([
+  'UK 10Y Gilt',
+  'UK 2Y Gilt',
+  'UK 5Y Gilt',
+  'UK 30Y Gilt',
+  'US 10Y Treasury',
+  'US 2Y Treasury',
+  'US 5Y Treasury',
+  'US 20Y Treasury',
+  'US 30Y Treasury',
+  'GBP/USD',
+  'AAPL',
+  'MSFT',
+  'BP.L',
+  'AZN.L',
+])
+
+export const UNVERIFIED_SOURCE_LABEL = 'Not independently verified by Talvrin'
+export const UNVERIFIED_FRESHNESS_LABEL = 'Not connected to a live source'
+export const UNVERIFIED_STATUS_LABEL = 'UNVERIFIED'
+
+export function isVerifiedLiveAsset(symbol: string): boolean {
+  return VERIFIED_LIVE_SYMBOLS.has(symbol)
+}
+
+export const GLOBAL_MARKET_ASSETS: MarketAsset[] = _RAW_GLOBAL_MARKET_ASSETS.map((asset) =>
+  isVerifiedLiveAsset(asset.symbol)
+    ? asset
+    : {
+        ...asset,
+        source: UNVERIFIED_SOURCE_LABEL,
+        freshness: UNVERIFIED_FRESHNESS_LABEL,
+        bitemporalStatus: UNVERIFIED_STATUS_LABEL,
+      }
+)

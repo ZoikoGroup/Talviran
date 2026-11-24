@@ -37,6 +37,7 @@ def _rule_out(version: MonitoringRuleVersion) -> RuleOut:
         threshold_value=version.threshold_value,
         rearm_threshold=version.rearm_threshold,
         debounce_seconds=version.debounce_seconds,
+        notify_email=version.notify_email,
         effective_from=version.effective_from,
         created_at=version.created_at,
     )
@@ -65,6 +66,7 @@ async def create_rule(body: RuleIn, session: SessionDep, identity: IdentityDep) 
         tenor_years=body.tenor_years,
         rearm_threshold=body.rearm_threshold,
         debounce_seconds=body.debounce_seconds,
+        notify_email=body.notify_email,
     )
     if isinstance(result, service.RuleRejected):
         raise _rejected(result.reason)

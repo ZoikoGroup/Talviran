@@ -20,6 +20,7 @@ from app.core.db import get_session
 from app.core.errors import ErrorCode, TalvrinAPIError
 from app.core.http_client import get_http_client
 from app.core.redis_client import get_redis
+from app.modules.api.v1.deps import IdentityDep
 from app.modules.identity import rate_limit, reset_tokens, service
 from app.modules.identity.cookies import (
     SESSION_COOKIE_NAME,
@@ -78,6 +79,10 @@ class PrincipalOut(BaseModel):
     account_id: str
     email: str
     totp_enabled: bool = False
+    #: Always resolved server-side (identity.Identity.__post_init__) - never
+    #: null, so the frontend no longer needs its own derive-from-email or
+    #: browser-localStorage fallback (bug T10).
+    name: str = ""
 
 
 def _principal_out(identity: service.Identity) -> PrincipalOut:
@@ -86,6 +91,7 @@ def _principal_out(identity: service.Identity) -> PrincipalOut:
         account_id=str(identity.account_id),
         email=identity.email,
         totp_enabled=identity.totp_enabled,
+        name=identity.display_name,
     )
 
 
@@ -273,6 +279,71 @@ async def reset_password(
         policy=_cookie_policy(),
     )
     return _principal_out(issued.identity)
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str = Field(min_length=1, max_length=4096)
+    new_password: str = Field(min_length=1, max_length=4096)
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def change_password(
+    body: ChangePasswordIn,
+    identity: IdentityDep,
+    http: HttpDep,
+) -> None:
+    """Settings → Security → Change password, for the signed-in principal.
+
+    Distinct from /forgot-password + /reset-password (that pair is for a
+    user who is locked out and proves identity via a mailbox link instead);
+    this one re-verifies current_password with Supabase before accepting
+    new_password, same as login does - see identity.service.change_password.
+    """
+    try:
+        await service.change_password(
+            identity=identity,
+            current_password=body.current_password,
+            new_password=body.new_password,
+            http=http,
+        )
+    except service.InvalidCredentials as exc:
+        raise TalvrinAPIError(
+            code=ErrorCode.UNAUTHENTICATED, message="Current password is incorrect."
+        ) from exc
+    except service.WeakPassword as exc:
+        raise TalvrinAPIError(
+            code=ErrorCode.VALIDATION_ERROR, message=exc.reason
+        ) from exc
+    except service.EmailNotConfirmed as exc:
+        raise TalvrinAPIError(
+            code=ErrorCode.UNAUTHENTICATED,
+            message="Please confirm your email address before changing your password.",
+        ) from exc
+
+
+class UpdateDisplayNameIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+@router.patch("/display-name")
+async def update_display_name(
+    body: UpdateDisplayNameIn,
+    identity: IdentityDep,
+    db: SessionDep,
+) -> PrincipalOut:
+    """Settings -> Account -> Display name (bug T10). Scoped to the
+    signed-in principal only - the request body carries no id, so there is
+    no way to rename anyone else.
+    """
+    if not body.name.strip():
+        raise TalvrinAPIError(
+            code=ErrorCode.VALIDATION_ERROR, message="Display name cannot be blank."
+        )
+    updated = await service.update_display_name(
+        db, identity=identity, display_name=body.name
+    )
+    await db.commit()
+    return _principal_out(updated)
 
 
 @router.get("/me")

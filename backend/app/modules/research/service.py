@@ -121,6 +121,12 @@ class Message:
     role: str
     content: str
     created_at: dt.datetime
+    #: UAT gap-analysis G12 - set by
+    #: market/pipeline/correction_propagation.py when the evidence bundle
+    #: that backed this message cited an accepted_fact that has since been
+    #: materially corrected. None means no correction has touched this
+    #: message yet, not that its content is still definitely accurate.
+    reassessment_correction_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -583,7 +589,8 @@ async def list_messages(
     rows = (
         await session.execute(
             text(
-                "SELECT m.id, m.seq, m.role, m.content, m.created_at "
+                "SELECT m.id, m.seq, m.role, m.content, m.created_at, "
+                "       m.reassessment_correction_id "
                 "FROM research.message AS m "
                 "JOIN research.conversation AS c ON c.id = m.conversation_id "
                 "WHERE m.conversation_id = :id AND c.deleted_at IS NULL "
@@ -600,9 +607,41 @@ async def list_messages(
             role=r.role,
             content=crypto.decrypt(dek, bytes(r.content), aad=aad),
             created_at=r.created_at,
+            reassessment_correction_id=r.reassessment_correction_id,
         )
         for r in rows
     ]
+
+
+async def mark_messages_for_reassessment(
+    session: AsyncSession, *, message_ids: list[uuid.UUID], correction_event_id: uuid.UUID
+) -> int:
+    """UAT gap-analysis G12: called only by
+    market/pipeline/correction_propagation.py, immediately after a material
+    accepted_fact correction, for every saved message whose evidence bundle
+    cited the now-superseded fact. research.message is this module's own
+    table (raw SQL throughout - see the module docstring), so the write
+    happens here rather than market reaching across schemas directly.
+    research.message runs under FORCE ROW LEVEL SECURITY, account-scoped,
+    but a correction is detected by the (account-agnostic) reconciliation
+    pipeline and can legitimately span many different accounts' saved
+    messages at once - there is no single account context this caller
+    could set even in principle. Goes through
+    research.mark_messages_for_reassessment, a SECURITY DEFINER function
+    (migration 0039), the same pattern this schema already uses for
+    exactly this problem (lookup_shared_conversation, migration 0011).
+    Deliberately does not touch content/encryption - only a plaintext
+    metadata column - so no DEK is needed to call this. Idempotent:
+    re-running with the same correction_event_id just re-sets the same
+    value on the same rows.
+    """
+    if not message_ids:
+        return 0
+    result = await session.execute(
+        text("SELECT research.mark_messages_for_reassessment(:ids, :cid)"),
+        {"cid": correction_event_id, "ids": message_ids},
+    )
+    return cast(int, result.scalar_one())
 
 
 # ------------------------------------------------------------------ shares

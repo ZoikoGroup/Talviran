@@ -12,16 +12,29 @@ import type { CiteKind, Freshness } from '@/data/mockReply'
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
+export interface ApiValidationIssue {
+  loc: (string | number)[]
+  msg: string
+}
+
 export class ApiError extends Error {
   code: string
   status: number
   retryAfterSeconds?: number
+  validationIssues?: ApiValidationIssue[]
 
-  constructor(code: string, message: string, status: number, retryAfterSeconds?: number) {
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+    retryAfterSeconds?: number,
+    validationIssues?: ApiValidationIssue[]
+  ) {
     super(message)
     this.code = code
     this.status = status
     this.retryAfterSeconds = retryAfterSeconds
+    this.validationIssues = validationIssues
   }
 }
 
@@ -30,6 +43,7 @@ interface ErrorEnvelope {
     code?: string
     message?: string
     retry_after_seconds?: number
+    details?: { errors?: ApiValidationIssue[] }
   }
 }
 
@@ -50,7 +64,8 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
       err?.code ?? 'INTERNAL_ERROR',
       err?.message ?? 'Something went wrong. Please try again.',
       res.status,
-      err?.retry_after_seconds
+      err?.retry_after_seconds,
+      err?.details?.errors
     )
   }
 
@@ -64,6 +79,8 @@ export interface Principal {
   accountId: string
   email: string
   totpEnabled: boolean
+  /** Always resolved server-side (bug T10) - never empty. */
+  name: string
 }
 
 interface PrincipalWire {
@@ -71,6 +88,7 @@ interface PrincipalWire {
   account_id: string
   email: string
   totp_enabled?: boolean
+  name?: string
 }
 
 export interface TotpSetupResponse {
@@ -89,6 +107,7 @@ const toPrincipal = (p: PrincipalWire): Principal => ({
   accountId: p.account_id,
   email: p.email,
   totpEnabled: Boolean(p.totp_enabled),
+  name: p.name || p.email,
 })
 
 export const signup = (email: string, password: string): Promise<Principal> =>
@@ -144,6 +163,23 @@ export const resetPassword = (accessToken: string, newPassword: string): Promise
   apiFetch<PrincipalWire>('/api/v1/auth/reset-password', {
     method: 'POST',
     body: JSON.stringify({ access_token: accessToken, new_password: newPassword }),
+  }).then(toPrincipal)
+
+/** Settings → Security → Change password, for the signed-in user. Throws
+ * ApiError('UNAUTHENTICATED') for a wrong current password, or
+ * ApiError('VALIDATION_ERROR') for a new password Supabase rejects. */
+export const changePassword = (currentPassword: string, newPassword: string): Promise<void> =>
+  apiFetch<void>('/api/v1/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+
+/** Settings → Account → Display name (bug T10) - persists server-side,
+ * scoped to the signed-in principal only. */
+export const updateDisplayName = (name: string): Promise<Principal> =>
+  apiFetch<PrincipalWire>('/api/v1/auth/display-name', {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
   }).then(toPrincipal)
 
 // ------------------------------------------------------------------- chats
@@ -322,42 +358,89 @@ interface ResearchWire {
   note: string | null
 }
 
-export const postResearch = (
+// ------------------------------------------------------------ research jobs
+
+/** UAT gap-analysis G15 - the async, cancellable counterpart to
+ * postResearch. "queued"/"running" are states this app can actually show
+ * accurately (and cancel for real) while a request is in flight, instead
+ * of an opaque loading spinner on an open connection. */
+export type ResearchJobStatus =
+  | 'QUEUED'
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCEL_REQUESTED'
+  | 'CANCELED'
+
+export interface ResearchJob {
+  jobId: string
+  status: ResearchJobStatus
+  conversationId: string
+  result: ResearchAnswer | null
+  error: string | null
+}
+
+interface ResearchJobWire {
+  job_id: string
+  status: ResearchJobStatus
+  conversation_id: string
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+  result: ResearchWire | null
+  error: string | null
+}
+
+function fromResearchJobWire(r: ResearchJobWire): ResearchJob {
+  return {
+    jobId: r.job_id,
+    status: r.status,
+    conversationId: r.conversation_id,
+    result: r.result
+      ? {
+          requestId: r.result.request_id,
+          generatedAt: r.result.generated_at,
+          evidenceBundleId: r.result.evidence_bundle_id,
+          allowedOutputType: r.result.allowed_output_type,
+          messageId: r.result.message_id,
+          text: r.result.text,
+          facts: r.result.facts,
+          citations: r.result.citations.map((c) => ({
+            label: c.label,
+            meta: c.meta ?? undefined,
+            pill: c.pill as Freshness,
+            kind: c.kind as CiteKind,
+            url: c.url ?? undefined,
+          })),
+          note: r.result.note,
+        }
+      : null,
+    error: r.error,
+  }
+}
+
+export const postResearchJob = (
   conversationId: string,
   query: string,
-  model?: string,
-  signal?: AbortSignal
-): Promise<ResearchAnswer> =>
-  apiFetch<ResearchWire>('/api/v1/research', {
+  model?: string
+): Promise<ResearchJob> =>
+  apiFetch<ResearchJobWire>('/api/v1/research/jobs', {
     method: 'POST',
-    signal,
     headers: { 'Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
       conversation_id: conversationId,
       query,
       ...(model ? { model } : {}),
     }),
-  }).then((r) => ({
-    requestId: r.request_id,
-    generatedAt: r.generated_at,
-    evidenceBundleId: r.evidence_bundle_id,
-    allowedOutputType: r.allowed_output_type,
-    messageId: r.message_id,
-    text: r.text,
-    facts: r.facts,
-    // Cast at the wire boundary: the backend's pill/kind values are drawn
-    // from these exact fixed sets by construction (evidence/service.py),
-    // but the wire type itself is just `string` since JSON carries no
-    // literal-union information.
-    citations: r.citations.map((c) => ({
-      label: c.label,
-      meta: c.meta ?? undefined,
-      pill: c.pill as Freshness,
-      kind: c.kind as CiteKind,
-      url: c.url ?? undefined,
-    })),
-    note: r.note,
-  }))
+  }).then(fromResearchJobWire)
+
+export const getResearchJob = (jobId: string): Promise<ResearchJob> =>
+  apiFetch<ResearchJobWire>(`/api/v1/research/jobs/${jobId}`).then(fromResearchJobWire)
+
+export const cancelResearchJob = (jobId: string): Promise<ResearchJob> =>
+  apiFetch<ResearchJobWire>(`/api/v1/research/jobs/${jobId}/cancel`, { method: 'POST' }).then(
+    fromResearchJobWire
+  )
 
 // --------------------------------------------------------- research evidence
 
@@ -472,6 +555,7 @@ interface RuleWire {
   threshold_value: string
   rearm_threshold: string | null
   debounce_seconds: number
+  notify_email: string | null
   effective_from: string
   created_at: string
 }
@@ -486,6 +570,7 @@ export interface Rule {
   thresholdValue: string
   rearmThreshold: string | null
   debounceSeconds: number
+  notifyEmail: string | null
   effectiveFrom: string
   createdAt: string
 }
@@ -500,6 +585,7 @@ const toRule = (r: RuleWire): Rule => ({
   thresholdValue: r.threshold_value,
   rearmThreshold: r.rearm_threshold,
   debounceSeconds: r.debounce_seconds,
+  notifyEmail: r.notify_email,
   effectiveFrom: r.effective_from,
   createdAt: r.created_at,
 })
@@ -513,6 +599,7 @@ export interface CreateRuleInput {
   tenorYears?: string
   rearmThreshold?: string
   debounceSeconds?: number
+  notifyEmail?: string
 }
 
 export const createRule = (input: CreateRuleInput): Promise<Rule> =>
@@ -527,6 +614,7 @@ export const createRule = (input: CreateRuleInput): Promise<Rule> =>
       tenor_years: input.tenorYears ?? null,
       rearm_threshold: input.rearmThreshold ?? null,
       debounce_seconds: input.debounceSeconds ?? 0,
+      notify_email: input.notifyEmail ?? null,
     }),
   }).then(toRule)
 
@@ -595,33 +683,12 @@ export const listAlerts = (cursor?: string): Promise<Page<Alert>> =>
     hasMore: p.has_more,
   }))
 
-export interface TriggerAlertPayload {
-  assetSymbol: string
-  assetName?: string | null
-  thresholdValue: string
-  observedValue: string
-  predicate?: 'CROSSES_ABOVE' | 'CROSSES_BELOW'
-  recipientEmail?: string | null
-}
-
-export const dispatchTriggeredAlert = (payload: TriggerAlertPayload): Promise<{
-  status: string
-  email_dispatched: boolean
-  recipient: string
-  asset_symbol: string
-}> =>
-  apiFetch('/api/v1/alerts/trigger', {
-    method: 'POST',
-    body: JSON.stringify({
-      asset_symbol: payload.assetSymbol,
-      asset_name: payload.assetName ?? null,
-      threshold_value: payload.thresholdValue,
-      observed_value: payload.observedValue,
-      predicate: payload.predicate ?? 'CROSSES_ABOVE',
-      recipient_email: payload.recipientEmail ?? null,
-    }),
-  })
-
+// dispatchTriggeredAlert/TriggerAlertPayload used to live here, calling
+// POST /api/v1/alerts/trigger - a caller-controlled email dispatcher with
+// no verification against any real Alert/MonitoringRule row, removed from
+// the backend alongside this, its only caller (MonitoringPage.tsx's
+// client-side crossing-detection). See backend/app/modules/api/v1/alerts.py
+// (2026-11-10 UAT gap analysis G11 remediation).
 
 // ------------------------------------------------------------------- watchlists
 
