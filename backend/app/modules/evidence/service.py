@@ -1312,7 +1312,7 @@ async def _document_backed_fallback_reply(
                 session,
                 query_text=query_text,
                 http=http,
-                api_key=settings.gemini_api_key,
+                api_key=settings.gemini_api_key.get_secret_value(),
                 limit=1,
                 max_distance=_MAX_SEMANTIC_MATCH_DISTANCE,
             )

@@ -420,7 +420,7 @@ async def _try_ai_composed_text(
         )
     settings = get_settings()
     api_keys = {
-        code: key
+        code: key.get_secret_value()
         for code, key in {"gemini": settings.gemini_api_key, "groq": settings.groq_api_key}.items()
         if key
     }

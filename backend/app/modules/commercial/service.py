@@ -416,7 +416,7 @@ async def create_checkout_session(
     cancel_url = req.cancel_url or f"{settings.frontend_url}/#settings?cancelled=true"
 
     if settings.stripe_secret_key:
-        stripe.api_key = settings.stripe_secret_key
+        stripe.api_key = settings.stripe_secret_key.get_secret_value()
         try:
             # Ensure Customer exists on Stripe if not already saved
             if not customer_id:
@@ -510,7 +510,7 @@ async def create_billing_portal_session(
             "Provide STRIPE_SECRET_KEY in backend/.env to access the live Customer Portal."
         )
 
-    stripe.api_key = settings.stripe_secret_key
+    stripe.api_key = settings.stripe_secret_key.get_secret_value()
 
     # Validate if existing customer_id is a real customer in this Stripe account
     valid_customer = False
@@ -628,7 +628,7 @@ async def update_account_plan(
 
     # If cancelling / reverting to explorer free tier, also cancel active Stripe subscription
     if plan_tier == PlanTier.EXPLORER and settings.stripe_secret_key:
-        stripe.api_key = settings.stripe_secret_key
+        stripe.api_key = settings.stripe_secret_key.get_secret_value()
         acc_row = (
             await db.execute(
                 text("SELECT stripe_subscription_id FROM identity.account WHERE id = :aid"),
@@ -683,7 +683,7 @@ async def list_account_invoices(
     if not customer_id or not settings.stripe_secret_key:
         return []
 
-    stripe.api_key = settings.stripe_secret_key
+    stripe.api_key = settings.stripe_secret_key.get_secret_value()
     try:
         invoices = stripe.Invoice.list(customer=customer_id, limit=24)
         results: list[InvoiceRecord] = []
@@ -764,7 +764,7 @@ async def cancel_subscription_self_serve(
 
     # Instruct Stripe to stop renewal at period end without immediately revoking access
     if settings.stripe_secret_key and acc_row and acc_row.stripe_subscription_id:
-        stripe.api_key = settings.stripe_secret_key
+        stripe.api_key = settings.stripe_secret_key.get_secret_value()
         try:
             stripe.Subscription.modify(
                 acc_row.stripe_subscription_id,

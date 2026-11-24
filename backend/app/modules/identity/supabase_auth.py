@@ -303,8 +303,8 @@ async def delete_user(
         resp = await client.delete(
             f"{settings.supabase_url}/auth/v1/admin/users/{user_id}",
             headers={
-                "apikey": settings.supabase_service_role_key,
-                "Authorization": f"Bearer {settings.supabase_service_role_key}",
+                "apikey": settings.supabase_service_role_key.get_secret_value(),
+                "Authorization": f"Bearer {settings.supabase_service_role_key.get_secret_value()}",
                 "Content-Type": "application/json",
             },
         )
