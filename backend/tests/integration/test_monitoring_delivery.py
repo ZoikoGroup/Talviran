@@ -18,6 +18,7 @@ from app.modules.identity import service as identity_service
 from app.modules.monitoring import delivery as delivery_module
 from app.modules.monitoring.delivery import Delivered, DeliverySkipped, deliver_alert
 from app.modules.monitoring.models import (
+    ALERT_TYPE_CROSSING,
     ALERT_TYPE_INITIAL_STATE,
     DELIVERY_ATTEMPT_DELIVERED,
     DELIVERY_ATTEMPT_FAILED,
@@ -51,6 +52,7 @@ async def _seed_alert(
     account_id: uuid.UUID,
     principal_id: uuid.UUID,
     status: str = STATUS_ALERT_CREATED,
+    alert_type: str = ALERT_TYPE_INITIAL_STATE,
 ) -> uuid.UUID:
     rule = MonitoringRule(account_id=account_id)
     session.add(rule)
@@ -68,14 +70,14 @@ async def _seed_alert(
     evaluation = RuleEvaluation(
         account_id=account_id, evaluation_key=uuid.uuid4().hex, rule_version_id=rule_version.id,
         trigger_type="FACT_PUBLISHED", trigger_id=None, knowledge_time=dt.datetime.now(dt.UTC),
-        evaluator_version="crossing_v1", outcome=ALERT_TYPE_INITIAL_STATE,
+        evaluator_version="crossing_v1", outcome=alert_type,
     )
     session.add(evaluation)
     await session.flush()
 
     alert = Alert(
         account_id=account_id, rule_id=rule.id, rule_version_id=rule_version.id,
-        evaluation_id=evaluation.id, alert_type=ALERT_TYPE_INITIAL_STATE, subject_id=uuid.uuid4(),
+        evaluation_id=evaluation.id, alert_type=alert_type, subject_id=uuid.uuid4(),
         metric_id="UK_GILT_NOMINAL_SPOT_CURVE", observed_value=Decimal("4.5"),
         threshold_value=Decimal("5.0"), knowledge_time=dt.datetime.now(dt.UTC),
         status=status,
@@ -172,7 +174,10 @@ async def test_delivering_with_a_recipient_email_also_attempts_email_transport(
 
     account_id, principal_id = uuid.uuid4(), uuid.uuid4()
     await _act_as(db_session, account_id=account_id, principal_id=principal_id)
-    alert_id = await _seed_alert(db_session, account_id=account_id, principal_id=principal_id)
+    alert_id = await _seed_alert(
+        db_session, account_id=account_id, principal_id=principal_id,
+        alert_type=ALERT_TYPE_CROSSING,
+    )
     await db_session.commit()
     await _act_as(db_session, account_id=account_id, principal_id=principal_id)
 
@@ -199,7 +204,10 @@ async def test_email_transport_failure_is_recorded_but_in_app_still_succeeds(
 
     account_id, principal_id = uuid.uuid4(), uuid.uuid4()
     await _act_as(db_session, account_id=account_id, principal_id=principal_id)
-    alert_id = await _seed_alert(db_session, account_id=account_id, principal_id=principal_id)
+    alert_id = await _seed_alert(
+        db_session, account_id=account_id, principal_id=principal_id,
+        alert_type=ALERT_TYPE_CROSSING,
+    )
     await db_session.commit()
     await _act_as(db_session, account_id=account_id, principal_id=principal_id)
 

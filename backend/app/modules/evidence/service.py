@@ -3391,13 +3391,21 @@ async def _dispatch_answer(
         answer = await _day_count_reply(session)
     elif _mentions_ex_dividend(query_text):
         answer = await _ex_dividend_reply(session)
-    elif _is_gilt_year_list_query(query_text):
+    elif _is_gilt_year_list_query(query_text) and not _mentions_yield_curve(query_text):
         # "What gilts mature in 2026?" is a list request: show every match
         # in that year rather than the singular resolver's disambiguation
         # prompt (or a one-instrument answer that composition can turn into
-        # an invented second instrument).
+        # an invented second instrument). _GILT_YEAR_LIST_PATTERN's own
+        # "what/which/list ... gilts" alternative is loose enough to also
+        # match "what's the yield curve for gilts?" - that's a curve
+        # question that merely names gilts, not a list-of-gilts question,
+        # and the yield-curve branch two cases below must win it instead
+        # (found via test_yield_curve_query_takes_priority_over_gilt_facts,
+        # which started failing the moment this gilt-inventory feature's
+        # own checks began running ahead of the pre-existing yield-curve
+        # one - a merge-order regression, not a new bug in either side).
         answer = await _gilt_inventory_reply(session, query_text)
-    elif _mentioned_year(query_text) is None and (
+    elif _mentioned_year(query_text) is None and not _mentions_yield_curve(query_text) and (
         _mentioned_decade(query_text) is not None
         or _is_gilt_inventory_query(query_text)
     ):
