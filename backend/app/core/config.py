@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # flags). Content-addressed by sha256, so this default is safe to
     # share across dev/test runs on one machine.
     artifact_storage_root: str = "var/artifacts"
-    secret_key: str = "dev-only-change-me"
+    secret_key: SecretStr = SecretStr("dev-only-change-me")
     cors_allow_origins: list[str] = [
         "http://localhost:5173",
         "https://app.talvrin.com",
@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     # fail-closed behaviour lives in research.keys.build_key_wrapper, which
     # refuses to start outside development unless this is overridden or a KMS
     # key is configured instead.
-    content_master_key: str = "ZGV2LW9ubHktbWFzdGVyLWtleS0zMi1ieXRlcyEhISE="
+    content_master_key: SecretStr = SecretStr("ZGV2LW9ubHktbWFzdGVyLWtleS0zMi1ieXRlcyEhISE=")
 
     # Set in production to wrap DEKs with Cloud KMS rather than a local key:
     # "projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k>".
@@ -78,25 +78,25 @@ class Settings(BaseSettings):
     #: Not used by anything yet — reserved for a future admin operation
     #: (e.g. force-deleting a Supabase user on account deletion) that would
     #: need it. Optional so its absence doesn't block everything else.
-    supabase_service_role_key: str | None = None
+    supabase_service_role_key: SecretStr | None = None
 
     #: Twelve Data equities connector (free tier, ~8 requests/minute).
     #: Optional, not required at boot: only the equity connector itself
     #: needs it, and only when it actually runs.
-    twelve_data_api_key: str | None = None
+    twelve_data_api_key: SecretStr | None = None
 
     #: Gemini embeddings (P4 EVID-001 E3 semantic retrieval) and generation
     #: (P4b ai_gateway - talvrin-pro's registered provider, though the
     #: "pro" model line has zero free-tier quota on this key as of
     #: 2026-09-22; see ai_gateway/providers/gemini_client.py). Optional,
     #: not required at boot: only the pipelines that use it need it.
-    gemini_api_key: str | None = None
+    gemini_api_key: SecretStr | None = None
 
     #: Groq (P4b ai_gateway - talvrin-go's registered provider, PRODUCTION
     #: since live-verified 2026-09-22; see ai_gateway/providers/
     #: groq_client.py). Optional, not required at boot: only the ai_gateway
     #: pipelines that use it need it.
-    groq_api_key: str | None = None
+    groq_api_key: SecretStr | None = None
 
     #: Tradeweb Market InSite (market/connectors/tradeweb_gilts/client.py) -
     #: real gilt closing prices (clean/dirty price, yield), not a
@@ -108,10 +108,10 @@ class Settings(BaseSettings):
     #: product launch. Optional, not required at boot: only the connector
     #: itself needs it, and only when it actually runs.
     tradeweb_username: str | None = None
-    tradeweb_password: str | None = None
+    tradeweb_password: SecretStr | None = None
 
     #: Resend email provider configuration for objective price & market alerts
-    resend_api_key: str | None = None
+    resend_api_key: SecretStr | None = None
     alerts_from_email: str = "alerts@talvrin.com"
     support_inbox_email: str = "talvrin@zoikogroup.com"
     support_from_email: str = "support@app.talvrin.com"
@@ -122,14 +122,14 @@ class Settings(BaseSettings):
     #: Optional: only required when that mailbox is actually the transport.
     smtp_host: str | None = None
     smtp_port: int = 465
-    smtp_user: str | None = None
-    smtp_pass: str | None = None
+    smtp_user: SecretStr | None = None
+    smtp_pass: SecretStr | None = None
     smtp_from: str | None = None
 
     #: Stripe billing configuration
-    stripe_secret_key: str | None = None
+    stripe_secret_key: SecretStr | None = None
     stripe_publishable_key: str | None = None
-    stripe_webhook_secret: str | None = None
+    stripe_webhook_secret: SecretStr | None = None
 
     @model_validator(mode="after")
     def _frontend_url_not_localhost_in_production(self) -> "Settings":

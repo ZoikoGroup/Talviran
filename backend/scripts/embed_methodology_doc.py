@@ -59,7 +59,10 @@ async def main() -> None:
         async with httpx.AsyncClient() as http:
             for chunk_id in chunk_ids:
                 result = await embed_chunk(
-                    session, chunk_id=chunk_id, http=http, api_key=settings.gemini_api_key
+                    session,
+                    chunk_id=chunk_id,
+                    http=http,
+                    api_key=settings.gemini_api_key.get_secret_value(),
                 )
                 await session.commit()
                 if isinstance(result, EmbedRejected):

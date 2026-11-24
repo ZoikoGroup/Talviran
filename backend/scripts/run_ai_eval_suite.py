@@ -35,7 +35,7 @@ _JURISDICTION = "GB"
 async def main(task_type: str) -> None:
     settings = get_settings()
     raw_keys = {"gemini": settings.gemini_api_key, "groq": settings.groq_api_key}
-    api_keys = {code: key for code, key in raw_keys.items() if key}
+    api_keys = {code: key.get_secret_value() for code, key in raw_keys.items() if key}
     if not api_keys:
         # _grade() treats every InvokeRejected as a safe "PASS" (a real
         # refusal IS the correct outcome for an adversarial case) - which

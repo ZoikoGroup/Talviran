@@ -166,7 +166,7 @@ async def stripe_webhook(
             # unconverted StripeObject path 500s on every real production
             # webhook call, signature verification included.
             event = stripe.Webhook.construct_event(
-                payload, stripe_signature, settings.stripe_webhook_secret
+                payload, stripe_signature, settings.stripe_webhook_secret.get_secret_value()
             ).to_dict()
         except stripe.error.SignatureVerificationError as err:
             from fastapi import HTTPException

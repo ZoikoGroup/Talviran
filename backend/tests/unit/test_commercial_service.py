@@ -6,6 +6,7 @@ from typing import Any, cast
 import pytest
 import stripe
 from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
@@ -350,7 +351,7 @@ async def test_stripe_webhook_endpoint_rejects_invalid_signature(
     base_settings = get_settings()
     webhook_secret = "whsec_test_fake_secret_for_unit_test"
     patched_settings = base_settings.model_copy(
-        update={"stripe_webhook_secret": webhook_secret}
+        update={"stripe_webhook_secret": SecretStr(webhook_secret)}
     )
     monkeypatch.setattr("app.core.config.get_settings", lambda: patched_settings)
 
@@ -407,7 +408,7 @@ async def test_stripe_webhook_endpoint_accepts_valid_signature_and_updates_entit
     base_settings = get_settings()
     webhook_secret = "whsec_test_fake_secret_for_unit_test"
     patched_settings = base_settings.model_copy(
-        update={"stripe_webhook_secret": webhook_secret}
+        update={"stripe_webhook_secret": SecretStr(webhook_secret)}
     )
     monkeypatch.setattr("app.core.config.get_settings", lambda: patched_settings)
 

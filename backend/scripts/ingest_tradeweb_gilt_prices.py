@@ -79,7 +79,9 @@ async def main() -> None:
     async with httpx.AsyncClient(follow_redirects=True) as client:
         try:
             response = await fetch_gilt_closing_prices_csv(
-                client, username=settings.tradeweb_username, password=settings.tradeweb_password
+                client,
+                username=settings.tradeweb_username,
+                password=settings.tradeweb_password.get_secret_value(),
             )
         except TradewebAuthError as exc:
             raise SystemExit(f"Tradeweb login/export failed: {exc}") from None

@@ -95,14 +95,15 @@ def build_key_wrapper(settings: Settings | None = None) -> KeyWrapper:
             f"environment {cfg.environment!r} must wrap data keys with KMS: "
             "set kms_key_name"
         )
-    if cfg.content_master_key == _DEV_DEFAULT and environment != "development":
+    content_master_key = cfg.content_master_key.get_secret_value()
+    if content_master_key == _DEV_DEFAULT and environment != "development":
         raise KeyConfigurationError(
             "refusing to use the shipped development master key in "
             f"environment {cfg.environment!r}"
         )
 
     try:
-        raw = base64.b64decode(cfg.content_master_key, validate=True)
+        raw = base64.b64decode(content_master_key, validate=True)
     except (binascii.Error, ValueError) as exc:
         raise KeyConfigurationError(
             "content_master_key must be valid base64"

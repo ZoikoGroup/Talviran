@@ -234,7 +234,7 @@ def send_talvrin_template_email(
         to_email=recipient_email,
         subject=subject,
         html_content=html_content,
-        api_key=settings.resend_api_key,
+        api_key=settings.resend_api_key.get_secret_value(),
         from_email=settings.alerts_from_email,
         attachments=attachments,
     )

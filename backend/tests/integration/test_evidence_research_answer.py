@@ -10,6 +10,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import httpx
+from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1046,7 +1047,9 @@ async def test_catch_all_query_degrades_to_lexical_when_gemini_call_fails(
     async def _broken_gemini(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, text="internal error")
 
-    fake_settings = get_settings().model_copy(update={"gemini_api_key": "fake-test-key"})
+    fake_settings = get_settings().model_copy(
+        update={"gemini_api_key": SecretStr("fake-test-key")}
+    )
     async with httpx.AsyncClient(transport=httpx.MockTransport(_broken_gemini)) as http:
         with patch("app.modules.evidence.service.get_settings", return_value=fake_settings):
             answer = await assemble_research_answer(

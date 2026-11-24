@@ -343,7 +343,7 @@ async def ingest_equity_pilot(session: AsyncSession) -> None:
                 client,
                 symbol=symbol,
                 exchange=exchange_code,
-                api_key=settings.twelve_data_api_key,
+                api_key=settings.twelve_data_api_key.get_secret_value(),
             )
             try:
                 payload = await connector.acquire()

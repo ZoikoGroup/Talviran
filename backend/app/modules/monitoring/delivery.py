@@ -142,9 +142,9 @@ def send_transactional_email(to_email: str, subject: str, html_content: str) -> 
             html_content,
             host=settings.smtp_host,
             port=settings.smtp_port,
-            user=settings.smtp_user,
-            password=settings.smtp_pass,
-            from_email=settings.smtp_from or settings.smtp_user,
+            user=settings.smtp_user.get_secret_value(),
+            password=settings.smtp_pass.get_secret_value(),
+            from_email=settings.smtp_from or settings.smtp_user.get_secret_value(),
         )
 
     if settings.resend_api_key:
@@ -152,7 +152,7 @@ def send_transactional_email(to_email: str, subject: str, html_content: str) -> 
             to_email=to_email,
             subject=subject,
             html_content=html_content,
-            api_key=settings.resend_api_key,
+            api_key=settings.resend_api_key.get_secret_value(),
             from_email=settings.support_from_email or settings.alerts_from_email,
         )
 
