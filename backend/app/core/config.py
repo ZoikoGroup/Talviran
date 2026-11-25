@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import SecretStr, model_validator
+from pydantic import SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -157,4 +157,19 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    try:
+        return Settings()
+    except ValidationError as exc:
+        # pydantic-settings validates the raw dict of env-var strings it
+        # assembled, not the already-typed Settings instance - so a
+        # mode="after" validator failure (e.g.
+        # _frontend_url_not_localhost_in_production) reports that raw input
+        # dict verbatim as `input_value`, every secret included in
+        # plaintext, regardless of SecretStr field types (confirmed via a
+        # real production deploy log: SecretStr alone did not stop this).
+        # Re-raise using only each error's own message text - never
+        # exc.errors()'s `input`/`input_value`/`str(exc)` - and suppress
+        # chaining so the original ValidationError (and the dict it holds)
+        # is never printed by a default traceback either.
+        messages = "; ".join(err["msg"] for err in exc.errors())
+        raise RuntimeError(f"Invalid configuration: {messages}") from None
