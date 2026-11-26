@@ -202,13 +202,20 @@ export default function TradingViewWidget({
   const containerRef = useRef<HTMLDivElement>(null)
   const tvSymbol = mapToTradingViewSymbol(symbol)
   const [loading, setLoading] = useState(true)
+  const [overlayVisible, setOverlayVisible] = useState(true)
   const [loadTimedOut, setLoadTimedOut] = useState(false)
+  // Mirrors `loading` for the hard timeout's setTimeout closure below, which
+  // otherwise captures the stale `loading` value from the render it was
+  // scheduled in and can never see the script.onload handler's later update.
+  const loadingRef = useRef(true)
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
+    loadingRef.current = true
     setLoading(true)
+    setOverlayVisible(true)
     setLoadTimedOut(false)
 
     container.innerHTML = ''
@@ -248,23 +255,62 @@ export default function TradingViewWidget({
       support_host: 'https://www.tradingview.com',
     })
 
+    // This embed type (TradingView's lightweight iframe snippet, not the
+    // full Charting Library) exposes no postMessage/onReady handshake this
+    // page can listen for - script.onload only confirms the bootstrap
+    // script itself downloaded, not that the iframe has actually painted a
+    // chart. A single fixed delay here is a guess, and guessing wrong in
+    // either direction causes a real, observed bug: too short, and the
+    // overlay disappears into TradingView's own black-screen-with-white-dot
+    // loading state (the "double loader flash"); too long, and a fast
+    // symbol sits behind our spinner needlessly. 2600ms is long enough for
+    // the common case without being needlessly conservative, and the
+    // opacity fade below means a slightly-early reveal is a soft crossfade
+    // into TradingView's own state rather than an abrupt cut.
     script.onload = () => {
-      // Script loaded, give the widget a moment to paint iframe
-      setTimeout(() => setLoading(false), 1200)
+      setTimeout(() => {
+        loadingRef.current = false
+        setLoading(false)
+      }, 2600)
     }
 
     container.appendChild(script)
 
-    const timer = setTimeout(() => {
-      setLoadTimedOut(true)
-      onTimeout?.()
-    }, 4000)
+    // Two-stage timeout, not one: a symbol can be entirely valid and still
+    // take much longer than 4s to resolve (confirmed live:
+    // FOREXCOM:DJI - a genuinely valid, correctly-mapped symbol - routinely
+    // took 5-7s to paint real data during testing). Firing onTimeout at 4s
+    // misclassifies a slow-but-working chart as "unavailable" - a false
+    // negative, not a real failure. The soft threshold only shows the
+    // reassuring "taking longer than expected" message; only the hard
+    // threshold actually gives up and calls onTimeout - and only if the
+    // widget genuinely never finished (loadingRef still true), so a chart
+    // that already loaded successfully is never yanked into an "unavailable"
+    // error state just because this timer happened to fire later.
+    const softTimer = setTimeout(() => setLoadTimedOut(true), 4000)
+    const hardTimer = setTimeout(() => {
+      if (loadingRef.current) onTimeout?.()
+    }, 9000)
 
     return () => {
-      clearTimeout(timer)
+      clearTimeout(softTimer)
+      clearTimeout(hardTimer)
       container.innerHTML = ''
     }
   }, [tvSymbol, theme, interval, range, timezone, onTimeout])
+
+  // Fades the custom overlay out over 400ms instead of unmounting it the
+  // instant `loading` flips false, so any gap between our guessed "ready"
+  // moment and the iframe's real paint is a smooth crossfade rather than a
+  // hard cut exposing TradingView's own loading animation underneath.
+  useEffect(() => {
+    if (loading) {
+      setOverlayVisible(true)
+      return
+    }
+    const fadeTimer = setTimeout(() => setOverlayVisible(false), 400)
+    return () => clearTimeout(fadeTimer)
+  }, [loading])
 
   return (
     <div className="relative h-full w-full min-h-0 overflow-hidden rounded-xl bg-[#090b0e]">
@@ -274,8 +320,11 @@ export default function TradingViewWidget({
         style={{ minHeight: '220px', height: '100%' }}
       />
 
-      {loading && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#090b0e]/85 backdrop-blur-sm p-4 text-center">
+      {overlayVisible && (
+        <div
+          className={`absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#090b0e]/85 backdrop-blur-sm p-4 text-center transition-opacity [transition-duration:400ms] ease-out ${loading ? '' : 'pointer-events-none'}`}
+          style={{ opacity: loading ? 1 : 0 }}
+        >
           <div className="h-6 w-6 institutional-spinner mb-3" />
           <span className="text-[12.5px] font-medium text-white tracking-tight">Connecting to TradingView Feed ({tvSymbol})…</span>
           <span className="text-[11px] text-muted-foreground mt-0.5">Streaming institutional market feeds</span>
