@@ -208,6 +208,18 @@ export default function TradingViewWidget({
   // otherwise captures the stale `loading` value from the render it was
   // scheduled in and can never see the script.onload handler's later update.
   const loadingRef = useRef(true)
+  // A caller's `onTimeout` is not guaranteed to be referentially stable (e.g.
+  // TradingViewModal passes a fresh inline arrow function on every render in
+  // production builds, where isProdBuild gates it on). If `onTimeout` sat in
+  // the mount effect's dependency array below, every parent re-render -
+  // routine in production, where live price ticks re-render the modal
+  // constantly - would tear down and rebuild the whole TradingView iframe,
+  // repeatedly resetting the loading overlay. Mirroring it in a ref read at
+  // call time keeps the effect scoped to things that actually describe a
+  // different chart (symbol/theme/interval/range/timezone), never a caller's
+  // callback identity.
+  const onTimeoutRef = useRef(onTimeout)
+  onTimeoutRef.current = onTimeout
 
   useEffect(() => {
     const container = containerRef.current
@@ -289,7 +301,7 @@ export default function TradingViewWidget({
     // error state just because this timer happened to fire later.
     const softTimer = setTimeout(() => setLoadTimedOut(true), 4000)
     const hardTimer = setTimeout(() => {
-      if (loadingRef.current) onTimeout?.()
+      if (loadingRef.current) onTimeoutRef.current?.()
     }, 9000)
 
     return () => {
@@ -297,7 +309,7 @@ export default function TradingViewWidget({
       clearTimeout(hardTimer)
       container.innerHTML = ''
     }
-  }, [tvSymbol, theme, interval, range, timezone, onTimeout])
+  }, [tvSymbol, theme, interval, range, timezone])
 
   // Fades the custom overlay out over 400ms instead of unmounting it the
   // instant `loading` flips false, so any gap between our guessed "ready"
